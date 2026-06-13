@@ -270,7 +270,7 @@
                 // ========== КОНСТАНТЫ ==========
                 const currenciesFull = ['RUB', 'USD', 'EUR', 'UAH', 'KZT', 'UZS', 'BYN', 'TON', 'USDT', 'STARS'];
                 const currencySymbols = { RUB: '🇷🇺', USD: '🇺🇸', EUR: '🇪🇺', UAH: '🇺🇦', KZT: '🇰🇿', UZS: '🇺🇿', BYN: '🇧🇾', TON: '💎', USDT: '💵', STARS: '⭐️' };
-                const rates = { RUB: 1, USD: 92.5, EUR: 100, UAH: 2.5, KZT: 0.2, UZS: 0.007, BYN: 35, TON: 500, USDT: 92, STARS: 15 };
+                const rates = { RUB: 1, USD: 72.46, EUR: 83.83, UAH: 1.62, KZT: 0.15, UZS: 0.0063, BYN: 26.19, TON: 125, USDT: 72.42, STARS: 1.5 };
                 const prices = {30: 299, 45: 419, 60: 559, 90: 799, 365: 2999};
                 
                 // ========== ПЕРЕМЕННЫЕ ==========
@@ -526,7 +526,7 @@
                 });
                 
                 // Создание сделки
-                const createCurrencies = ['RUB', 'USD', 'EUR', 'TON', 'USDT', 'STARS'];
+                const createCurrencies = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS'];
                 document.getElementById('createCurrencies').innerHTML = createCurrencies.map(c => `<button class="create-currency px-4 py-2 rounded-xl bg-white/5 border border-white/10" data-currency="${c}">${getCurrencySymbol(c)} ${c}</button>`).join('');
                 let dealCurrency = 'RUB';
                 document.querySelectorAll('.create-currency').forEach(btn => {

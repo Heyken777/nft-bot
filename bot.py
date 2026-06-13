@@ -431,6 +431,10 @@ class Database:
         self.conn.commit()
 
     def create_deal(self, seller, item, amount, commission, deal_id, currency="RUB"):
+        allowed_currencies = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
+        if currency not in allowed_currencies:
+            currency = 'RUB'
+        
         self.cursor.execute("""
             INSERT INTO deals (id, seller, item, amount, commission, currency, status) 
             VALUES (?, ?, ?, ?, ?, ?, 'awaiting')
@@ -1960,6 +1964,10 @@ async def handle_create_deal(request):
         item_name = data.get('item_name')
         price = data.get('price')
         currency = data.get('currency', 'RUB')
+        
+        allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
+        if currency not in allowed:
+            currency = 'RUB'
         
         # Проверяем пользователя
         user = db.get_user(user_id)
