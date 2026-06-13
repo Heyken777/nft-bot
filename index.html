@@ -319,21 +319,15 @@
                         if (response.ok) {
                             const data = await response.json();
                             userData = { ...userData, ...data };
+                            updateAllUI();
                         } else {
-                            throw new Error('API error');
+                            console.error('API вернул ошибку:', response.status);
+                            showToast('❌ Не удалось загрузить данные. Перезагрузите приложение.');
                         }
                     } catch (error) {
-                        console.log('⚠️ API не доступен, используем заглушки (только для демонстрации)');
-                        // ВАЖНО: ЭТО ЗАГЛУШКИ ТОЛЬКО ДЛЯ ДЕМОНСТРАЦИИ!
-                        // В РЕАЛЬНОМ ПРИЛОЖЕНИИ ДАННЫЕ ДОЛЖНЫ ПРИХОДИТЬ ТОЛЬКО ИЗ API!
-                        userData.balances = { RUB: 12499.50, USD: 125.30, EUR: 98.20, UAH: 3450, KZT: 125000, UZS: 1500000, BYN: 320, TON: 12.5, USDT: 110, STARS: 250 };
-                        userData.deals = [
-                            { id: 123456, item: 'Legendary Sword NFT', amount: 2499, currency: 'RUB', status: 'awaiting', role: 'seller', created_at: '2026-01-15' },
-                            { id: 123457, item: 'Dragon Shield', amount: 1200, currency: 'RUB', status: 'paid', role: 'seller', created_at: '2026-01-14' },
-                            { id: 123458, item: 'Magic Potion', amount: 500, currency: 'TON', status: 'completed', role: 'buyer', created_at: '2026-01-13' }
-                        ];
+                        console.error('API не доступен:', error);
+                        showToast('❌ Ошибка соединения с сервером. Попробуйте позже.');
                     }
-                    updateAllUI();
                 }
                 
                 function updateAllUI() {

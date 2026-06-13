@@ -305,6 +305,7 @@ class Database:
             )
         """)
         
+        self.add_column_if_not_exists("users", "last_activity", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         self.add_column_if_not_exists("deals", "commission", "REAL DEFAULT 0")
         self.add_column_if_not_exists("deals", "is_featured", "INTEGER DEFAULT 0")
         self.add_column_if_not_exists("deals", "completed_at", "TIMESTAMP")
@@ -1928,33 +1929,29 @@ async def mailing_text(msg: types.Message, state: FSMContext):
 
 
 async def handle_api(request):
-    path = request.path
     user_id = int(request.query.get('user_id', 0))
+    user = db.get_user(user_id)
+    if not user:
+        return web.json_response({'error': 'User not found'}, status=404)
     
-    if path == '/api/user':
-        user = db.get_user(user_id)
-        if not user:
-            return web.json_response({'error': 'User not found'}, status=404)
-        
-        # Получаем балансы по всем валютам
-        balances = {}
-        for curr in ['RUB', 'USD', 'EUR', 'UAH', 'KZT', 'UZS', 'BYN', 'TON', 'USDT', 'STARS']:
-            balances[curr] = db.get_balance(user_id, curr)
-        
-        return web.json_response({
-            'id': user[0],
-            'username': user[1],
-            'firstName': user[1] or 'User',
-            'balances': balances,
-            'is_premium': db.is_premium(user_id),
-            'rating': user[7] or 0,
-            'card': user[3] or '',
-            'ton': user[4] or '',
-            'referral_count': 0,
-            'referral_earnings': 0
-        })
+    # РЕАЛЬНЫЕ БАЛАНСЫ ИЗ БД
+    balances = {}
+    for curr in ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']:
+        balances[curr] = db.get_balance(user_id, curr)
     
-    return web.json_response({'error': 'Not found'}, status=404)
+    return web.json_response({
+        'id': user[0],
+        'username': user[1],
+        'firstName': user[1] or 'User',
+        'balances': balances,
+        'is_premium': db.is_premium(user_id),
+        'rating': user[7] or 0,
+        'card': user[3] or '',
+        'ton': user[4] or '',
+        'deals': [],  # Здесь нужно добавить реальные сделки из БД
+        'referral_count': 0,
+        'referral_earnings': 0
+    })
 
 # Запуск веб-сервера для API
 async def start_api():
