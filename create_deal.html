@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Создание сделки - Novix Gift</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Шапка -->
+        <div class="header-profile">
+            <button class="back-btn" onclick="window.history.back()">← Назад</button>
+            <h2>Создание сделки</h2>
+            <div></div>
+        </div>
+
+        <!-- Форма создания сделки -->
+        <div class="form-container">
+            <div class="form-step" id="stepCurrency">
+                <div class="step-title">📌 Шаг 1: Выберите валюту</div>
+                <div class="currencies-select" id="currenciesSelect">
+                    <!-- Динамическая загрузка -->
+                </div>
+                <button class="btn-primary" id="nextStep1">Далее →</button>
+            </div>
+
+            <div class="form-step" id="stepName" style="display: none;">
+                <div class="step-title">📌 Шаг 2: Название товара</div>
+                <input type="text" class="input-field" id="itemName" placeholder="Например: Legendary Sword NFT">
+                <button class="btn-primary" id="nextStep2">Далее →</button>
+            </div>
+
+            <div class="form-step" id="stepPrice" style="display: none;">
+                <div class="step-title">📌 Шаг 3: Укажите цену</div>
+                <div class="price-input-wrapper">
+                    <input type="number" class="input-field" id="itemPrice" placeholder="0">
+                    <span class="currency-badge" id="selectedCurrency">RUB</span>
+                </div>
+                <button class="btn-primary" id="createDealBtn">✅ Создать сделку</button>
+            </div>
+        </div>
+
+        <!-- Результат создания -->
+        <div class="result-container" id="resultContainer" style="display: none;">
+            <div class="success-icon">✅</div>
+            <div class="success-title">Сделка успешно создана!</div>
+            <div class="deal-info">
+                <div class="deal-row">
+                    <span class="deal-label">🧾 ID:</span>
+                    <span class="deal-value" id="dealId">-</span>
+                </div>
+                <div class="deal-row">
+                    <span class="deal-label">📦 Товар:</span>
+                    <span class="deal-value" id="dealItem">-</span>
+                </div>
+                <div class="deal-row">
+                    <span class="deal-label">💰 Цена:</span>
+                    <span class="deal-value" id="dealPrice">-</span>
+                </div>
+                <div class="deal-row">
+                    <span class="deal-label">💼 Комиссия:</span>
+                    <span class="deal-value" id="dealCommission">-</span>
+                </div>
+            </div>
+            <div class="link-container">
+                <div class="link-label">🔗 Ссылка для покупателя:</div>
+                <div class="link-value" id="dealLink">-</div>
+                <button class="btn-copy" id="copyLinkBtn">📋 Копировать</button>
+            </div>
+            <button class="btn-primary" id="shareDealBtn">📤 Поделиться сделкой</button>
+            <button class="btn-secondary" id="newDealBtn">➕ Создать новую</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

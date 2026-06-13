@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Мои сделки - Novix Gift</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="header-profile">
+            <button class="back-btn" onclick="window.history.back()">← Назад</button>
+            <h2>📋 Мои сделки</h2>
+            <div></div>
+        </div>
+
+        <!-- Фильтры -->
+        <div class="filters">
+            <button class="filter-btn active" data-filter="all">Все</button>
+            <button class="filter-btn" data-filter="awaiting">⏳ Ожидают</button>
+            <button class="filter-btn" data-filter="paid">💰 Оплачены</button>
+            <button class="filter-btn" data-filter="completed">✅ Завершены</button>
+        </div>
+
+        <!-- Список сделок -->
+        <div class="deals-list" id="dealsList">
+            <div class="loading-spinner">Загрузка...</div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

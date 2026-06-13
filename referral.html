@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Рефералы - Novix Gift</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="header-profile">
+            <button class="back-btn" onclick="window.history.back()">← Назад</button>
+            <h2>👥 Реферальная программа</h2>
+            <div></div>
+        </div>
+
+        <!-- Реферальная статистика -->
+        <div class="referral-stats">
+            <div class="stat-card">
+                <div class="stat-value" id="referralCount">0</div>
+                <div class="stat-label">Приглашено друзей</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="referralEarnings">0 RUB</div>
+                <div class="stat-label">Заработано</div>
+            </div>
+        </div>
+
+        <!-- Реферальная ссылка -->
+        <div class="referral-link-card">
+            <div class="referral-link-title">🔗 Твоя реферальная ссылка</div>
+            <div class="referral-link-value" id="referralLink">Загрузка...</div>
+            <button class="btn-copy" id="copyRefLinkBtn">📋 Копировать ссылку</button>
+        </div>
+
+        <!-- Как это работает -->
+        <div class="how-it-works">
+            <div class="section-title">📖 Как это работает?</div>
+            <div class="step-item">
+                <span class="step-number">1</span>
+                <span>Отправь ссылку другу</span>
+            </div>
+            <div class="step-item">
+                <span class="step-number">2</span>
+                <span>Друг регистрируется в боте</span>
+            </div>
+            <div class="step-item">
+                <span class="step-number">3</span>
+                <span>Вы получаете <strong>50 RUB</strong> на баланс</span>
+            </div>
+            <div class="step-item">
+                <span class="step-number">4</span>
+                <span>Друг также получает <strong>50 RUB</strong> бонусом</span>
+            </div>
+        </div>
+
+        <!-- Таблица приглашённых -->
+        <div class="section-title">👥 Приглашённые друзья</div>
+        <div class="referrals-list" id="referralsList">
+            <div class="empty-state">Пока нет приглашённых</div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Профиль - Novix Gift</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Шапка с кнопкой назад -->
+        <div class="header-profile">
+            <button class="back-btn" onclick="window.history.back()">← Назад</button>
+            <h2>Мой профиль</h2>
+            <div></div>
+        </div>
+
+        <!-- Аватар и основная информация -->
+        <div class="profile-header">
+            <div class="profile-avatar">
+                <span id="profileAvatar">👤</span>
+            </div>
+            <div class="profile-info">
+                <h3 id="profileUsername">@username</h3>
+                <p id="profileId">ID: </p>
+            </div>
+        </div>
+
+        <!-- Статистика -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="statDeals">0</div>
+                <div class="stat-label">Всего сделок</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statCompleted">0</div>
+                <div class="stat-label">Завершено</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statRating">0</div>
+                <div class="stat-label">⭐ Рейтинг</div>
+            </div>
+        </div>
+
+        <!-- Premium статус -->
+        <div class="premium-card" id="premiumCard">
+            <div class="premium-icon">⭐</div>
+            <div class="premium-info">
+                <div class="premium-title">Premium статус</div>
+                <div class="premium-status" id="premiumStatus">Не активен</div>
+            </div>
+            <button class="btn-premium" id="upgradePremiumBtn">Купить</button>
+        </div>
+
+        <!-- Личная информация -->
+        <div class="info-section">
+            <div class="section-title">📝 Личная информация</div>
+            <div class="info-row">
+                <span class="info-label">Telegram ID</span>
+                <span class="info-value" id="infoUserId">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Имя пользователя</span>
+                <span class="info-value" id="infoUsername">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Дата регистрации</span>
+                <span class="info-value" id="infoRegDate">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Реквизиты карты</span>
+                <span class="info-value" id="infoCard">не указаны</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">TON кошелек</span>
+                <span class="info-value" id="infoTon">не указан</span>
+            </div>
+        </div>
+
+        <!-- Кнопка редактирования -->
+        <button class="btn-primary" id="editDetailsBtn">✏️ Редактировать реквизиты</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

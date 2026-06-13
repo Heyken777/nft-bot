@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Premium - Novix Gift</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="header-profile">
+            <button class="back-btn" onclick="window.history.back()">← Назад</button>
+            <h2>⭐ Premium подписка</h2>
+            <div></div>
+        </div>
+
+        <!-- Преимущества -->
+        <div class="benefits-card">
+            <div class="benefits-title">Что даёт Premium?</div>
+            <div class="benefits-list">
+                <div class="benefit-item">✨ Комиссия при сделках: <strong>0%</strong></div>
+                <div class="benefit-item">✨ Комиссия при выводе: <strong>0%</strong></div>
+                <div class="benefit-item">✨ Приоритетная поддержка 24/7</div>
+                <div class="benefit-item">✨ Ранний доступ к новым функциям</div>
+                <div class="benefit-item">✨ Выделенный значок в профиле</div>
+            </div>
+        </div>
+
+        <!-- Текущий статус -->
+        <div class="current-premium" id="currentPremium">
+            <div class="premium-status-icon">⭐</div>
+            <div class="premium-status-text" id="premiumStatusText">Premium не активен</div>
+        </div>
+
+        <!-- Выбор валюты для оплаты -->
+        <div class="section-title">💰 Выберите валюту оплаты</div>
+        <div class="currencies-select" id="premiumCurrencies">
+            <!-- Динамическая загрузка -->
+        </div>
+
+        <!-- Выбор длительности -->
+        <div class="section-title">📅 Выберите длительность</div>
+        <div class="plans-grid" id="plansGrid">
+            <div class="plan-card" data-days="30">
+                <div class="plan-days">30 дней</div>
+                <div class="plan-price" id="price30">299 RUB</div>
+                <div class="plan-save">-</div>
+            </div>
+            <div class="plan-card" data-days="45">
+                <div class="plan-days">45 дней</div>
+                <div class="plan-price" id="price45">419 RUB</div>
+                <div class="plan-save">Экономия 10%</div>
+            </div>
+            <div class="plan-card" data-days="60">
+                <div class="plan-days">60 дней</div>
+                <div class="plan-price" id="price60">559 RUB</div>
+                <div class="plan-save">Экономия 15%</div>
+            </div>
+            <div class="plan-card" data-days="90">
+                <div class="plan-days">90 дней</div>
+                <div class="plan-price" id="price90">799 RUB</div>
+                <div class="plan-save">Экономия 20%</div>
+            </div>
+            <div class="plan-card premium-forever" data-days="365">
+                <div class="plan-days">👑 FOREVER</div>
+                <div class="plan-price" id="price365">2999 RUB</div>
+                <div class="plan-save">Лучшая цена!</div>
+            </div>
+        </div>
+
+        <button class="btn-primary" id="buyPremiumBtn">💎 Купить Premium</button>
+        <div class="secure-badge">🔒 Безопасная оплата через бота</div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
