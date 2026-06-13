@@ -503,8 +503,12 @@
                 });
                 
                 document.querySelectorAll('.back-btn').forEach(btn => btn.onclick = () => navigateTo('home'));
-                document.querySelector('.deposit-btn')?.addEventListener('click', () => tg.openTelegramLink('https://t.me/NovixGift_Bot?start=deposit'));
-                document.querySelector('.withdraw-btn')?.addEventListener('click', () => tg.openTelegramLink('https://t.me/NovixGift_Bot?start=withdraw'));
+                document.querySelector('.deposit-btn')?.addEventListener('click', () => {
+                    tg.openTelegramLink('https://t.me/NovixProHelp');
+                });
+                document.querySelector('.withdraw-btn')?.addEventListener('click', () => {
+                    tg.openTelegramLink('https://t.me/NovixProHelp');
+                });
                 document.querySelector('.edit-profile-btn')?.addEventListener('click', () => navigateTo('profile_edit'));
                 document.querySelector('.upgrade-premium-btn')?.addEventListener('click', () => navigateTo('premium'));
                 document.querySelector('.save-profile-btn')?.addEventListener('click', () => { showToast('✅ Данные сохранены!'); navigateTo('profile'); });
@@ -531,12 +535,50 @@
                 document.querySelector('.create-currency')?.click();
                 document.querySelector('.create-next1-btn').onclick = () => { document.getElementById('createStep1').style.display = 'none'; document.getElementById('createStep2').style.display = 'block'; };
                 document.querySelector('.create-next2-btn').onclick = () => { const name = document.getElementById('createItemName').value.trim(); if (!name) { showToast('Введите название товара'); return; } document.getElementById('createStep2').style.display = 'none'; document.getElementById('createStep3').style.display = 'block'; };
-                document.querySelector('.create-submit-btn').onclick = () => {
-                    const price = parseFloat(document.getElementById('createPrice').value);
-                    if (!price || price <= 0) { showToast('Введите корректную цену'); return; }
-                    tg.openTelegramLink(`https://t.me/NovixGift_Bot?start=create_deal_${encodeURIComponent(document.getElementById('createItemName').value)}_${price}_${dealCurrency}`);
-                };
-                document.querySelector('.copy-success-link-btn')?.addEventListener('click', () => { const link = document.getElementById('successDealLink')?.innerText; if (link) { navigator.clipboard.writeText(link); showToast('🔗 Ссылка скопирована'); } });
+                document.querySelector('.create-submit-btn').onclick = async () => {
+    const price = parseFloat(document.getElementById('createPrice').value);
+    const itemName = document.getElementById('createItemName').value.trim();
+    
+    if (!itemName) { showToast('❌ Введите название товара'); return; }
+    if (!price || price <= 0) { showToast('❌ Введите корректную цену'); return; }
+    
+    // Отправляем запрос на создание сделки через API
+    try {
+        const response = await fetch('/api/create_deal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userData.id,
+                item_name: itemName,
+                price: price,
+                currency: dealCurrency
+            })
+        });
+        
+        if (response.ok) {
+            const deal = await response.json();
+            // Показываем результат
+            document.getElementById('successDealId').innerHTML = deal.id;
+            document.getElementById('successDealItem').innerHTML = deal.item;
+            document.getElementById('successDealPrice').innerHTML = `${formatNumber(deal.amount)} ${deal.currency}`;
+            document.getElementById('successDealCommission').innerHTML = `${deal.commission * 100}%`;
+            document.getElementById('successDealLink').innerHTML = `https://t.me/NovixGift_Bot?start=deal_${deal.id}`;
+            document.getElementById('createStep3').style.display = 'none';
+            navigateTo('create_deal_success');
+        } else {
+            showToast('❌ Ошибка при создании сделки');
+        }
+    } catch (error) {
+        showToast('❌ Ошибка соединения');
+    }
+};
+                document.querySelector('.copy-success-link-btn')?.addEventListener('click', () => {
+                    const link = document.getElementById('successDealLink')?.innerText;
+                    if (link) {
+                        navigator.clipboard.writeText(link);
+                        showToast('🔗 Ссылка на сделку скопирована!');
+                    }
+                });
                 document.querySelector('.view-deal-btn')?.addEventListener('click', () => { const id = parseInt(document.getElementById('successDealId')?.innerText); if (id) { currentViewDeal = id; showDealDetail(); } });
                 document.querySelector('.new-deal-after-success-btn')?.addEventListener('click', () => { navigateTo('create_deal'); document.getElementById('createItemName').value = ''; document.getElementById('createPrice').value = ''; document.getElementById('createStep1').style.display = 'block'; document.getElementById('createStep2').style.display = 'none'; document.getElementById('createStep3').style.display = 'none'; });
                 

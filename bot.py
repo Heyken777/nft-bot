@@ -1953,10 +1953,45 @@ async def handle_api(request):
         'referral_earnings': 0
     })
 
+async def handle_create_deal(request):
+    try:
+        data = await request.json()
+        user_id = data.get('user_id')
+        item_name = data.get('item_name')
+        price = data.get('price')
+        currency = data.get('currency', 'RUB')
+        
+        # Проверяем пользователя
+        user = db.get_user(user_id)
+        if not user:
+            return web.json_response({'error': 'User not found'}, status=404)
+        
+        # Генерируем ID сделки
+        import random
+        deal_id = random.randint(100000, 999999)
+        while db.get_deal(deal_id):
+            deal_id = random.randint(100000, 999999)
+        
+        # Комиссия
+        commission = db.get_user_commission(user_id, "deal")
+        
+        # Создаём сделку
+        db.create_deal(user_id, item_name, price, commission, deal_id, currency)
+        
+        return web.json_response({
+            'id': deal_id,
+            'item': item_name,
+            'amount': price,
+            'currency': currency,
+            'commission': commission
+        })
+    except Exception as e:
+        return web.json_response({'error': str(e)}, status=500)
+
 # Запуск веб-сервера для API
 async def start_api():
     app = web.Application()
-    app.router.add_get('/api/user', handle_api)
+    app.router.add_post('/api/create_deal', handle_create_deal)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, 'localhost', 8080)
