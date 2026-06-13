@@ -4,75 +4,108 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Premium - Novix Gift</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        body { background: #0a0a12; }
+        .glass {
+            background: rgba(10, 10, 18, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .plan-card {
+            transition: all 0.2s ease;
+        }
+        .plan-card.selected {
+            border-color: #f59e0b;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.3);
+            background: rgba(245, 158, 11, 0.1);
+        }
+    </style>
 </head>
-<body>
-    <div class="app-container">
-        <div class="header-profile">
-            <button class="back-btn" onclick="window.history.back()">← Назад</button>
-            <h2>⭐ Premium подписка</h2>
-            <div></div>
-        </div>
-
-        <!-- Преимущества -->
-        <div class="benefits-card">
-            <div class="benefits-title">Что даёт Premium?</div>
-            <div class="benefits-list">
-                <div class="benefit-item">✨ Комиссия при сделках: <strong>0%</strong></div>
-                <div class="benefit-item">✨ Комиссия при выводе: <strong>0%</strong></div>
-                <div class="benefit-item">✨ Приоритетная поддержка 24/7</div>
-                <div class="benefit-item">✨ Ранний доступ к новым функциям</div>
-                <div class="benefit-item">✨ Выделенный значок в профиле</div>
+<body class="bg-[#0a0a12] text-white">
+    <div class="max-w-md mx-auto min-h-screen flex flex-col">
+        
+        <!-- Шапка -->
+        <div class="glass px-5 pt-6 pb-3 border-b border-white/10">
+            <div class="flex items-center gap-3">
+                <button onclick="window.history.back()" class="text-[#00f2fe] text-xl">←</button>
+                <h1 class="text-xl font-bold neon-text">⭐ Premium подписка</h1>
             </div>
         </div>
-
-        <!-- Текущий статус -->
-        <div class="current-premium" id="currentPremium">
-            <div class="premium-status-icon">⭐</div>
-            <div class="premium-status-text" id="premiumStatusText">Premium не активен</div>
-        </div>
-
-        <!-- Выбор валюты для оплаты -->
-        <div class="section-title">💰 Выберите валюту оплаты</div>
-        <div class="currencies-select" id="premiumCurrencies">
-            <!-- Динамическая загрузка -->
-        </div>
-
-        <!-- Выбор длительности -->
-        <div class="section-title">📅 Выберите длительность</div>
-        <div class="plans-grid" id="plansGrid">
-            <div class="plan-card" data-days="30">
-                <div class="plan-days">30 дней</div>
-                <div class="plan-price" id="price30">299 RUB</div>
-                <div class="plan-save">-</div>
+        
+        <div class="flex-1 px-5 py-5 space-y-5 overflow-y-auto">
+            
+            <!-- Преимущества -->
+            <div class="glass rounded-2xl p-5 border border-white/10">
+                <div class="font-bold text-center mb-3">Что даёт Premium?</div>
+                <div class="space-y-2 text-sm">
+                    <div class="flex items-center gap-2">✨ <span>Комиссия при сделках: <strong class="text-[#10b981]">0%</strong></span></div>
+                    <div class="flex items-center gap-2">✨ <span>Комиссия при выводе: <strong class="text-[#10b981]">0%</strong></span></div>
+                    <div class="flex items-center gap-2">✨ <span>Приоритетная поддержка 24/7</span></div>
+                    <div class="flex items-center gap-2">✨ <span>Выделенный значок в профиле</span></div>
+                </div>
             </div>
-            <div class="plan-card" data-days="45">
-                <div class="plan-days">45 дней</div>
-                <div class="plan-price" id="price45">419 RUB</div>
-                <div class="plan-save">Экономия 10%</div>
+            
+            <!-- Текущий статус -->
+            <div class="glass rounded-2xl p-4 border border-[#f59e0b]/30 text-center" id="currentPremiumCard">
+                <div class="text-2xl mb-1">⭐</div>
+                <div class="font-semibold" id="premiumStatusText">Premium не активен</div>
+                <div class="text-xs text-gray-500 mt-1" id="premiumExpiresText"></div>
             </div>
-            <div class="plan-card" data-days="60">
-                <div class="plan-days">60 дней</div>
-                <div class="plan-price" id="price60">559 RUB</div>
-                <div class="plan-save">Экономия 15%</div>
+            
+            <!-- Выбор валюты -->
+            <div class="space-y-2">
+                <div class="text-sm font-semibold">💰 Валюта оплаты</div>
+                <div class="flex gap-2 flex-wrap" id="currencySelect">
+                    <button class="currency-option px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="RUB">🇷🇺 RUB</button>
+                    <button class="currency-option px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="USD">🇺🇸 USD</button>
+                    <button class="currency-option px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="EUR">🇪🇺 EUR</button>
+                    <button class="currency-option px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="TON">💎 TON</button>
+                </div>
             </div>
-            <div class="plan-card" data-days="90">
-                <div class="plan-days">90 дней</div>
-                <div class="plan-price" id="price90">799 RUB</div>
-                <div class="plan-save">Экономия 20%</div>
+            
+            <!-- Выбор длительности -->
+            <div class="space-y-2">
+                <div class="text-sm font-semibold">📅 Длительность</div>
+                <div class="space-y-2">
+                    <div class="plan-card glass rounded-xl p-3 border border-white/10 cursor-pointer" data-days="30">
+                        <div class="flex justify-between items-center">
+                            <div class="font-medium">30 дней</div>
+                            <div class="text-[#f59e0b] font-bold" id="price30">299 RUB</div>
+                        </div>
+                    </div>
+                    <div class="plan-card glass rounded-xl p-3 border border-white/10 cursor-pointer" data-days="45">
+                        <div class="flex justify-between items-center">
+                            <div class="font-medium">45 дней</div>
+                            <div class="text-[#f59e0b] font-bold" id="price45">419 RUB</div>
+                        </div>
+                        <div class="text-xs text-emerald-400 mt-1">⚡ Экономия 10%</div>
+                    </div>
+                    <div class="plan-card glass rounded-xl p-3 border border-white/10 cursor-pointer" data-days="60">
+                        <div class="flex justify-between items-center">
+                            <div class="font-medium">60 дней</div>
+                            <div class="text-[#f59e0b] font-bold" id="price60">559 RUB</div>
+                        </div>
+                        <div class="text-xs text-emerald-400 mt-1">⚡ Экономия 15%</div>
+                    </div>
+                    <div class="plan-card glass rounded-xl p-3 border border-white/10 cursor-pointer" data-days="90">
+                        <div class="flex justify-between items-center">
+                            <div class="font-medium">90 дней</div>
+                            <div class="text-[#f59e0b] font-bold" id="price90">799 RUB</div>
+                        </div>
+                        <div class="text-xs text-emerald-400 mt-1">⚡ Экономия 20%</div>
+                    </div>
+                    <div class="plan-card glass rounded-xl p-3 border border-[#f59e0b]/30 cursor-pointer bg-gradient-to-r from-[#f59e0b]/5 to-[#ec4899]/5" data-days="365">
+                        <div class="flex justify-between items-center">
+                            <div class="font-medium">👑 FOREVER</div>
+                            <div class="text-[#f59e0b] font-bold" id="price365">2,999 RUB</div>
+                        </div>
+                        <div class="text-xs text-emerald-400 mt-1">⚡ Лучшая цена!</div>
+                    </div>
+                </div>
             </div>
-            <div class="plan-card premium-forever" data-days="365">
-                <div class="plan-days">👑 FOREVER</div>
-                <div class="plan-price" id="price365">2999 RUB</div>
-                <div class="plan-save">Лучшая цена!</div>
-            </div>
-        </div>
-
-        <button class="btn-primary" id="buyPremiumBtn">💎 Купить Premium</button>
-        <div class="secure-badge">🔒 Безопасная оплата через бота</div>
-    </div>
-
-    <script src="app.js"></script>
-</body>
-</html>
+            
+            <button class="w-full bg-gradient-to-r from-[#f59e0b] to-[#ec4899] py-3 rounded-xl font-bold shadow-[0_0_15px_rgba(245,158,11,0.5)]" id="buyPremiumBtn">
+                💎 Купить Premium
