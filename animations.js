@@ -1,6 +1,6 @@
-// animations.js - Киберпанк анимации для Novix Gift
+// animations.js - Киберпанк анимации для Novix Gift (исправленная версия)
 
-// ========== НЕОНОВЫЕ ЭФФЕКТЫ ==========
+// ========== НЕОНОВЫЕ ЭФФЕКТЫ (БЕЗ ПАРАЛЛАКСА) ==========
 class NeonEffects {
     constructor() {
         this.init();
@@ -12,13 +12,12 @@ class NeonEffects {
         this.addInputEffects();
         this.addNavEffects();
         this.addParticleBackground();
-        this.addGlitchEffect();
+        // Глитч-эффект УБРАН - больше не будет "взрывать" текст
     }
 
-    // Эффект для кнопок
+    // Эффект для кнопок (только свечение, без изменения положения)
     addButtonEffects() {
         document.querySelectorAll('button, .btn, .plan-card, .action-card, .currency-option, .filter-btn').forEach(btn => {
-            // При наведении - неоновое свечение
             btn.addEventListener('mouseenter', (e) => {
                 this.neonPulse(btn, '#00f2fe');
                 this.createRipple(e, btn);
@@ -28,23 +27,24 @@ class NeonEffects {
                 this.removeNeonPulse(btn);
             });
             
-            // При клике - эффект вспышки
             btn.addEventListener('click', (e) => {
                 this.flashEffect(btn);
-                this.createClickWave(btn);
             });
         });
     }
 
-    // Эффект для карточек
+    // Эффект для карточек - ТОЛЬКО СВЕЧЕНИЕ, БЕЗ ДВИЖЕНИЯ
     addCardEffects() {
         document.querySelectorAll('.glass, .balance-card, .deal-card, .premium-card').forEach(card => {
-            card.addEventListener('mousemove', (e) => {
-                this.parallaxGlow(e, card);
+            card.addEventListener('mouseenter', () => {
+                card.style.transition = 'all 0.3s ease';
+                card.style.boxShadow = '0 0 20px rgba(0, 242, 254, 0.3)';
+                card.style.borderColor = '#00f2fe';
             });
             
             card.addEventListener('mouseleave', () => {
-                this.resetGlow(card);
+                card.style.boxShadow = '';
+                card.style.borderColor = '';
             });
         });
     }
@@ -59,14 +59,10 @@ class NeonEffects {
             input.addEventListener('blur', () => {
                 this.removeNeonBorder(input);
             });
-            
-            input.addEventListener('input', (e) => {
-                this.typingEffect(input);
-            });
         });
     }
 
-    // Эффект для навигации
+    // Эффект для навигации (только подсветка)
     addNavEffects() {
         document.querySelectorAll('.nav-item').forEach(nav => {
             nav.addEventListener('mouseenter', () => {
@@ -85,18 +81,16 @@ class NeonEffects {
         });
     }
 
-    // Неоновый пульс
+    // Неоновый пульс (без изменения положения)
     neonPulse(element, color) {
-        element.style.transition = 'all 0.3s ease';
-        element.style.transform = 'translateY(-2px)';
-        element.style.boxShadow = `0 0 15px ${color}, 0 0 30px ${color}66`;
+        element.style.transition = 'all 0.2s ease';
+        element.style.boxShadow = `0 0 15px ${color}, 0 0 25px ${color}66`;
         if (element.classList.contains('glass')) {
             element.style.borderColor = color;
         }
     }
 
     removeNeonPulse(element) {
-        element.style.transform = '';
         element.style.boxShadow = '';
         if (element.classList.contains('glass')) {
             element.style.borderColor = '';
@@ -116,74 +110,38 @@ class NeonEffects {
         ripple.style.width = '0';
         ripple.style.height = '0';
         ripple.style.borderRadius = '50%';
-        ripple.style.background = 'radial-gradient(circle, rgba(0,242,254,0.4) 0%, rgba(0,242,254,0) 70%)';
+        ripple.style.background = 'radial-gradient(circle, rgba(0,242,254,0.3) 0%, rgba(0,242,254,0) 70%)';
         ripple.style.transform = 'translate(-50%, -50%)';
-        ripple.style.transition = 'all 0.5s ease-out';
+        ripple.style.transition = 'all 0.4s ease-out';
         ripple.style.pointerEvents = 'none';
         element.style.position = 'relative';
         element.style.overflow = 'hidden';
         element.appendChild(ripple);
         
         setTimeout(() => {
-            ripple.style.width = '300px';
-            ripple.style.height = '300px';
+            ripple.style.width = '200px';
+            ripple.style.height = '200px';
             ripple.style.opacity = '0';
         }, 10);
         
-        setTimeout(() => ripple.remove(), 500);
+        setTimeout(() => ripple.remove(), 400);
     }
 
-    // Эффект вспышки при клике
+    // Эффект вспышки при клике (быстрая)
     flashEffect(element) {
         const originalBg = element.style.background;
+        element.style.transition = 'background 0.05s ease';
         element.style.background = 'linear-gradient(135deg, #00f2fe, #4facfe)';
-        element.style.transition = 'background 0.1s ease';
         setTimeout(() => {
             element.style.background = originalBg;
-        }, 100);
-    }
-
-    // Волна при клике
-    createClickWave(element) {
-        const wave = document.createElement('div');
-        wave.className = 'click-wave';
-        wave.style.position = 'fixed';
-        wave.style.width = '10px';
-        wave.style.height = '10px';
-        wave.style.borderRadius = '50%';
-        wave.style.background = 'radial-gradient(circle, #00f2fe, #4facfe)';
-        wave.style.pointerEvents = 'none';
-        wave.style.zIndex = '9999';
-        wave.style.animation = 'waveExpand 0.6s ease-out forwards';
-        document.body.appendChild(wave);
-        
-        setTimeout(() => wave.remove(), 600);
-    }
-
-    // Параллаксное свечение
-    parallaxGlow(event, card) {
-        const rect = card.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / rect.width;
-        const y = (event.clientY - rect.top) / rect.height;
-        const glowX = (x - 0.5) * 20;
-        const glowY = (y - 0.5) * 20;
-        card.style.transform = `perspective(1000px) rotateX(${glowY * -0.5}deg) rotateY(${glowX * 0.5}deg) translateY(-5px)`;
-        card.style.transition = 'transform 0.1s ease';
-        
-        const gradient = `radial-gradient(circle at ${x * 100}% ${y * 100}%, rgba(0,242,254,0.15), rgba(79,172,254,0.05))`;
-        card.style.background = gradient + ', rgba(10, 10, 18, 0.6)';
-    }
-
-    resetGlow(card) {
-        card.style.transform = '';
-        card.style.background = '';
+        }, 80);
     }
 
     // Неоновая рамка для инпутов
     neonBorder(input, color) {
-        input.style.boxShadow = `0 0 10px ${color}, 0 0 20px ${color}66`;
+        input.style.boxShadow = `0 0 8px ${color}, 0 0 15px ${color}66`;
         input.style.borderColor = color;
-        input.style.transition = 'all 0.3s ease';
+        input.style.transition = 'all 0.2s ease';
     }
 
     removeNeonBorder(input) {
@@ -191,20 +149,7 @@ class NeonEffects {
         input.style.borderColor = '';
     }
 
-    // Эффект печати
-    typingEffect(input) {
-        const value = input.value;
-        const span = input.parentElement?.querySelector('.typing-indicator');
-        if (span) {
-            span.textContent = `✍️ ${value.length} символов`;
-            span.style.opacity = '1';
-            setTimeout(() => {
-                span.style.opacity = '0';
-            }, 1000);
-        }
-    }
-
-    // Частицы фона
+    // Частицы фона (лёгкие, не отвлекают)
     addParticleBackground() {
         const canvas = document.createElement('canvas');
         canvas.style.position = 'fixed';
@@ -214,7 +159,7 @@ class NeonEffects {
         canvas.style.height = '100%';
         canvas.style.pointerEvents = 'none';
         canvas.style.zIndex = '-1';
-        canvas.style.opacity = '0.3';
+        canvas.style.opacity = '0.15';
         document.body.appendChild(canvas);
         
         const ctx = canvas.getContext('2d');
@@ -227,14 +172,14 @@ class NeonEffects {
         
         function createParticles() {
             particles = [];
-            for (let i = 0; i < 50; i++) {
+            for (let i = 0; i < 30; i++) {
                 particles.push({
                     x: Math.random() * canvas.width,
                     y: Math.random() * canvas.height,
-                    radius: Math.random() * 2 + 1,
-                    speedX: (Math.random() - 0.5) * 0.5,
-                    speedY: (Math.random() - 0.5) * 0.5,
-                    color: `rgba(0, 242, 254, ${Math.random() * 0.3 + 0.1})`
+                    radius: Math.random() * 1.5,
+                    speedX: (Math.random() - 0.5) * 0.3,
+                    speedY: (Math.random() - 0.5) * 0.3,
+                    color: `rgba(0, 242, 254, ${Math.random() * 0.4 + 0.1})`
                 });
             }
         }
@@ -267,145 +212,40 @@ class NeonEffects {
         createParticles();
         drawParticles();
     }
-
-    // Глитч-эффект для заголовков
-    addGlitchEffect() {
-        const glitchElements = document.querySelectorAll('h1, h2, h3, .neon-text');
-        glitchElements.forEach(el => {
-            el.addEventListener('mouseenter', () => {
-                const originalText = el.textContent;
-                let glitchCount = 0;
-                const interval = setInterval(() => {
-                    if (glitchCount > 10) {
-                        clearInterval(interval);
-                        el.textContent = originalText;
-                        return;
-                    }
-                    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';
-                    let glitched = '';
-                    for (let i = 0; i < originalText.length; i++) {
-                        if (Math.random() > 0.7) {
-                            glitched += chars[Math.floor(Math.random() * chars.length)];
-                        } else {
-                            glitched += originalText[i];
-                        }
-                    }
-                    el.textContent = glitched;
-                    glitchCount++;
-                }, 50);
-            });
-        });
-    }
 }
 
-// ========== ЗАГРУЗКА С АНИМАЦИЕЙ ==========
+// ========== ЗАГРУЗКА ==========
 document.addEventListener('DOMContentLoaded', () => {
-    // Показываем контент с fade-in
-    document.querySelectorAll('.app-container, .glass, .balance-card').forEach(el => {
-        el.style.opacity = '0';
-        el.style.transform = 'translateY(20px)';
-        el.style.transition = 'all 0.5s ease';
-        setTimeout(() => {
-            el.style.opacity = '1';
-            el.style.transform = 'translateY(0)';
-        }, 100);
-    });
+    // Плавное появление контента (без задержек на каждом элементе)
+    const mainContainer = document.querySelector('.max-w-md') || document.body;
+    mainContainer.style.opacity = '0';
+    mainContainer.style.transition = 'opacity 0.4s ease';
+    setTimeout(() => {
+        mainContainer.style.opacity = '1';
+    }, 50);
     
     // Запускаем неоновые эффекты
     new NeonEffects();
-    
-    // Добавляем анимацию для скролла
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.style.opacity = '1';
-                entry.target.style.transform = 'translateY(0)';
-            }
-        });
-    }, { threshold: 0.1 });
-    
-    document.querySelectorAll('.glass, .deal-card, .plan-card').forEach(el => {
-        el.style.opacity = '0';
-        el.style.transform = 'translateY(30px)';
-        el.style.transition = 'all 0.5s ease';
-        observer.observe(el);
-    });
 });
 
 // ========== CSS АНИМАЦИИ ==========
 const style = document.createElement('style');
 style.textContent = `
-    @keyframes waveExpand {
-        0% {
-            width: 0;
-            height: 0;
-            opacity: 0.8;
-        }
-        100% {
-            width: 200px;
-            height: 200px;
-            opacity: 0;
-        }
-    }
-    
     @keyframes pulseGlow {
-        0%, 100% {
-            text-shadow: 0 0 5px #00f2fe, 0 0 10px #00f2fe;
-        }
-        50% {
-            text-shadow: 0 0 15px #00f2fe, 0 0 30px #00f2fe, 0 0 40px #00f2fe;
-        }
+        0%, 100% { text-shadow: 0 0 5px #00f2fe, 0 0 10px #00f2fe; }
+        50% { text-shadow: 0 0 12px #00f2fe, 0 0 20px #00f2fe; }
     }
     
     .animate-pulse-glow {
-        animation: pulseGlow 2s ease-in-out infinite;
-    }
-    
-    .btn-hover-effect {
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    
-    .btn-hover-effect:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 25px -5px rgba(0,242,254,0.3);
-    }
-    
-    .ripple-effect {
-        position: absolute;
-        border-radius: 50%;
-        transform: translate(-50%, -50%);
-        pointer-events: none;
-        animation: ripple 0.6s linear forwards;
-    }
-    
-    @keyframes ripple {
-        0% {
-            width: 0;
-            height: 0;
-            opacity: 0.5;
-        }
-        100% {
-            width: 500px;
-            height: 500px;
-            opacity: 0;
-        }
+        animation: pulseGlow 3s ease-in-out infinite;
     }
     
     .glass {
-        transition: all 0.3s ease;
-    }
-    
-    .glass:hover {
-        border-color: rgba(0, 242, 254, 0.3);
+        transition: all 0.2s ease;
     }
     
     input, textarea {
-        transition: all 0.3s ease;
-    }
-    
-    input:focus, textarea:focus {
-        outline: none;
-        transform: scale(1.02);
+        transition: all 0.2s ease;
     }
     
     .nav-item {
@@ -413,7 +253,7 @@ style.textContent = `
     }
     
     .nav-item:active {
-        transform: scale(0.95);
+        transform: scale(0.96);
     }
     
     .cyber-scan-line {
@@ -425,28 +265,24 @@ style.textContent = `
         pointer-events: none;
         background: linear-gradient(180deg, 
             transparent 0%, 
-            rgba(0, 242, 254, 0.05) 50%, 
+            rgba(0, 242, 254, 0.03) 50%, 
             transparent 100%);
-        animation: scanLine 8s linear infinite;
+        animation: scanLine 10s linear infinite;
         z-index: 9998;
     }
     
     @keyframes scanLine {
-        0% {
-            transform: translateY(-100%);
-        }
-        100% {
-            transform: translateY(100%);
-        }
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100%); }
     }
     
     .loading-spinner {
-        width: 40px;
-        height: 40px;
+        width: 36px;
+        height: 36px;
         border: 3px solid rgba(0, 242, 254, 0.2);
         border-top-color: #00f2fe;
         border-radius: 50%;
-        animation: spin 1s linear infinite;
+        animation: spin 0.8s linear infinite;
     }
     
     @keyframes spin {
@@ -455,35 +291,42 @@ style.textContent = `
     
     .toast-message {
         position: fixed;
-        bottom: 80px;
+        bottom: 90px;
         left: 50%;
         transform: translateX(-50%);
         background: rgba(0, 242, 254, 0.9);
         color: #0a0a12;
-        padding: 10px 20px;
+        padding: 8px 18px;
         border-radius: 30px;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 600;
         z-index: 10000;
         animation: toastFade 2s ease forwards;
     }
     
     @keyframes toastFade {
-        0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
-        10% { opacity: 1; transform: translateX(-50%) translateY(0); }
-        90% { opacity: 1; }
+        0% { opacity: 0; transform: translateX(-50%) translateY(15px); }
+        12% { opacity: 1; transform: translateX(-50%) translateY(0); }
+        88% { opacity: 1; }
         100% { opacity: 0; visibility: hidden; }
     }
+    
+    button, .action-card, .plan-card {
+        transition: all 0.15s ease;
+    }
+    
+    button:active, .action-card:active, .plan-card:active {
+        transform: scale(0.97);
+    }
 `;
-
 document.head.appendChild(style);
 
-// Добавляем сканирующую линию
+// Сканирующая линия
 const scanLine = document.createElement('div');
 scanLine.className = 'cyber-scan-line';
 document.body.appendChild(scanLine);
 
-// Функция для показа toast-уведомлений
+// Toast-уведомления
 window.showToast = (message, type = 'success') => {
     const toast = document.createElement('div');
     toast.className = 'toast-message';
@@ -498,9 +341,12 @@ window.showToast = (message, type = 'success') => {
     setTimeout(() => toast.remove(), 2000);
 };
 
-// Эффект "загрузки" при переходе между страницами
-document.querySelectorAll('a, .nav-item, [onclick]').forEach(el => {
+// Спиннер при клике на ссылки
+document.querySelectorAll('a, .nav-item, [data-page], [onclick]').forEach(el => {
     el.addEventListener('click', (e) => {
+        const href = el.getAttribute('href');
+        if (href && href.startsWith('http')) return;
+        
         const spinner = document.createElement('div');
         spinner.className = 'loading-spinner';
         spinner.style.position = 'fixed';
@@ -509,12 +355,18 @@ document.querySelectorAll('a, .nav-item, [onclick]').forEach(el => {
         spinner.style.transform = 'translate(-50%, -50%)';
         spinner.style.zIndex = '10001';
         document.body.appendChild(spinner);
-        setTimeout(() => spinner.remove(), 1000);
+        setTimeout(() => spinner.remove(), 800);
     });
 });
 
-document.getElementById('themeToggle')?.addEventListener('click', () => {
-    const isDark = document.body.classList.toggle('dark-theme');
-    document.body.style.backgroundColor = isDark ? '#0a0a12' : '#f0f0f0';
-    document.getElementById('themeToggle').textContent = isDark ? '🌞' : '🌙';
-});
+// Переключение темы (есть кнопка — работает, нет — ничего не ломается)
+const themeToggle = document.getElementById('themeToggle');
+if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+        const isDark = document.body.classList.toggle('dark-theme');
+        document.body.style.backgroundColor = isDark ? '#0a0a12' : '#f0f0f0';
+        themeToggle.textContent = isDark ? '☀️' : '🌙';
+    });
+}
+
+console.log('✅ Animations.js загружен (исправленная версия)');
