@@ -4,8 +4,6 @@ __pycache__/
 .env
 *.db
 *.sqlite3
-bot_config.py
-bot.py
 
 # IDE
 .vscode/
