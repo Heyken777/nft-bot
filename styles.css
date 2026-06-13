@@ -754,3 +754,91 @@ body[data-theme="dark"] {
         font-size: 12px;
     }
 }
+
+/* Дополнительные киберпанк анимации */
+@keyframes textGlitch {
+    0% { transform: skew(0deg, 0deg); text-shadow: 2px 0 #00f2fe, -2px 0 #4facfe; }
+    20% { transform: skew(2deg, 1deg); text-shadow: 3px 0 #00f2fe, -3px 0 #4facfe; }
+    40% { transform: skew(-2deg, -1deg); text-shadow: 4px 0 #00f2fe, -4px 0 #4facfe; }
+    60% { transform: skew(1deg, 0deg); text-shadow: 2px 0 #00f2fe, -2px 0 #4facfe; }
+    80% { transform: skew(-1deg, 1deg); text-shadow: 3px 0 #00f2fe, -3px 0 #4facfe; }
+    100% { transform: skew(0deg, 0deg); text-shadow: 2px 0 #00f2fe, -2px 0 #4facfe; }
+}
+
+.glitch-text:hover {
+    animation: textGlitch 0.3s ease-in-out;
+}
+
+/* Эффект голографической карточки */
+.hologram {
+    position: relative;
+    overflow: hidden;
+}
+
+.hologram::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(
+        45deg,
+        transparent 30%,
+        rgba(0, 242, 254, 0.1) 50%,
+        transparent 70%
+    );
+    transform: rotate(45deg);
+    animation: hologramShine 3s infinite;
+    pointer-events: none;
+}
+
+@keyframes hologramShine {
+    0% { transform: translateX(-100%) rotate(45deg); }
+    100% { transform: translateX(100%) rotate(45deg); }
+}
+
+/* Статус-индикаторы с пульсацией */
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 5px #10b981;
+    animation: pulseDot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+/* Hover эффект для кнопок с градиентом */
+.gradient-btn {
+    background-size: 200% 200%;
+    transition: all 0.3s ease;
+}
+
+.gradient-btn:hover {
+    background-position: 100% 100%;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(0, 242, 254, 0.4);
+}
+
+/* Эффект матрицы для фона (опционально) */
+.matrix-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.05;
+    background-image: repeating-linear-gradient(
+        0deg,
+        #00f2fe 1px,
+        transparent 1px,
+        transparent 20px
+    );
+}
