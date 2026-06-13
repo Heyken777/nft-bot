@@ -512,3 +512,9 @@ document.querySelectorAll('a, .nav-item, [onclick]').forEach(el => {
         setTimeout(() => spinner.remove(), 1000);
     });
 });
+
+document.getElementById('themeToggle')?.addEventListener('click', () => {
+    const isDark = document.body.classList.toggle('dark-theme');
+    document.body.style.backgroundColor = isDark ? '#0a0a12' : '#f0f0f0';
+    document.getElementById('themeToggle').textContent = isDark ? '🌞' : '🌙';
+});
