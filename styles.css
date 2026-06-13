@@ -842,3 +842,16 @@ body[data-theme="dark"] {
         transparent 20px
     );
 }
+
+/* Активная навигация */
+.nav-item.active svg {
+    color: #3b82f6;
+    filter: drop-shadow(0 0 5px #3b82f6);
+}
+.nav-item.active span {
+    color: #3b82f6;
+}
+.nav-item.active .nav-dot {
+    background: #3b82f6;
+    box-shadow: 0 0 5px #3b82f6;
+}
