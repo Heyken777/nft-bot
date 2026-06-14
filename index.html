@@ -487,7 +487,10 @@
                     if (page === 'premium') updatePremiumPage();
                     if (page === 'referral') updateReferralPage();
                     if (page === 'profile') updateProfilePage();
-                    if (page === 'settings') updateSettingsPage();
+                    if (page === 'settings') { 
+                        updateSettingsPage();
+                        attachPolicyAndTermsHandlers();
+                    }  
                 }
                 
                 function escapeHtml(str) { return str.replace(/[&<>]/g, function(m){ if(m === '&') return '&amp;'; if(m === '<') return '&lt;'; if(m === '>') return '&gt;'; return m;}); }
@@ -593,6 +596,85 @@
                 // Инициализация
                 loadUserData();
                 console.log('✅ Novix Gift Mini App загружен');
+
+            // --- Функция для загрузки внешних HTML-страниц в текущее окно ---
+            async function loadPageIntoContainer(pageUrl) {
+                // Показываем индикатор загрузки в контейнере настроек
+                const settingsContainer = document.querySelector('#page-settings .space-y-5');
+                if (!settingsContainer) return;
+
+                // Сохраняем оригинальное содержимое, чтобы можно было вернуться назад
+                const originalContent = settingsContainer.innerHTML;
+                settingsContainer.innerHTML = '<div class="text-center py-10"><div class="loading-spinner mx-auto mb-4"></div><p class="text-gray-400">Загрузка...</p></div>';
+
+                try {
+                    const response = await fetch(pageUrl);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    const htmlText = await response.text();
+
+                    // Извлекаем содержимое <body> из загруженного HTML
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(htmlText, 'text/html');
+                    const bodyContent = doc.body.innerHTML;
+
+                    // Встраиваем содержимое в контейнер и добавляем кнопку "Назад"
+                    settingsContainer.innerHTML = `
+                        <button class="back-from-policy w-full bg-white/5 border border-white/10 rounded-xl py-3 mb-4 text-sm font-medium flex items-center justify-center gap-2">
+                            ← Назад к настройкам
+                        </button>
+                        <div class="policy-content">
+                            ${bodyContent}
+                        </div>
+                    `;
+
+                    // Добавляем обработчик для новой кнопки "Назад"
+                    const backButton = settingsContainer.querySelector('.back-from-policy');
+                    if (backButton) {
+                        backButton.addEventListener('click', () => {
+                            // Восстанавливаем оригинальное содержимое страницы настроек
+                            settingsContainer.innerHTML = originalContent;
+                            // После восстановления нужно ПОВТОРНО привязать обработчики к кнопкам политик и соглашения
+                            attachPolicyAndTermsHandlers();
+                        });
+                    }
+
+                    // Перемещаем фокус вверх, чтобы пользователь видел начало документа
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                } catch (error) {
+                    console.error('Ошибка загрузки страницы:', error);
+                    settingsContainer.innerHTML = `<div class="text-center py-10 text-red-400">❌ Ошибка загрузки. <span class="text-blue-400 cursor-pointer" onclick="location.reload()">Попробовать снова?</span></div>`;
+                }
+            }
+
+            // --- Функция для привязки обработчиков к кнопкам политик и соглашения ---
+            function attachPolicyAndTermsHandlers() {
+                const privacyBtn = document.querySelector('.privacy-btn');
+                const termsBtn = document.querySelector('.terms-btn');
+
+                if (privacyBtn) {
+                    // Удаляем старый обработчик, чтобы не навешивать несколько
+                    privacyBtn.removeEventListener('click', privacyHandler);
+                    privacyHandler = () => loadPageIntoContainer('/privacy.html');
+                    privacyBtn.addEventListener('click', privacyHandler);
+                }
+
+                if (termsBtn) {
+                    termsBtn.removeEventListener('click', termsHandler);
+                    termsHandler = () => loadPageIntoContainer('/terms.html');
+                    termsBtn.addEventListener('click', termsHandler);
+                }
+            }
+
+            // Глобальные переменные для обработчиков, чтобы их можно было удалить
+            let privacyHandler, termsHandler;
+
+            // Запускаем привязку после загрузки DOM и после каждого обновления контента страницы настроек
+            document.addEventListener('DOMContentLoaded', () => {
+                attachPolicyAndTermsHandlers();
+                // Также нужно будет вызывать attachPolicyAndTermsHandlers() после каждого переключения на страницу настроек
+                // Например, внутри вашей функции navigateTo, при открытии страницы 'settings'
+            });
             </script>
             <script src="animations.js"></script>
         </body>
