@@ -17,44 +17,80 @@
         .neon-text {
             text-shadow: 0 0 10px #00f2fe, 0 0 20px #00f2fe66;
         }
+        .role-badge {
+            background: linear-gradient(135deg, #00f2fe20, #a855f720);
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .admin-badge {
+            background: linear-gradient(135deg, #f59e0b20, #ec489920);
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #f59e0b;
+        }
+        .edit-mode {
+            background: rgba(0, 242, 254, 0.1);
+            border-color: #00f2fe;
+        }
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+            background-size: 200% 100%;
+            animation: skeleton 1.5s infinite;
+        }
+        @keyframes skeleton {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
     </style>
 </head>
 <body class="bg-[#0a0a12] text-white">
     <div class="max-w-md mx-auto min-h-screen flex flex-col">
         
         <!-- Шапка -->
-        <div class="glass px-5 pt-6 pb-3 border-b border-white/10">
+        <div class="glass px-5 pt-6 pb-3 border-b border-white/10 sticky top-0 z-10">
             <div class="flex items-center gap-3">
                 <button onclick="window.history.back()" class="text-[#00f2fe] text-xl">←</button>
                 <h1 class="text-xl font-bold neon-text">👤 Мой профиль</h1>
             </div>
         </div>
         
-        <div class="flex-1 px-5 py-5 space-y-5 overflow-y-auto">
+        <div class="flex-1 px-5 py-5 space-y-5 overflow-y-auto pb-24">
             
             <!-- Аватар и основная информация -->
             <div class="glass rounded-2xl p-5 text-center border border-white/10">
                 <div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-[#00f2fe] to-[#a855f7] flex items-center justify-center text-3xl shadow-[0_0_20px_#00f2fe] mb-3">
                     👤
                 </div>
-                <h2 class="text-xl font-bold" id="profileName">Cyber User</h2>
-                <p class="text-gray-400 text-sm" id="profileUsername">@cyber_user</p>
+                <h2 class="text-xl font-bold" id="profileName">Загрузка...</h2>
+                <p class="text-gray-400 text-sm" id="profileUsername">@username</p>
                 <p class="text-xs text-gray-500 mt-1" id="profileId">ID: загрузка...</p>
+                <div class="flex justify-center gap-2 mt-2">
+                    <span class="role-badge" id="userRole">🆕 Новичок</span>
+                    <span class="admin-badge" id="adminBadge" style="display: none;">👑 Администратор</span>
+                </div>
             </div>
             
             <!-- Статистика -->
-            <div class="grid grid-cols-3 gap-3">
-                <div class="glass rounded-xl p-3 text-center border border-white/10">
-                    <div class="text-2xl font-bold text-[#00f2fe]" id="statDeals">0</div>
-                    <div class="text-xs text-gray-400">Всего сделок</div>
+            <div class="grid grid-cols-4 gap-2">
+                <div class="glass rounded-xl p-2 text-center border border-white/10">
+                    <div class="text-xl font-bold text-[#00f2fe]" id="statDeals">0</div>
+                    <div class="text-[10px] text-gray-400">Сделок</div>
                 </div>
-                <div class="glass rounded-xl p-3 text-center border border-white/10">
-                    <div class="text-2xl font-bold text-emerald-400" id="statCompleted">0</div>
-                    <div class="text-xs text-gray-400">Завершено</div>
+                <div class="glass rounded-xl p-2 text-center border border-white/10">
+                    <div class="text-xl font-bold text-emerald-400" id="statCompleted">0</div>
+                    <div class="text-[10px] text-gray-400">Завершено</div>
                 </div>
-                <div class="glass rounded-xl p-3 text-center border border-white/10">
-                    <div class="text-2xl font-bold text-[#f59e0b]" id="statRating">0</div>
-                    <div class="text-xs text-gray-400">⭐ Рейтинг</div>
+                <div class="glass rounded-xl p-2 text-center border border-white/10">
+                    <div class="text-xl font-bold text-[#f59e0b]" id="statRating">0</div>
+                    <div class="text-[10px] text-gray-400">⭐ Рейтинг</div>
+                </div>
+                <div class="glass rounded-xl p-2 text-center border border-white/10">
+                    <div class="text-xl font-bold text-purple-400" id="statRoleLevel">0</div>
+                    <div class="text-[10px] text-gray-400">Уровень</div>
                 </div>
             </div>
             
@@ -74,77 +110,60 @@
                 </div>
             </div>
             
-            <!-- Балансы по валютам -->
+            <!-- Балансы по валютам (ВСЕ 10 ВАЛЮТ) -->
             <div class="glass rounded-2xl p-4 border border-white/10">
                 <div class="flex justify-between items-center mb-3">
                     <span class="font-semibold">💼 Мои балансы</span>
-                    <span class="text-xs text-gray-500">Обновлено: сейчас</span>
+                    <span class="text-xs text-gray-500" id="balanceUpdateTime">Обновлено: сейчас</span>
                 </div>
-                <div class="space-y-3" id="balancesList">
-                    <div class="flex justify-between items-center">
-                        <span>🇷🇺 RUB</span>
-                        <span class="font-mono" id="rubBalance">0</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span>🇺🇸 USD</span>
-                        <span class="font-mono" id="usdBalance">0</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span>💎 TON</span>
-                        <span class="font-mono" id="tonBalance">0</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span>⭐️ STARS</span>
-                        <span class="font-mono" id="starsBalance">0</span>
-                    </div>
+                <div class="space-y-2" id="balancesList">
+                    <div class="skeleton h-12 rounded-xl"></div>
+                    <div class="skeleton h-12 rounded-xl"></div>
+                    <div class="skeleton h-12 rounded-xl"></div>
                 </div>
             </div>
             
-            <!-- Реквизиты -->
+            <!-- Реквизиты для вывода -->
             <div class="glass rounded-2xl p-4 border border-white/10">
                 <div class="font-semibold mb-3">💳 Реквизиты для вывода</div>
                 <div class="space-y-3">
                     <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-400">Карта:</span>
+                        <span class="text-sm text-gray-400">💳 Карта:</span>
                         <span class="text-sm font-mono" id="cardDetails">не указана</span>
+                        <button class="edit-card-btn text-blue-400 text-xs" data-type="card">✏️</button>
                     </div>
                     <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-400">TON кошелёк:</span>
-                        <span class="text-sm font-mono" id="tonDetails">не указан</span>
+                        <span class="text-sm text-gray-400">💎 TON кошелёк:</span>
+                        <span class="text-sm font-mono truncate max-w-[150px]" id="tonDetails">не указан</span>
+                        <button class="edit-ton-btn text-blue-400 text-xs" data-type="ton">✏️</button>
                     </div>
                 </div>
-                <button class="w-full mt-3 bg-[#00f2fe]/20 border border-[#00f2fe]/50 rounded-xl py-2 text-sm" id="editDetailsBtn">
-                    ✏️ Редактировать
-                </button>
             </div>
+            
+            <!-- Кнопка выхода -->
+            <button class="w-full bg-red-600/20 border border-red-500/30 rounded-xl py-3 text-red-400 font-medium" id="logoutBtn">
+                🚪 Выйти из аккаунта
+            </button>
             
         </div>
         
         <!-- Нижняя навигация -->
-        <div class="glass border-t border-white/10 py-2 px-4">
+        <div class="glass border-t border-white/10 py-2 px-4 fixed bottom-0 max-w-md w-full z-20">
             <div class="flex justify-around items-center">
                 <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="navigateTo('home')">
-                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-                    </svg>
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
                     <span class="text-[9px] text-gray-400">Главная</span>
                 </div>
                 <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="navigateTo('deals')">
-                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.25-6h-2.5" />
-                    </svg>
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25"/></svg>
                     <span class="text-[9px] text-gray-400">Сделки</span>
                 </div>
                 <div class="flex flex-col items-center gap-1 cursor-pointer active">
-                    <svg class="w-5 h-5 text-[#00f2fe]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                    </svg>
+                    <svg class="w-5 h-5 text-[#00f2fe]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
                     <span class="text-[9px] text-[#00f2fe]">Профиль</span>
                 </div>
                 <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="navigateTo('premium')">
-                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.562.562 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-                    </svg>
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.562.562 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/></svg>
                     <span class="text-[9px] text-gray-400">Premium</span>
                 </div>
             </div>
@@ -156,72 +175,192 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         
-        // Получаем данные пользователя из Telegram
-        const user = tg.initDataUnsafe?.user || {};
-        const userId = user.id;
-        const username = user.username || user.first_name || 'Cyber User';
+        // Данные пользователя
+        let userData = {
+            id: tg.initDataUnsafe?.user?.id || 0,
+            username: tg.initDataUnsafe?.user?.username || '',
+            firstName: tg.initDataUnsafe?.user?.first_name || '',
+            is_premium: false,
+            rating: 0,
+            deals: [],
+            card: '',
+            ton: '',
+            is_admin: false
+        };
         
-        // Функция навигации
-        function navigateTo(page) {
-            tg.close();
-            tg.openTelegramLink(`https://t.me/NovixGift_Bot?startapp=${page}`);
+        // Символы валют
+        const currencySymbols = { 
+            RUB: '🇷🇺', USD: '🇺🇸', EUR: '🇪🇺', UAH: '🇺🇦', KZT: '🇰🇿', 
+            UZS: '🇺🇿', BYN: '🇧🇾', TON: '💎', USDT: '💵', STARS: '⭐️' 
+        };
+        
+        // Курсы валют (будут обновляться из API)
+        let rates = { RUB: 1, USD: 92.5, EUR: 100, UAH: 2.5, KZT: 0.2, UZS: 0.007, BYN: 35, TON: 500, USDT: 92, STARS: 1.5 };
+        
+        function formatNumber(n) { return (n || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+        function showToast(msg, type = 'success') { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; t.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#1f2937;color:white;padding:10px 20px;border-radius:40px;font-size:14px;z-index:1000;'; document.body.appendChild(t); setTimeout(() => t.remove(), 2000); }
+        
+        function navigateTo(page) { tg.close(); tg.openTelegramLink(`https://t.me/NovixGift_Bot?startapp=${page}`); }
+        
+        // Получение роли по количеству сделок
+        function getUserRole(dealsCount) {
+            if (dealsCount >= 100) return '👑 Бог сделок';
+            if (dealsCount >= 50) return '💰 Скупщик';
+            if (dealsCount >= 25) return '⚡ Опытный трейдер';
+            if (dealsCount >= 10) return '📈 Активный пользователь';
+            if (dealsCount >= 5) return '🟢 Начинающий трейдер';
+            return '🆕 Новичок';
         }
         
-        // Загрузка данных профиля (имитация, в реальности через API к боту)
-        function loadProfileData() {
-            document.getElementById('profileName').innerText = username;
-            document.getElementById('profileUsername').innerText = `@${user.username || 'user'}`;
-            document.getElementById('profileId').innerText = `ID: ${userId || 'загрузка...'}`;
+        // Загрузка данных из API бота
+        async function loadProfileData() {
+            try {
+                const response = await fetch(`/api/user?user_id=${userData.id}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    userData = { ...userData, ...data };
+                    userData.is_admin = data.is_admin || false;
+                    
+                    // Обновляем курсы валют
+                    if (data.rates) rates = { ...rates, ...data.rates };
+                }
+            } catch (error) {
+                console.error('API error:', error);
+            }
+            renderProfile();
+        }
+        
+        // Сохранение карты
+        async function saveCard(cardNumber) {
+            try {
+                const response = await fetch('/api/save_card', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userData.id, card: cardNumber })
+                });
+                if (response.ok) {
+                    userData.card = cardNumber;
+                    showToast('✅ Карта сохранена!');
+                    renderProfile();
+                    return true;
+                }
+            } catch (error) { console.error(error); }
+            showToast('❌ Ошибка сохранения карты', 'error');
+            return false;
+        }
+        
+        // Сохранение TON кошелька
+        async function saveTonWallet(wallet) {
+            try {
+                const response = await fetch('/api/save_ton', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userData.id, ton: wallet })
+                });
+                if (response.ok) {
+                    userData.ton = wallet;
+                    showToast('✅ TON кошелёк сохранён!');
+                    renderProfile();
+                    return true;
+                }
+            } catch (error) { console.error(error); }
+            showToast('❌ Ошибка сохранения TON кошелька', 'error');
+            return false;
+        }
+        
+        // Отображение профиля
+        function renderProfile() {
+            const completedCount = userData.deals?.filter(d => d.status === 'completed').length || 0;
+            const totalCount = userData.deals?.length || 0;
+            const role = getUserRole(completedCount);
             
-            // Пример данных (заменить на реальные из бота)
-            document.getElementById('statDeals').innerText = '12';
-            document.getElementById('statCompleted').innerText = '8';
-            document.getElementById('statRating').innerText = '4.8';
-            document.getElementById('rubBalance').innerText = '2,499 RUB';
-            document.getElementById('usdBalance').innerText = '25.50 USD';
-            document.getElementById('tonBalance').innerText = '2.25 TON';
-            document.getElementById('starsBalance').innerText = '150 STARS';
-            document.getElementById('cardDetails').innerText = '**** **** **** 1234';
-            document.getElementById('tonDetails').innerText = 'UQCD39VS5jcptHL8...';
+            document.getElementById('profileName').innerText = userData.firstName || userData.username || 'Гость';
+            document.getElementById('profileUsername').innerText = userData.username ? `@${userData.username}` : 'не авторизован';
+            document.getElementById('profileId').innerText = `ID: ${userData.id || '?'}`;
+            document.getElementById('statDeals').innerText = totalCount;
+            document.getElementById('statCompleted').innerText = completedCount;
+            document.getElementById('statRating').innerText = userData.rating || 0;
+            document.getElementById('statRoleLevel').innerText = Math.min(5, Math.floor(completedCount / 20) + 1);
+            document.getElementById('userRole').innerText = role;
             
-            const isPremium = false;
-            if (isPremium) {
-                document.getElementById('premiumStatus').innerHTML = '✅ Активен до 15.07.2026';
+            if (userData.is_admin) {
+                document.getElementById('adminBadge').style.display = 'inline-block';
+            }
+            
+            if (userData.is_premium) {
+                document.getElementById('premiumStatus').innerHTML = '✅ Активен';
                 document.getElementById('upgradePremiumBtn').style.display = 'none';
             } else {
                 document.getElementById('premiumStatus').innerHTML = '❌ Не активен';
             }
+            
+            // Все 10 валют
+            const balancesList = document.getElementById('balancesList');
+            const currencies = ['RUB', 'USD', 'EUR', 'UAH', 'KZT', 'UZS', 'BYN', 'TON', 'USDT', 'STARS'];
+            balancesList.innerHTML = '';
+            
+            for (const curr of currencies) {
+                const amount = userData.balances?.[curr] || 0;
+                const rubEquivalent = amount * (rates[curr] || 1);
+                balancesList.innerHTML += `
+                    <div class="flex justify-between items-center py-2 border-b border-white/5">
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">${currencySymbols[curr]}</span>
+                            <span class="font-medium">${curr}</span>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-semibold text-emerald-400">${formatNumber(amount)} ${curr}</div>
+                            <div class="text-xs text-gray-500">≈ ${formatNumber(rubEquivalent)} RUB</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Маскировка карты
+            let maskedCard = 'не указана';
+            if (userData.card && userData.card.length >= 16) {
+                maskedCard = `${userData.card.slice(0, 4)} **** **** ${userData.card.slice(-4)}`;
+            } else if (userData.card) {
+                maskedCard = userData.card;
+            }
+            document.getElementById('cardDetails').innerText = maskedCard;
+            document.getElementById('tonDetails').innerText = userData.ton || 'не указан';
+            document.getElementById('balanceUpdateTime').innerText = `Обновлено: ${new Date().toLocaleTimeString()}`;
         }
         
-        // Кнопка редактирования
-        document.getElementById('editDetailsBtn').onclick = () => {
+        // Обработчики редактирования
+        document.querySelector('.edit-card-btn')?.addEventListener('click', () => {
             tg.showPopup({
-                title: 'Редактирование реквизитов',
-                message: 'Укажите данные для вывода средств:',
-                buttons: [
-                    {id: 'card', type: 'default', text: '💳 Карта'},
-                    {id: 'ton', type: 'default', text: '💎 TON'},
-                    {id: 'cancel', type: 'cancel', text: 'Отмена'}
-                ]
-            }, (buttonId) => {
-                if (buttonId === 'card') {
-                    tg.showPopup({
-                        title: 'Введите номер карты',
-                        message: 'Формат: 16 цифр',
-                        buttons: [{type: 'default', text: 'OK'}]
-                    });
-                } else if (buttonId === 'ton') {
-                    tg.showPopup({
-                        title: 'Введите TON кошелек',
-                        message: 'Адрес начинается с UQ или EQ',
-                        buttons: [{type: 'default', text: 'OK'}]
-                    });
+                title: '💳 Введите номер карты',
+                message: 'Формат: 16 цифр',
+                buttons: [{ type: 'default', text: 'OK' }]
+            }, (text) => {
+                if (text && text.trim()) {
+                    const card = text.trim().replace(/\s/g, '');
+                    if (/^\d{16}$/.test(card)) saveCard(card);
+                    else showToast('❌ Неверный формат карты', 'error');
                 }
             });
-        };
+        });
+        
+        document.querySelector('.edit-ton-btn')?.addEventListener('click', () => {
+            tg.showPopup({
+                title: '💎 Введите TON кошелек',
+                message: 'Адрес начинается с UQ или EQ',
+                buttons: [{ type: 'default', text: 'OK' }]
+            }, (text) => {
+                if (text && text.trim()) {
+                    const wallet = text.trim();
+                    if (wallet.startsWith('UQ') || wallet.startsWith('EQ')) saveTonWallet(wallet);
+                    else showToast('❌ Неверный формат TON кошелька', 'error');
+                }
+            });
+        });
         
         document.getElementById('upgradePremiumBtn').onclick = () => navigateTo('premium');
+        document.getElementById('logoutBtn').onclick = () => { tg.close(); };
         
+        // Загрузка данных
         loadProfileData();
     </script>
     <script src="animations.js"></script>

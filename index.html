@@ -705,7 +705,27 @@
 
             // Загружаем курсы при старте и каждый час
             loadCurrencyRates();
-            setInterval(loadCurrencyRates, 60 * 60 * 1000); // Каждый час             
+            setInterval(loadCurrencyRates, 60 * 60 * 1000); // Каждый час
+            
+            // Добавь переменную для роли
+            let userRole = '🆕 Новичок';
+
+            // Функция для получения роли
+            function getUserRole(dealsCount) {
+                if (dealsCount >= 100) return '👑 Бог сделок';
+                if (dealsCount >= 50) return '💰 Скупщик';
+                if (dealsCount >= 25) return '⚡ Опытный трейдер';
+                if (dealsCount >= 10) return '📈 Активный пользователь';
+                if (dealsCount >= 5) return '🟢 Начинающий трейдер';
+                return '🆕 Новичок';
+            }
+
+            // В updateProfilePage добавь:
+            const completedCount = userData.deals?.filter(d => d.status === 'completed').length || 0;
+            userRole = getUserRole(completedCount);
+
+            // В HTML профиля добавь строку с ролью
+            document.getElementById('userRole').innerHTML = userRole;            
             </script>
             <script src="animations.js"></script>
         </body>

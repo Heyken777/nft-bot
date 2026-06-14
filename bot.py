@@ -213,6 +213,21 @@ def currency_kb():
         [InlineKeyboardButton(text="🔙 Назад", callback_data="menu")]
     ])
 
+def get_user_role(deals_count: int) -> str:
+    """Возвращает роль пользователя в зависимости от количества сделок"""
+    if deals_count >= 100:
+        return "👑 Бог сделок"
+    elif deals_count >= 50:
+        return "💰 Скупщик"
+    elif deals_count >= 25:
+        return "⚡ Опытный трейдер"
+    elif deals_count >= 10:
+        return "📈 Активный пользователь"
+    elif deals_count >= 5:
+        return "🟢 Начинающий трейдер"
+    else:
+        return "🆕 Новичок"
+
 def admin_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 Зачислить", callback_data="admin_credit"),
@@ -1130,6 +1145,19 @@ async def set_ton_msg(msg: types.Message, state: FSMContext):
     await state.clear()
     await msg.answer("✅ *TON кошелек сохранен!*", parse_mode="Markdown", reply_markup=back_kb())
 
+async def handle_save_card(request):
+    data = await request.json()
+    user_id = data.get('user_id')
+    card = data.get('card')
+    db.set_card(user_id, card)
+    return web.json_response({'success': True})
+
+async def handle_save_ton(request):
+    data = await request.json()
+    user_id = data.get('user_id')
+    ton = data.get('ton')
+    db.set_ton(user_id, ton)
+    return web.json_response({'success': True})
 
 @dp.callback_query(lambda c: c.data == "profile")
 async def profile_cb(call: CallbackQuery):
@@ -1139,6 +1167,13 @@ async def profile_cb(call: CallbackQuery):
     
     is_premium = db.is_premium(call.from_user.id)
     premium_info = db.get_premium_info(call.from_user.id)
+    
+    # Получаем количество завершённых сделок
+    deals = db.get_user_deals(call.from_user.id)
+    completed_deals = len([d for d in deals if d[6] == "completed"])
+    
+    # Получаем роль пользователя
+    role = get_user_role(completed_deals)
     
     # Формируем балансы
     balances = ""
@@ -1164,10 +1199,17 @@ async def profile_cb(call: CallbackQuery):
     else:
         premium_status = "❌ Не активен"
     
+    # Проверка, является ли пользователь администратором
+    is_admin = call.from_user.id in ADMIN_IDS
+    admin_badge = "👑 *Администратор*\n" if is_admin else ""
+    
     text = (
         f"👤 *Личный кабинет*\n\n"
+        f"{admin_badge}"
         f"🆔 Ваш ID: `{user[0]}`\n"
-        f"🔗 Username: @{escape_md(user[1] or 'без username')}\n\n"
+        f"🔗 Username: @{escape_md(user[1] or 'без username')}\n"
+        f"🏆 Роль: {role}\n"
+        f"📊 Сделок завершено: {completed_deals}\n\n"
         f"💼 *Баланс:*\n{balances}\n"
         f"💎 TON-кошелёк: {escape_md(ton)}\n\n"
         f"💳 Карта для вывода:\n{escape_md(card)}\n\n"
@@ -1986,6 +2028,8 @@ async def handle_create_deal(request):
 async def start_api():
     app = web.Application()
     app.router.add_post('/api/create_deal', handle_create_deal)
+    app.router.add_post('/api/save_card', handle_save_card)
+    app.router.add_post('/api/save_ton', handle_save_ton)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, 'localhost', 8080)
