@@ -1,372 +1,327 @@
-// animations.js - Киберпанк анимации для Novix Gift (исправленная версия)
+// ========== АНИМАЦИИ ДЛЯ NOVIX GIFT ==========
+// Современные крипто-кошельковые эффекты
 
-// ========== НЕОНОВЫЕ ЭФФЕКТЫ (БЕЗ ПАРАЛЛАКСА) ==========
-class NeonEffects {
+class NovixAnimations {
     constructor() {
         this.init();
     }
 
     init() {
-        this.addButtonEffects();
-        this.addCardEffects();
-        this.addInputEffects();
-        this.addNavEffects();
-        this.addParticleBackground();
-        // Глитч-эффект УБРАН - больше не будет "взрывать" текст
+        this.addFadeInOnLoad();
+        this.addSlideUpOnScroll();
+        this.addStaggerAnimation();
+        this.addRippleEffect();
+        this.addGlowOnHover();
+        this.addScaleOnTap();
+        this.addFloatingAnimation();
+        this.addNeonPulse();
+        this.addSkeletonLoader();
+        this.initIntersectionObserver();
+        this.addParallaxGlow();
     }
 
-    // Эффект для кнопок (только свечение, без изменения положения)
-    addButtonEffects() {
-        document.querySelectorAll('button, .btn, .plan-card, .action-card, .currency-option, .filter-btn').forEach(btn => {
-            btn.addEventListener('mouseenter', (e) => {
-                this.neonPulse(btn, '#00f2fe');
-                this.createRipple(e, btn);
-            });
-            
-            btn.addEventListener('mouseleave', () => {
-                this.removeNeonPulse(btn);
-            });
-            
-            btn.addEventListener('click', (e) => {
-                this.flashEffect(btn);
+    // 1. Fade In при загрузке
+    addFadeInOnLoad() {
+        document.querySelectorAll('.page.active .glass, .page.active .glass-light, .page.active .balance-card').forEach(el => {
+            el.style.opacity = '0';
+            el.style.animation = 'fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards';
+        });
+    }
+
+    // 2. Slide Up при скролле
+    addSlideUpOnScroll() {
+        const elements = document.querySelectorAll('.deal-card, .currency-item, .action-card');
+        elements.forEach((el, index) => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(20px)';
+            el.style.transition = `all 0.4s cubic-bezier(0.4, 0, 0.2, 1) ${index * 0.05}s`;
+        });
+    }
+
+    // 3. Stagger анимация для списков
+    addStaggerAnimation() {
+        const containers = ['.deals-list', '#allBalancesList', '#profileBalances'];
+        containers.forEach(selector => {
+            const container = document.querySelector(selector);
+            if (container) {
+                const items = container.children;
+                Array.from(items).forEach((item, i) => {
+                    item.style.opacity = '0';
+                    item.style.transform = 'translateX(-10px)';
+                    item.style.transition = `all 0.3s cubic-bezier(0.4, 0, 0.2, 1) ${i * 0.03}s`;
+                    setTimeout(() => {
+                        item.style.opacity = '1';
+                        item.style.transform = 'translateX(0)';
+                    }, 100);
+                });
+            }
+        });
+    }
+
+    // 4. Ripple эффект при клике
+    addRippleEffect() {
+        document.querySelectorAll('button, .action-card, .nav-item, .plan-card, .currency-item').forEach(el => {
+            el.addEventListener('click', (e) => {
+                const rect = el.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                const ripple = document.createElement('span');
+                ripple.style.position = 'absolute';
+                ripple.style.left = `${x}px`;
+                ripple.style.top = `${y}px`;
+                ripple.style.width = '10px';
+                ripple.style.height = '10px';
+                ripple.style.borderRadius = '50%';
+                ripple.style.background = 'radial-gradient(circle, rgba(123, 63, 242, 0.6), rgba(123, 63, 242, 0) 70%)';
+                ripple.style.transform = 'scale(0)';
+                ripple.style.animation = 'ripple 0.6s ease-out';
+                ripple.style.pointerEvents = 'none';
+                
+                el.style.position = 'relative';
+                el.style.overflow = 'hidden';
+                el.appendChild(ripple);
+                
+                setTimeout(() => ripple.remove(), 600);
             });
         });
     }
 
-    // Эффект для карточек - ТОЛЬКО СВЕЧЕНИЕ, БЕЗ ДВИЖЕНИЯ
-    addCardEffects() {
-        document.querySelectorAll('.glass, .balance-card, .deal-card, .premium-card').forEach(card => {
-            card.addEventListener('mouseenter', () => {
-                card.style.transition = 'all 0.3s ease';
-                card.style.boxShadow = '0 0 20px rgba(0, 242, 254, 0.3)';
-                card.style.borderColor = '#00f2fe';
+    // 5. Glow эффект при наведении
+    addGlowOnHover() {
+        document.querySelectorAll('.glass, .glass-light, .balance-card').forEach(el => {
+            el.addEventListener('mouseenter', () => {
+                el.style.transition = 'all 0.3s ease';
+                el.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.35), 0 0 30px rgba(123, 63, 242, 0.2)';
+                if (el.classList.contains('glass')) {
+                    el.style.borderColor = 'rgba(123, 63, 242, 0.3)';
+                }
+            });
+            
+            el.addEventListener('mouseleave', () => {
+                el.style.boxShadow = '';
+                if (el.classList.contains('glass')) {
+                    el.style.borderColor = '';
+                }
+            });
+        });
+    }
+
+    // 6. Scale on Tap (для мобильных)
+    addScaleOnTap() {
+        document.querySelectorAll('button, .action-card, .plan-card, .currency-item, .nav-item').forEach(el => {
+            el.addEventListener('touchstart', () => {
+                el.style.transform = 'scale(0.97)';
+            });
+            el.addEventListener('touchend', () => {
+                el.style.transform = '';
+            });
+            el.addEventListener('touchcancel', () => {
+                el.style.transform = '';
+            });
+        });
+    }
+
+    // 7. Floating анимация для элементов
+    addFloatingAnimation() {
+        const floatElements = document.querySelectorAll('.balance-card, .premium-card, .action-card');
+        floatElements.forEach((el, index) => {
+            el.style.animation = `float 4s ease-in-out ${index * 0.5}s infinite`;
+        });
+        
+        // Добавляем стиль для floating
+        if (!document.querySelector('#float-style')) {
+            const style = document.createElement('style');
+            style.id = 'float-style';
+            style.textContent = `
+                @keyframes float {
+                    0%, 100% { transform: translateY(0px); }
+                    50% { transform: translateY(-5px); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
+    // 8. Neon Pulse для активных элементов
+    addNeonPulse() {
+        const activeElements = document.querySelectorAll('.nav-item.active, .filter-btn.active, .plan-card.selected');
+        activeElements.forEach(el => {
+            el.style.animation = 'neonPulse 2s ease-in-out infinite';
+        });
+        
+        if (!document.querySelector('#neon-style')) {
+            const style = document.createElement('style');
+            style.id = 'neon-style';
+            style.textContent = `
+                @keyframes neonPulse {
+                    0%, 100% { 
+                        box-shadow: 0 0 5px rgba(123, 63, 242, 0.3);
+                        border-color: rgba(123, 63, 242, 0.5);
+                    }
+                    50% { 
+                        box-shadow: 0 0 20px rgba(123, 63, 242, 0.6);
+                        border-color: rgba(123, 63, 242, 0.8);
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
+    // 9. Skeleton Loader для загрузки
+    addSkeletonLoader() {
+        const loadingElements = document.querySelectorAll('.loading, [data-loading]');
+        loadingElements.forEach(el => {
+            el.classList.add('shimmer');
+        });
+    }
+
+    // 10. Intersection Observer для анимации при скролле
+    initIntersectionObserver() {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    if (entry.target.classList.contains('stagger-item')) {
+                        const children = entry.target.children;
+                        Array.from(children).forEach((child, i) => {
+                            setTimeout(() => {
+                                child.style.opacity = '1';
+                                child.style.transform = 'translateY(0)';
+                            }, i * 50);
+                        });
+                    }
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+        document.querySelectorAll('.stagger-item, .deal-card, .currency-item').forEach(el => {
+            observer.observe(el);
+        });
+    }
+
+    // 11. Parallax Glow (движение за мышью)
+    addParallaxGlow() {
+        const cards = document.querySelectorAll('.balance-card, .glass');
+        cards.forEach(card => {
+            card.addEventListener('mousemove', (e) => {
+                const rect = card.getBoundingClientRect();
+                const x = (e.clientX - rect.left) / rect.width;
+                const y = (e.clientY - rect.top) / rect.height;
+                
+                const glowX = (x - 0.5) * 20;
+                const glowY = (y - 0.5) * 20;
+                
+                card.style.transform = `perspective(1000px) rotateX(${glowY * -0.3}deg) rotateY(${glowX * 0.3}deg)`;
+                card.style.transition = 'transform 0.1s ease';
             });
             
             card.addEventListener('mouseleave', () => {
-                card.style.boxShadow = '';
-                card.style.borderColor = '';
+                card.style.transform = '';
             });
         });
-    }
-
-    // Эффект для полей ввода
-    addInputEffects() {
-        document.querySelectorAll('input, textarea').forEach(input => {
-            input.addEventListener('focus', () => {
-                this.neonBorder(input, '#00f2fe');
-            });
-            
-            input.addEventListener('blur', () => {
-                this.removeNeonBorder(input);
-            });
-        });
-    }
-
-    // Эффект для навигации (только подсветка)
-    addNavEffects() {
-        document.querySelectorAll('.nav-item').forEach(nav => {
-            nav.addEventListener('mouseenter', () => {
-                const icon = nav.querySelector('svg');
-                const text = nav.querySelector('span');
-                if (icon) icon.style.filter = 'drop-shadow(0 0 5px #00f2fe)';
-                if (text) text.style.color = '#00f2fe';
-            });
-            
-            nav.addEventListener('mouseleave', () => {
-                const icon = nav.querySelector('svg');
-                const text = nav.querySelector('span');
-                if (icon && !nav.classList.contains('active')) icon.style.filter = 'none';
-                if (text && !nav.classList.contains('active')) text.style.color = '';
-            });
-        });
-    }
-
-    // Неоновый пульс (без изменения положения)
-    neonPulse(element, color) {
-        element.style.transition = 'all 0.2s ease';
-        element.style.boxShadow = `0 0 15px ${color}, 0 0 25px ${color}66`;
-        if (element.classList.contains('glass')) {
-            element.style.borderColor = color;
-        }
-    }
-
-    removeNeonPulse(element) {
-        element.style.boxShadow = '';
-        if (element.classList.contains('glass')) {
-            element.style.borderColor = '';
-        }
-    }
-
-    // Эффект ряби при наведении
-    createRipple(event, element) {
-        const ripple = document.createElement('div');
-        ripple.className = 'ripple-effect';
-        const rect = element.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
-        ripple.style.left = `${x}px`;
-        ripple.style.top = `${y}px`;
-        ripple.style.position = 'absolute';
-        ripple.style.width = '0';
-        ripple.style.height = '0';
-        ripple.style.borderRadius = '50%';
-        ripple.style.background = 'radial-gradient(circle, rgba(0,242,254,0.3) 0%, rgba(0,242,254,0) 70%)';
-        ripple.style.transform = 'translate(-50%, -50%)';
-        ripple.style.transition = 'all 0.4s ease-out';
-        ripple.style.pointerEvents = 'none';
-        element.style.position = 'relative';
-        element.style.overflow = 'hidden';
-        element.appendChild(ripple);
-        
-        setTimeout(() => {
-            ripple.style.width = '200px';
-            ripple.style.height = '200px';
-            ripple.style.opacity = '0';
-        }, 10);
-        
-        setTimeout(() => ripple.remove(), 400);
-    }
-
-    // Эффект вспышки при клике (быстрая)
-    flashEffect(element) {
-        const originalBg = element.style.background;
-        element.style.transition = 'background 0.05s ease';
-        element.style.background = 'linear-gradient(135deg, #00f2fe, #4facfe)';
-        setTimeout(() => {
-            element.style.background = originalBg;
-        }, 80);
-    }
-
-    // Неоновая рамка для инпутов
-    neonBorder(input, color) {
-        input.style.boxShadow = `0 0 8px ${color}, 0 0 15px ${color}66`;
-        input.style.borderColor = color;
-        input.style.transition = 'all 0.2s ease';
-    }
-
-    removeNeonBorder(input) {
-        input.style.boxShadow = '';
-        input.style.borderColor = '';
-    }
-
-    // Частицы фона (лёгкие, не отвлекают)
-    addParticleBackground() {
-        const canvas = document.createElement('canvas');
-        canvas.style.position = 'fixed';
-        canvas.style.top = '0';
-        canvas.style.left = '0';
-        canvas.style.width = '100%';
-        canvas.style.height = '100%';
-        canvas.style.pointerEvents = 'none';
-        canvas.style.zIndex = '-1';
-        canvas.style.opacity = '0.15';
-        document.body.appendChild(canvas);
-        
-        const ctx = canvas.getContext('2d');
-        let particles = [];
-        
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        
-        function createParticles() {
-            particles = [];
-            for (let i = 0; i < 30; i++) {
-                particles.push({
-                    x: Math.random() * canvas.width,
-                    y: Math.random() * canvas.height,
-                    radius: Math.random() * 1.5,
-                    speedX: (Math.random() - 0.5) * 0.3,
-                    speedY: (Math.random() - 0.5) * 0.3,
-                    color: `rgba(0, 242, 254, ${Math.random() * 0.4 + 0.1})`
-                });
-            }
-        }
-        
-        function drawParticles() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            particles.forEach(p => {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-                ctx.fillStyle = p.color;
-                ctx.fill();
-                
-                p.x += p.speedX;
-                p.y += p.speedY;
-                
-                if (p.x < 0) p.x = canvas.width;
-                if (p.x > canvas.width) p.x = 0;
-                if (p.y < 0) p.y = canvas.height;
-                if (p.y > canvas.height) p.y = 0;
-            });
-            requestAnimationFrame(drawParticles);
-        }
-        
-        window.addEventListener('resize', () => {
-            resizeCanvas();
-            createParticles();
-        });
-        
-        resizeCanvas();
-        createParticles();
-        drawParticles();
     }
 }
 
-// ========== ЗАГРУЗКА ==========
-document.addEventListener('DOMContentLoaded', () => {
-    // Плавное появление контента (без задержек на каждом элементе)
-    const mainContainer = document.querySelector('.max-w-md') || document.body;
-    mainContainer.style.opacity = '0';
-    mainContainer.style.transition = 'opacity 0.4s ease';
-    setTimeout(() => {
-        mainContainer.style.opacity = '1';
-    }, 50);
-    
-    // Запускаем неоновые эффекты
-    new NeonEffects();
-});
-
-// ========== CSS АНИМАЦИИ ==========
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes pulseGlow {
-        0%, 100% { text-shadow: 0 0 5px #00f2fe, 0 0 10px #00f2fe; }
-        50% { text-shadow: 0 0 12px #00f2fe, 0 0 20px #00f2fe; }
-    }
-    
-    .animate-pulse-glow {
-        animation: pulseGlow 3s ease-in-out infinite;
-    }
-    
-    .glass {
-        transition: all 0.2s ease;
-    }
-    
-    input, textarea {
-        transition: all 0.2s ease;
-    }
-    
-    .nav-item {
-        transition: all 0.2s ease;
-    }
-    
-    .nav-item:active {
-        transform: scale(0.96);
-    }
-    
-    .cyber-scan-line {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-        background: linear-gradient(180deg, 
-            transparent 0%, 
-            rgba(0, 242, 254, 0.03) 50%, 
-            transparent 100%);
-        animation: scanLine 10s linear infinite;
-        z-index: 9998;
-    }
-    
-    @keyframes scanLine {
-        0% { transform: translateY(-100%); }
-        100% { transform: translateY(100%); }
-    }
-    
-    .loading-spinner {
-        width: 36px;
-        height: 36px;
-        border: 3px solid rgba(0, 242, 254, 0.2);
-        border-top-color: #00f2fe;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-    
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-    
-    .toast-message {
-        position: fixed;
-        bottom: 90px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(0, 242, 254, 0.9);
-        color: #0a0a12;
-        padding: 8px 18px;
-        border-radius: 30px;
-        font-size: 13px;
-        font-weight: 600;
-        z-index: 10000;
-        animation: toastFade 2s ease forwards;
-    }
-    
-    @keyframes toastFade {
-        0% { opacity: 0; transform: translateX(-50%) translateY(15px); }
-        12% { opacity: 1; transform: translateX(-50%) translateY(0); }
-        88% { opacity: 1; }
-        100% { opacity: 0; visibility: hidden; }
-    }
-    
-    button, .action-card, .plan-card {
-        transition: all 0.15s ease;
-    }
-    
-    button:active, .action-card:active, .plan-card:active {
-        transform: scale(0.97);
-    }
-`;
-document.head.appendChild(style);
-
-// Сканирующая линия
-const scanLine = document.createElement('div');
-scanLine.className = 'cyber-scan-line';
-document.body.appendChild(scanLine);
-
-// Toast-уведомления
+// ========== TOAST УВЕДОМЛЕНИЯ (с анимацией) ==========
 window.showToast = (message, type = 'success') => {
     const toast = document.createElement('div');
     toast.className = 'toast-message';
     toast.textContent = message;
+    
     if (type === 'error') {
         toast.style.background = 'rgba(239, 68, 68, 0.9)';
         toast.style.color = 'white';
     } else if (type === 'warning') {
         toast.style.background = 'rgba(245, 158, 11, 0.9)';
+    } else {
+        toast.style.background = 'linear-gradient(135deg, #7B3FF2, #5A46FF)';
+        toast.style.color = 'white';
     }
+    
+    toast.style.position = 'fixed';
+    toast.style.bottom = '90px';
+    toast.style.left = '50%';
+    toast.style.transform = 'translateX(-50%)';
+    toast.style.padding = '12px 24px';
+    toast.style.borderRadius = '30px';
+    toast.style.fontSize = '14px';
+    toast.style.fontWeight = '600';
+    toast.style.zIndex = '10000';
+    toast.style.backdropFilter = 'blur(10px)';
+    toast.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.2)';
+    toast.style.animation = 'toastSlideUp 0.3s ease forwards';
+    
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2000);
+    
+    setTimeout(() => {
+        toast.style.animation = 'toastSlideDown 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
 };
 
-// Спиннер при клике на ссылки
-document.querySelectorAll('a, .nav-item, [data-page], [onclick]').forEach(el => {
-    el.addEventListener('click', (e) => {
-        const href = el.getAttribute('href');
-        if (href && href.startsWith('http')) return;
-        
-        const spinner = document.createElement('div');
-        spinner.className = 'loading-spinner';
-        spinner.style.position = 'fixed';
-        spinner.style.top = '50%';
-        spinner.style.left = '50%';
-        spinner.style.transform = 'translate(-50%, -50%)';
-        spinner.style.zIndex = '10001';
-        document.body.appendChild(spinner);
-        setTimeout(() => spinner.remove(), 800);
-    });
-});
-
-// Переключение темы (есть кнопка — работает, нет — ничего не ломается)
-const themeToggle = document.getElementById('themeToggle');
-if (themeToggle) {
-    themeToggle.addEventListener('click', () => {
-        const isDark = document.body.classList.toggle('dark-theme');
-        document.body.style.backgroundColor = isDark ? '#0a0a12' : '#f0f0f0';
-        themeToggle.textContent = isDark ? '☀️' : '🌙';
-    });
+// Добавляем стили для toast
+if (!document.querySelector('#toast-style')) {
+    const style = document.createElement('style');
+    style.id = 'toast-style';
+    style.textContent = `
+        @keyframes toastSlideUp {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+        @keyframes toastSlideDown {
+            from {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+        }
+    `;
+    document.head.appendChild(style);
 }
 
-console.log('✅ Animations.js загружен (исправленная версия)');
+// ========== SPINNER ДЛЯ ЗАГРУЗКИ ==========
+window.showSpinner = () => {
+    const spinner = document.createElement('div');
+    spinner.className = 'loading-spinner';
+    spinner.style.position = 'fixed';
+    spinner.style.top = '50%';
+    spinner.style.left = '50%';
+    spinner.style.transform = 'translate(-50%, -50%)';
+    spinner.style.width = '40px';
+    spinner.style.height = '40px';
+    spinner.style.border = '3px solid rgba(123, 63, 242, 0.2';
+    spinner.style.borderTopColor = '#7B3FF2';
+    spinner.style.borderRadius = '50%';
+    spinner.style.zIndex = '10001';
+    spinner.style.animation = 'spin 0.8s linear infinite';
+    document.body.appendChild(spinner);
+    return spinner;
+};
+
+window.hideSpinner = (spinner) => {
+    if (spinner) spinner.remove();
+};
+
+// ========== ИНИЦИАЛИЗАЦИЯ ==========
+document.addEventListener('DOMContentLoaded', () => {
+    // Запускаем анимации
+    new NovixAnimations();
+    
+    // Добавляем классы для stagger элементов
+    document.querySelectorAll('.deals-list, .currency-list').forEach(el => {
+        el.classList.add('stagger-item');
+    });
+    
+    console.log('✅ Novix Gift анимации загружены');
+});
