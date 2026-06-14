@@ -520,10 +520,11 @@
                 document.querySelector('.copy-ref-btn')?.addEventListener('click', () => { const link = document.getElementById('refLink')?.innerText; if (link) { navigator.clipboard.writeText(link); showToast('🔗 Ссылка скопирована'); } });
                 document.querySelector('.buy-premium-page-btn')?.addEventListener('click', () => tg.openTelegramLink(`https://t.me/NovixGift_Bot?start=buy_premium_${selectedDays}_${selectedCurrency}`));
                 document.querySelector('.privacy-btn')?.addEventListener('click', () => {
-                    tg.openTelegramLink('https://t.me/NovixGift_Bot?start=privacy');
+                    // Открываем HTML-файл напрямую в текущем окне (в рамках Telegram WebView)
+                    window.location.href = '/privacy.html';
                 });
                 document.querySelector('.terms-btn')?.addEventListener('click', () => {
-                    tg.openTelegramLink('https://t.me/NovixGift_Bot?start=terms');
+                    window.location.href = '/terms.html';
                 });
                 
                 document.querySelectorAll('.filter-btn').forEach(btn => {
