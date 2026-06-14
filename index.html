@@ -519,13 +519,15 @@
                 document.querySelector('.save-profile-btn')?.addEventListener('click', () => { showToast('✅ Данные сохранены!'); navigateTo('profile'); });
                 document.querySelector('.copy-ref-btn')?.addEventListener('click', () => { const link = document.getElementById('refLink')?.innerText; if (link) { navigator.clipboard.writeText(link); showToast('🔗 Ссылка скопирована'); } });
                 document.querySelector('.buy-premium-page-btn')?.addEventListener('click', () => tg.openTelegramLink(`https://t.me/NovixGift_Bot?start=buy_premium_${selectedDays}_${selectedCurrency}`));
+                // Кнопка "Политика конфиденциальности"
                 document.querySelector('.privacy-btn')?.addEventListener('click', () => {
-                    // Открываем HTML-файл напрямую в текущем окне (в рамках Telegram WebView)
-                    window.location.href = '/privacy.html';
+                    window.location.href = '/nft-bot/privacy.html';
                 });
+                
+                // Кнопка "Пользовательское соглашение"
                 document.querySelector('.terms-btn')?.addEventListener('click', () => {
-                    window.location.href = '/terms.html';
-                });
+                    window.location.href = '/nft-bot/terms.html';
+                });                
                 
                 document.querySelectorAll('.filter-btn').forEach(btn => {
                     btn.addEventListener('click', () => {
