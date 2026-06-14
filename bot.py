@@ -697,6 +697,28 @@ async def start_cmd(msg: types.Message, state: FSMContext):
         elif args[1].startswith("ref_"):
             ref_code = args[1].replace("ref_", "")
             logger.info(f"🔍 Переход по реферальной ссылке: {ref_code}")
+        elif args[1] == "privacy":
+            await msg.answer(
+                "📄 *Политика конфиденциальности*\n\n"
+                "Нажмите на кнопку ниже, чтобы открыть полный документ.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📄 Открыть политику", url=f"{WEBAPP_URL}/privacy.html")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")]
+                ])
+            )
+            return
+        elif args[1] == "terms":
+            await msg.answer(
+                "📜 *Пользовательское соглашение*\n\n"
+                "Нажмите на кнопку ниже, чтобы открыть полный документ.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📜 Открыть соглашение", url=f"{WEBAPP_URL}/terms.html")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")]
+                ])
+            )
+            return
         elif args[1].startswith("startapp_"):
             startapp_page = args[1].replace("startapp_", "")
             logger.info(f"🔍 Открытие Mini App: {startapp_page}")
@@ -715,6 +737,7 @@ async def start_cmd(msg: types.Message, state: FSMContext):
             logger.info(f"Реферальный бонус: {referrer_id} -> {uid}")
 
     is_admin = uid in ADMIN_IDS
+    WEBAPP_URL = "https://heyken777.github.io/nft-bot"
 
     # ========== ОБРАБОТКА ССЫЛКИ НА СДЕЛКУ ==========
     if deal_id:
@@ -752,16 +775,14 @@ async def start_cmd(msg: types.Message, state: FSMContext):
 
     # ========== ОТКРЫТИЕ MINI APP ==========
     if startapp_page:
-        WEBAPP_URL = "https://heyken777.github.io/nft-bot"
-        
         # Определяем, какую страницу открыть
         page_urls = {
             "home": f"{WEBAPP_URL}/index.html",
-            "profile": f"{WEBAPP_URL}/profile.html",
-            "deals": f"{WEBAPP_URL}/deals.html",
-            "create_deal": f"{WEBAPP_URL}/create_deal.html",
-            "premium": f"{WEBAPP_URL}/premium.html",
-            "referral": f"{WEBAPP_URL}/referral.html"
+            "profile": f"{WEBAPP_URL}/index.html",
+            "deals": f"{WEBAPP_URL}/index.html",
+            "create_deal": f"{WEBAPP_URL}/index.html",
+            "premium": f"{WEBAPP_URL}/index.html",
+            "referral": f"{WEBAPP_URL}/index.html"
         }
         
         web_app_url = page_urls.get(startapp_page, f"{WEBAPP_URL}/index.html")
@@ -787,10 +808,10 @@ async def start_cmd(msg: types.Message, state: FSMContext):
     # Клавиатура с кнопкой Mini App
     main_kb_with_app = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📱 Открыть приложение", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/index.html"))],
-        [InlineKeyboardButton(text="💰 Пополнить баланс", callback_data="deposit"),
-        InlineKeyboardButton(text="💸 Вывести средства", callback_data="withdraw")],
-        [InlineKeyboardButton(text="💳 Моя карта", callback_data="set_card"),
-        InlineKeyboardButton(text="📱 Мой TON-кошелёк", callback_data="set_ton")],
+        [InlineKeyboardButton(text="💰 Пополнить", callback_data="deposit"),
+        InlineKeyboardButton(text="💸 Вывести", callback_data="withdraw")],
+        [InlineKeyboardButton(text="💳 Карта", callback_data="set_card"),
+        InlineKeyboardButton(text="📱 TON", callback_data="set_ton")],
         [InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
         InlineKeyboardButton(text="⭐ Premium", callback_data="buy_premium")],
         [InlineKeyboardButton(text="➕ Создать сделку", callback_data="create_deal"),
@@ -804,44 +825,6 @@ async def start_cmd(msg: types.Message, state: FSMContext):
         )
     
     # Отправка с фото или без
-    if img_exists("ГЛАВНОЕ МЕНЮ.jpg"):
-        await msg.answer_photo(
-            photo=FSInputFile(img_path("ГЛАВНОЕ МЕНЮ.jpg")),
-            caption=text,
-            parse_mode="Markdown",
-            reply_markup=main_kb_with_app
-        )
-    else:
-        await msg.answer(
-            text,
-            parse_mode="Markdown",
-            reply_markup=main_kb_with_app
-        )
-
-    # ========== ОБЫЧНОЕ ГЛАВНОЕ МЕНЮ ==========
-    text = f"🎁 *Добро пожаловать в {BOT_NAME}!*\n\n✨ *Главное меню*"
-    
-    # Кнопка для открытия Mini App
-    web_app_url = "https://your-domain.com/index.html"  # ЗАМЕНИ НА СВОЙ URL
-    
-    # Клавиатура с Mini App
-    main_kb_with_app = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📱 Открыть Mini App", web_app=types.WebAppInfo(url=WEBAPP_URL))],
-        [InlineKeyboardButton(text="💰 Пополнить", callback_data="deposit"),
-        InlineKeyboardButton(text="💸 Вывести", callback_data="withdraw")],
-        [InlineKeyboardButton(text="💳 Карта", callback_data="set_card"),
-        InlineKeyboardButton(text="📱 TON", callback_data="set_ton")],
-        [InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
-        InlineKeyboardButton(text="⭐ Premium", callback_data="buy_premium")],
-        [InlineKeyboardButton(text="➕ Создать сделку", callback_data="create_deal"),
-        InlineKeyboardButton(text="📋 Мои сделки", callback_data="my_deals")]
-    ])
-    
-    if is_admin:
-        main_kb_with_app.inline_keyboard.append(
-            [InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")]
-        )
-    
     if img_exists("ГЛАВНОЕ МЕНЮ.jpg"):
         await msg.answer_photo(
             photo=FSInputFile(img_path("ГЛАВНОЕ МЕНЮ.jpg")),
