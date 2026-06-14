@@ -778,11 +778,14 @@ async def start_cmd(msg: types.Message, state: FSMContext):
         # Определяем, какую страницу открыть
         page_urls = {
             "home": f"{WEBAPP_URL}/index.html",
-            "profile": f"{WEBAPP_URL}/index.html",
-            "deals": f"{WEBAPP_URL}/index.html",
-            "create_deal": f"{WEBAPP_URL}/index.html",
-            "premium": f"{WEBAPP_URL}/index.html",
-            "referral": f"{WEBAPP_URL}/index.html"
+            "profile": f"{WEBAPP_URL}/profile.html",
+            "deals": f"{WEBAPP_URL}/deals.html",
+            "create_deal": f"{WEBAPP_URL}/create_deal.html",
+            "premium": f"{WEBAPP_URL}/premium.html",
+            "referral": f"{WEBAPP_URL}/referral.html",
+            "buy_premium": f"{WEBAPP_URL}/buy_premium.html",
+            "privacy": f"{WEBAPP_URL}/privacy.html",
+            "terms": f"{WEBAPP_URL}/terms.html"
         }
         
         web_app_url = page_urls.get(startapp_page, f"{WEBAPP_URL}/index.html")
