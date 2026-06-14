@@ -678,6 +678,34 @@
                 // Также нужно будет вызывать attachPolicyAndTermsHandlers() после каждого переключения на страницу настроек
                 // Например, внутри вашей функции navigateTo, при открытии страницы 'settings'
             });
+
+            // Загрузка актуальных курсов валют
+            async function loadCurrencyRates() {
+                try {
+                    const response = await fetch('/api/currency/rates');
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                          // Обновляем глобальные курсы
+                            for (const [currency, rate] of Object.entries(data.rates)) {
+                                if (rates[currency]) {
+                                    rates[currency] = rate;
+                                }
+                            }
+                            console.log('✅ Курсы валют обновлены:', rates);
+                            // Обновляем отображение балансов
+                            updateHomePage();
+                            updateProfilePage();
+                        }
+                    }
+                } catch (error) {
+                    console.error('❌ Ошибка загрузки курсов:', error);
+                }
+            }
+
+            // Загружаем курсы при старте и каждый час
+            loadCurrencyRates();
+            setInterval(loadCurrencyRates, 60 * 60 * 1000); // Каждый час             
             </script>
             <script src="animations.js"></script>
         </body>

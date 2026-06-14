@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from currency_api import currency_api
 
 load_dotenv()
 
