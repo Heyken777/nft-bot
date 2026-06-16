@@ -565,7 +565,7 @@ class Database:
             self.update_balance(user_id, "RUB", reward)
             self.conn.commit()
             return reward
-        return 0
+        return 0       
     
     def get_achievement_stats(self, user_id: int) -> dict:
         """Собирает статистику пользователя для проверки достижений"""
@@ -1006,6 +1006,21 @@ async def buy_premium_cb(call: CallbackQuery, state: FSMContext):
     await state.set_state(BuyPremiumState.currency)
     await call.answer()
 
+async def handle_claim_achievement(request):
+    try:
+        data = await request.json()
+        user_id = data.get('user_id')
+        achievement_id = data.get('achievement_id')
+        
+        if not user_id or not achievement_id:
+            return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
+        
+        reward = db.claim_achievement_reward(user_id, achievement_id)
+        if reward > 0:
+            return web.json_response({'success': True, 'reward': reward})
+        return web.json_response({'success': False, 'error': 'Already claimed or not available'})
+    except Exception as e:
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
 
 def premium_currency_kb():
     """Клавиатура выбора валюты для покупки Premium"""
@@ -2259,6 +2274,7 @@ async def start_api():
     app.router.add_post('/api/save_ton', handle_save_ton)
     app.router.add_get('/api/currency/rates', handle_currency_rates)
     app.router.add_get('/api/achievements', handle_achievements)
+    app.router.add_post('/api/claim_achievement', handle_claim_achievement)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, 'localhost', 8080)
