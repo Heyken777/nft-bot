@@ -10,6 +10,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List
 from bot_config import *
+from currency_api import currency_api
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, StateFilter
@@ -1729,9 +1730,6 @@ async def handle_achievements(request):
         } for a in achievements]
     })
 
-# В start_api() добавь:
-app.router.add_get('/api/achievements', handle_achievements)
-
 @dp.message(StateFilter(AdminPremiumState.user_id))
 async def admin_premium_user_id(msg: types.Message, state: FSMContext):
     try:
@@ -2236,12 +2234,30 @@ async def handle_create_deal(request):
     except Exception as e:
         return web.json_response({'error': str(e)}, status=500)
 
+async def handle_currency_rates(request):
+    """Возвращает актуальные курсы валют"""
+    try:
+        rates = await currency_api.fetch_rates("RUB")
+        return web.json_response({
+            'success': True,
+            'rates': rates,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return web.json_response({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
 # Запуск веб-сервера для API
 async def start_api():
     app = web.Application()
+    app.router.add_get('/api/user', handle_api)
     app.router.add_post('/api/create_deal', handle_create_deal)
     app.router.add_post('/api/save_card', handle_save_card)
     app.router.add_post('/api/save_ton', handle_save_ton)
+    app.router.add_get('/api/currency/rates', handle_currency_rates)
+    app.router.add_get('/api/achievements', handle_achievements)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, 'localhost', 8080)
