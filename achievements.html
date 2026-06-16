@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Достижения - Novix Gift</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body { background: #0a0a12; }
+        .glass { background: rgba(10, 10, 18, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .achievement-locked { opacity: 0.5; filter: grayscale(0.5); }
+        .achievement-unlocked { border-color: rgba(0, 242, 254, 0.3); box-shadow: 0 0 20px rgba(0, 242, 254, 0.1); }
+        .claim-btn { transition: all 0.2s ease; cursor: pointer; }
+        .claim-btn:active { transform: scale(0.95); }
+        .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 10px 20px; border-radius: 40px; font-size: 14px; z-index: 1000; animation: toastFade 2s ease forwards; }
+        @keyframes toastFade { 0% { opacity: 0; transform: translateX(-50%) translateY(10px); } 15% { opacity: 1; transform: translateX(-50%) translateY(0); } 85% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 10px rgba(0, 242, 254, 0.2); }
+            50% { box-shadow: 0 0 25px rgba(0, 242, 254, 0.5); }
+        }
+        .pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+        .progress-bar { height: 4px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; }
+        .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #00f2fe, #4facfe); border-radius: 4px; transition: width 0.6s ease; }
+    </style>
+</head>
+<body class="bg-[#0a0a12] text-white">
+    <div class="max-w-md mx-auto min-h-screen flex flex-col">
+        
+        <!-- Шапка -->
+        <div class="glass px-5 pt-6 pb-3 border-b border-white/10 sticky top-0 z-10">
+            <div class="flex items-center gap-3">
+                <button onclick="window.history.back()" class="text-[#00f2fe] text-xl">←</button>
+                <h1 class="text-xl font-bold neon-text">🏆 Достижения</h1>
+            </div>
+        </div>
+        
+        <div class="flex-1 px-5 py-5 space-y-5 overflow-y-auto pb-24">
+            
+            <!-- Статистика -->
+            <div class="glass rounded-2xl p-4 border border-white/10">
+                <div class="font-medium mb-3">📊 Моя статистика</div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-[#00f2fe]" id="statCompleted">0</div>
+                        <div class="text-xs text-gray-400">Сделок</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-purple-400" id="statSales">0</div>
+                        <div class="text-xs text-gray-400">Продаж</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-emerald-400" id="statReferrals">0</div>
+                        <div class="text-xs text-gray-400">Рефералов</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Список достижений -->
+            <div id="achievementsList" class="space-y-3"></div>
+            
+        </div>
+        
+        <!-- Нижняя навигация -->
+        <div class="glass border-t border-white/10 py-2 px-4 fixed bottom-0 max-w-md w-full z-20">
+            <div class="flex justify-around items-center">
+                <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="navigateTo('home')">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
+                    <span class="text-[9px] text-gray-400">Главная</span>
+                </div>
+                <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="navigateTo('deals')">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25"/></svg>
+                    <span class="text-[9px] text-gray-400">Сделки</span>
+                </div>
+                <div class="flex flex-col items-center gap-1 cursor-pointer active" onclick="navigateTo('profile')">
+                    <svg class="w-5 h-5 text-[#00f2fe]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
+                    <span class="text-[9px] text-[#00f2fe]">Профиль</span>
+                </div>
+                <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="navigateTo('settings')">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
+                    <span class="text-[9px] text-gray-400">Настройки</span>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        
+        let userData = {
+            id: tg.initDataUnsafe?.user?.id || 0,
+            username: tg.initDataUnsafe?.user?.username || '',
+            firstName: tg.initDataUnsafe?.user?.first_name || ''
+        };
+        
+        function navigateTo(page) {
+            tg.close();
+            tg.openTelegramLink(`https://t.me/NovixGift_Bot?startapp=${page}`);
+        }
+        
+        function showToast(msg) {
+            const t = document.createElement('div');
+            t.className = 'toast';
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 2000);
+        }
+        
+        async function loadAchievements() {
+            try {
+                const response = await fetch(`/api/achievements?user_id=${userData.id}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    renderAchievements(data);
+                } else {
+                    document.getElementById('achievementsList').innerHTML = '<div class="text-center text-gray-500 py-8">❌ Ошибка загрузки</div>';
+                }
+            } catch (error) {
+                document.getElementById('achievementsList').innerHTML = '<div class="text-center text-gray-500 py-8">❌ Ошибка соединения</div>';
+            }
+        }
+        
+        function renderAchievements(data) {
+            document.getElementById('statCompleted').innerText = data.stats?.completed_deals || 0;
+            document.getElementById('statSales').innerText = data.stats?.sales || 0;
+            document.getElementById('statReferrals').innerText = data.stats?.referrals || 0;
+            
+            const container = document.getElementById('achievementsList');
+            const achievements = data.achievements || [];
+            
+            if (achievements.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 py-8">Нет доступных достижений</div>';
+                return;
+            }
+            
+            // Сортируем: сначала полученные, потом заблокированные
+            achievements.sort((a, b) => {
+                const aEarned = a.earned_at !== null && a.earned_at !== undefined;
+                const bEarned = b.earned_at !== null && b.earned_at !== undefined;
+                if (aEarned && !bEarned) return -1;
+                if (!aEarned && bEarned) return 1;
+                return 0;
+            });
+            
+            container.innerHTML = achievements.map(a => {
+                const isEarned = a.earned_at !== null && a.earned_at !== undefined;
+                const isClaimed = a.claimed === 1 || a.claimed === true;
+                
+                let statusHtml = '';
+                if (isEarned) {
+                    if (isClaimed) {
+                        statusHtml = `<span class="text-green-400 text-xs">✅ +${a.reward} RUB</span>`;
+                    } else {
+                        statusHtml = `<button class="claim-btn bg-gradient-to-r from-blue-500 to-purple-500 px-4 py-1.5 rounded-lg text-xs font-medium shadow-[0_0_15px_rgba(0,242,254,0.3)]" data-achievement="${a.id}">🎁 Забрать ${a.reward} RUB</button>`;
+                    }
+                } else {
+                    statusHtml = `<span class="text-gray-500 text-xs">🔒 ${a.description}</span>`;
+                }
+                
+                const cardClass = isEarned ? 'achievement-unlocked pulse-glow' : 'achievement-locked';
+                const progressPercent = isEarned ? 100 : 30;
+                
+                return `
+                    <div class="glass rounded-xl p-4 border border-white/10 ${cardClass}">
+                        <div class="flex justify-between items-start">
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">${a.icon}</span>
+                                <div>
+                                    <div class="font-medium">${a.name}</div>
+                                    <div class="text-xs text-gray-500">${a.description}</div>
+                                    <div class="progress-bar mt-2 w-32">
+                                        <div class="progress-bar-fill" style="width: ${progressPercent}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>${statusHtml}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Обработчики для кнопок "Забрать"
+            document.querySelectorAll('.claim-btn').forEach(btn => {
+                btn.onclick = async () => {
+                    const achId = btn.dataset.achievement;
+                    try {
+                        const response = await fetch('/api/claim_achievement', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ user_id: userData.id, achievement_id: achId })
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            showToast(`🎉 Получено ${result.reward} RUB!`);
+                            loadAchievements();
+                            // Обновляем баланс на главной
+                            if (window.updateHomePage) window.updateHomePage();
+                        } else {
+                            showToast(result.error || '❌ Ошибка получения награды');
+                        }
+                    } catch (error) {
+                        showToast('❌ Ошибка соединения');
+                    }
+                };
+            });
+        }
+        
+        loadAchievements();
+    </script>
+    <script src="animations.js"></script>
+</body>
+</html>
