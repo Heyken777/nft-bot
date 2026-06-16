@@ -105,6 +105,7 @@ def main_kb(is_admin: bool = False):
         [InlineKeyboardButton(text="➕ Создать сделку", callback_data="create_deal"),
         InlineKeyboardButton(text="📋 Мои сделки", callback_data="my_deals")],
         [InlineKeyboardButton(text="👥 Рефералы", callback_data="referral")]
+        [InlineKeyboardButton(text="🏆 Достижения", callback_data="achievements")],
     ]
     if is_admin:
         kb.append([InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")])
@@ -409,7 +410,52 @@ class Database:
             )
         """)
         
-        self.conn.commit()
+        # Таблица достижений пользователей
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_achievements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                achievement_id TEXT,
+                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                claimed INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        """)
+
+        # Таблица для хранения информации о достижениях
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS achievements_list (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                description TEXT,
+                icon TEXT,
+                reward REAL,
+                requirement_type TEXT,
+                requirement_value INTEGER
+            )
+        """)
+        
+        # Добавляем базовые достижения
+        self.cursor.execute("DELETE FROM achievements_list")
+        achievements = [
+            ('first_deal', '🎯 Первая кровь', 'Первая завершённая сделка', '🎯', 50, 'deals_completed', 1),
+            ('hot_ten', '🔥 Горячая десятка', '10 завершённых сделок', '🔥', 100, 'deals_completed', 10),
+            ('diamond_trader', '💎 Алмазный трейдер', '50 завершённых сделок', '💎', 500, 'deals_completed', 50),
+            ('legend', '👑 Легенда', '100 завершённых сделок', '👑', 1000, 'deals_completed', 100),
+            ('referral_master', '📱 Мастер рефералов', '10 приглашённых друзей', '📱', 200, 'referrals', 10),
+            ('premium_starter', '⭐ Премиум-старт', 'Первая покупка Premium', '⭐', 0, 'premium_purchase', 1),
+            ('first_sale', '💰 Первый продавец', 'Первая сделка в роли продавца', '💰', 50, 'sales_count', 1),
+            ('super_seller', '🚀 Супер-продавец', '50 сделок в роли продавца', '🚀', 500, 'sales_count', 50),
+            ('active_user', '⚡ Активный пользователь', '20 завершённых сделок', '⚡', 200, 'deals_completed', 20),
+            ('ton_holder', '💎 TON Холдер', 'Пополнил баланс в TON', '💎', 100, 'balance_ton', 100)
+        ]
+        
+        for ach in achievements:
+            self.cursor.execute("""
+                INSERT OR IGNORE INTO achievements_list (id, name, description, icon, reward, requirement_type, requirement_value)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, ach)
+        self.conn.commit()        
         logger.info("База данных инициализирована")    
 
     def get_user(self, uid):
@@ -457,6 +503,98 @@ class Database:
         self.conn.commit()
         return deal_id    
 
+    def get_user_achievements(self, user_id: int) -> List[Tuple]:
+        """Получает список достижений пользователя"""
+        self.cursor.execute("""
+        SELECT a.*, ua.earned_at, ua.claimed
+        FROM achievements_list a
+        LEFT JOIN user_achievements ua ON a.id = ua.achievement_id AND ua.user_id = ?
+        ORDER BY ua.earned_at IS NULL, a.reward DESC
+        """, (user_id,))
+        return self.cursor.fetchall()
+
+    def check_and_award_achievements(self, user_id: int, stats: dict):
+        """Проверяет и выдаёт достижения"""
+        self.cursor.execute("SELECT id, requirement_type, requirement_value, reward FROM achievements_list")
+        achievements = self.cursor.fetchall()
+        
+        earned = []
+        for ach_id, req_type, req_value, reward in achievements:
+            # Проверяем, не получено ли уже достижение
+            self.cursor.execute("SELECT id FROM user_achievements WHERE user_id = ? AND achievement_id = ?", (user_id, ach_id))
+            if self.cursor.fetchone():
+                continue
+            
+            # Проверяем условие
+            achieved = False
+            if req_type == 'deals_completed' and stats.get('completed_deals', 0) >= req_value:
+                achieved = True
+            elif req_type == 'referrals' and stats.get('referrals', 0) >= req_value:
+                achieved = True
+            elif req_type == 'sales_count' and stats.get('sales', 0) >= req_value:
+                achieved = True
+            elif req_type == 'balance_ton' and stats.get('ton_balance', 0) >= req_value:
+                achieved = True
+            elif req_type == 'premium_purchase' and stats.get('premium_count', 0) >= req_value:
+                achieved = True
+            
+            if achieved:
+                self.cursor.execute("""
+                    INSERT INTO user_achievements (user_id, achievement_id) VALUES (?, ?)
+                """, (user_id, ach_id))
+                self.conn.commit()
+                earned.append((ach_id, reward))
+        
+        return earned
+
+    def claim_achievement_reward(self, user_id: int, achievement_id: str) -> float:
+        """Забирает награду за достижение"""
+        self.cursor.execute("""
+            SELECT reward, claimed FROM user_achievements ua
+            JOIN achievements_list a ON ua.achievement_id = a.id
+            WHERE ua.user_id = ? AND ua.achievement_id = ? AND ua.claimed = 0
+        """, (user_id, achievement_id))
+        result = self.cursor.fetchone()
+        
+        if result:
+            reward = result[0]
+            self.cursor.execute("""
+                UPDATE user_achievements SET claimed = 1 WHERE user_id = ? AND achievement_id = ?
+            """, (user_id, achievement_id))
+            self.update_balance(user_id, "RUB", reward)
+            self.conn.commit()
+            return reward
+        return 0
+    
+    def get_achievement_stats(self, user_id: int) -> dict:
+        """Собирает статистику пользователя для проверки достижений"""
+        # Завершённые сделки
+        self.cursor.execute("SELECT COUNT(*) FROM deals WHERE (seller_id = ? OR buyer_id = ?) AND status = 'completed'", (user_id, user_id))
+        completed_deals = self.cursor.fetchone()[0]
+        
+        # Сделки в роли продавца
+        self.cursor.execute("SELECT COUNT(*) FROM deals WHERE seller_id = ? AND status = 'completed'", (user_id,))
+        sales = self.cursor.fetchone()[0]
+        
+        # Количество приглашённых
+        self.cursor.execute("SELECT COUNT(*) FROM users WHERE referred_by = ?", (user_id,))
+        referrals = self.cursor.fetchone()[0]
+        
+        # Баланс в TON
+        ton_balance = self.get_balance(user_id, 'TON')
+        
+        # Количество покупок Premium
+        self.cursor.execute("SELECT COUNT(*) FROM user_achievements WHERE user_id = ? AND achievement_id = 'premium_starter'", (user_id,))
+        premium_count = self.cursor.fetchone()[0]
+        
+        return {
+            'completed_deals': completed_deals,
+            'sales': sales,
+            'referrals': referrals,
+            'ton_balance': ton_balance,
+            'premium_count': premium_count
+        }
+    
     def get_balance(self, uid, currency):
         """Получает баланс в указанной валюте"""
         col_name = f"balance_{currency}"
@@ -1159,6 +1297,59 @@ async def handle_save_ton(request):
     db.set_ton(user_id, ton)
     return web.json_response({'success': True})
 
+@dp.callback_query(lambda c: c.data == "achievements")
+async def achievements_cb(call: CallbackQuery):
+    user_id = call.from_user.id
+    achievements = db.get_user_achievements(user_id)
+    stats = db.get_achievement_stats(user_id)
+    
+    # Проверяем новые достижения
+    earned = db.check_and_award_achievements(user_id, stats)
+    for ach_id, reward in earned:
+        await call.answer(f"🎉 Получено достижение! +{reward} RUB", show_alert=True)
+    
+    # Обновляем список после проверки
+    achievements = db.get_user_achievements(user_id)
+    
+    text = "🏆 *Мои достижения*\n\n"
+    text += f"📊 *Статистика:*\n"
+    text += f"• Завершённых сделок: {stats['completed_deals']}\n"
+    text += f"• Продаж: {stats['sales']}\n"
+    text += f"• Приглашённых друзей: {stats['referrals']}\n\n"
+    
+    text += "✨ *Достижения:*\n"
+    for ach in achievements:
+        name = ach[1]
+        desc = ach[2]
+        icon = ach[3]
+        reward = ach[4]
+        earned_at = ach[8]
+        claimed = ach[9]
+        
+        if earned_at:
+            if claimed:
+                text += f"✅ {icon} *{name}* — получено (+{reward} RUB)\n"
+            else:
+                text += f"🎁 {icon} *{name}* — доступно! /claim_{ach[0]}\n"
+        else:
+            text += f"🔒 {icon} *{name}* — {desc} (+{reward} RUB)\n"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")]
+    ])
+    
+    await edit_or_new(call, text, keyboard)
+    await call.answer()
+
+@dp.message(lambda m: m.text and m.text.startswith("/claim_"))
+async def claim_achievement(msg: types.Message):
+    ach_id = msg.text.replace("/claim_", "")
+    reward = db.claim_achievement_reward(msg.from_user.id, ach_id)
+    if reward > 0:
+        await msg.answer(f"🎉 Поздравляем! Вы получили {reward} RUB за достижение!")
+    else:
+        await msg.answer("❌ Награда уже получена или недоступна")
+
 @dp.callback_query(lambda c: c.data == "profile")
 async def profile_cb(call: CallbackQuery):
     user = db.get_user(call.from_user.id)
@@ -1519,6 +1710,27 @@ async def premium_days_cb(call: CallbackQuery):
     )
     
     await call.answer()
+
+async def handle_achievements(request):
+    user_id = int(request.query.get('user_id', 0))
+    achievements = db.get_user_achievements(user_id)
+    stats = db.get_achievement_stats(user_id)
+    
+    return web.json_response({
+        'stats': stats,
+        'achievements': [{
+            'id': a[0],
+            'name': a[1],
+            'description': a[2],
+            'icon': a[3],
+            'reward': a[4],
+            'earned_at': a[8],
+            'claimed': a[9]
+        } for a in achievements]
+    })
+
+# В start_api() добавь:
+app.router.add_get('/api/achievements', handle_achievements)
 
 @dp.message(StateFilter(AdminPremiumState.user_id))
 async def admin_premium_user_id(msg: types.Message, state: FSMContext):
