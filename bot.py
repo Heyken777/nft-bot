@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple, List
 from bot_config import *
 from currency_api import currency_api
+from aiohttp import ClientTimeout
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, StateFilter
@@ -2335,19 +2336,43 @@ async def main():
         os.makedirs(IMAGES_PATH)
         logger.info(f"📁 Создана папка {IMAGES_PATH}")
     
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("✅ Бот запущен")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}")
-        return
+    # Пробуем подключиться с повторными попытками
+    max_retries = 5
+    retry_delay = 5
+    
+    for attempt in range(max_retries):
+        try:
+            # Устанавливаем таймаут для подключения
+            timeout = ClientTimeout(total=30, connect=10, sock_connect=10)
+            
+            await bot.delete_webhook(drop_pending_updates=True)
+            logger.info("✅ Бот запущен")
+            break
+        except Exception as e:
+            logger.error(f"Попытка {attempt + 1}/{max_retries} не удалась: {e}")
+            if attempt < max_retries - 1:
+                logger.info(f"⏳ Повторная попытка через {retry_delay} секунд...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error("❌ Не удалось подключиться к Telegram API после всех попыток")
+                logger.info("💡 Проверьте:")
+                logger.info("  1. Интернет-соединение")
+                logger.info("  2. VPN (если используете)")
+                logger.info("  3. Правильность токена в .env")
+                return
     
     # Запускаем API сервер в фоне
-    asyncio.create_task(start_api())
+    try:
+        asyncio.create_task(start_api())
+    except Exception as e:
+        logger.error(f"Ошибка запуска API: {e}")
     
     # Запускаем бота
-    await dp.start_polling(bot)
-
-# ========== ЗАПУСК ==========
-if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.error(f"Ошибка при работе бота: {e}")
+    finally:
+        # Закрываем сессию бота корректно
+        await bot.session.close()
+        logger.info("👋 Бот завершил работу")
