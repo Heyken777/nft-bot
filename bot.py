@@ -939,7 +939,8 @@ async def start_cmd(msg: types.Message, state: FSMContext):
             "referral": f"{WEBAPP_URL}/referral.html",
             "buy_premium": f"{WEBAPP_URL}/buy_premium.html",
             "privacy": f"{WEBAPP_URL}/privacy.html",
-            "terms": f"{WEBAPP_URL}/terms.html"
+            "terms": f"{WEBAPP_URL}/terms.html",
+            "achievements": f"{WEBAPP_URL}/achievements.html"
         }
         
         web_app_url = page_urls.get(startapp_page, f"{WEBAPP_URL}/index.html")
