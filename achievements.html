@@ -97,8 +97,8 @@
         };
         
         function navigateTo(page) {
-            tg.close();
-            tg.openTelegramLink(`https://t.me/NovixGift_Bot?startapp=${page}`);
+            const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html', settings: 'index.html#page-settings' };
+            window.location.href = pages[page] || 'index.html';
         }
         
         function showToast(msg) {

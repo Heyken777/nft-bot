@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Загрузка данных пользователя через API бота
 async function loadUserData() {
     try {
-        const response = await fetch(`https://your-domain.com/api/user?user_id=${userId}`, {
+        const response = await fetch(`/api/user?user_id=${userId}`, {
             headers: {
                 'Authorization': `Bearer ${authToken}`
             }
@@ -251,7 +251,7 @@ function initCreateDealPage() {
         }, async (buttonId) => {
             if (buttonId === 'ok') {
                 // Отправка запроса на создание сделки
-                const response = await fetch('https://your-domain.com/api/create_deal', {
+                const response = await fetch('/api/create_deal', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -404,10 +404,10 @@ async function initDealsPage() {
     
     // Загрузка сделок
     async function loadDeals() {
-        const response = await fetch(`https://your-domain.com/api/user_deals?user_id=${userId}&filter=${currentFilter}`);
+        const response = await fetch(`/api/user?user_id=${userId}`);
         if (response.ok) {
-            const deals = await response.json();
-            renderDeals(deals);
+            const data = await response.json();
+            renderDeals(data.deals || []);
         }
     }
     

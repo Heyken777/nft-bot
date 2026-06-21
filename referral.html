@@ -111,8 +111,8 @@
         const userId = user.id;
         
         function navigateTo(page) {
-            tg.close();
-            tg.openTelegramLink(`https://t.me/NovixGift_Bot?startapp=${page}`);
+            const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html' };
+            window.location.href = pages[page] || 'index.html';
         }
         
         // Реферальная ссылка
@@ -124,9 +124,23 @@
             tg.showPopup({title: 'Скопировано', message: 'Реферальная ссылка скопирована!'});
         };
         
-        // Пример данных (заменить на реальные из бота)
-        document.getElementById('referralCount').innerText = '5';
-        document.getElementById('referralEarnings').innerText = '250 RUB';
+        // Загрузка реальных данных из API
+        async function loadReferralData() {
+            try {
+                const response = await fetch(`/api/user?user_id=${userId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    const refCode = data.referral_code || userId;
+                    document.getElementById('referralLink').innerText = `https://t.me/NovixGift_Bot?start=ref_${refCode}`;
+                    document.getElementById('referralCount').innerText = data.referral_count || 0;
+                    const earnings = data.referral_earnings || 0;
+                    document.getElementById('referralEarnings').innerText = `${earnings} RUB`;
+                }
+            } catch (error) {
+                console.error('API error:', error);
+            }
+        }
+        loadReferralData();
     </script>
     <script src="animations.js"></script>
 </body>

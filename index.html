@@ -392,6 +392,10 @@
                     document.getElementById('statCompleted').innerHTML = userData.deals?.filter(d => d.status === 'completed').length || 0;
                     document.getElementById('statRating').innerHTML = userData.rating || 0;
                     document.getElementById('premiumStatus').innerHTML = userData.is_premium ? '<span class="text-amber-400">⭐ Активен</span>' : 'Не активен';
+                    const completedC = userData.deals?.filter(d => d.status === 'completed').length || 0;
+                    userRole = getUserRole(completedC);
+                    const roleEl = document.getElementById('userRole');
+                    if (roleEl) roleEl.innerHTML = userRole;
                     
                     let balHtml = '';
                     for (const [c, a] of Object.entries(userData.balances || {})) {
@@ -462,7 +466,8 @@
                 function updateReferralPage() {
                     document.getElementById('refCount').innerHTML = userData.referral_count || 0;
                     document.getElementById('refEarnings').innerHTML = `${userData.referral_earnings || 0} RUB`;
-                    document.getElementById('refLink').innerHTML = userData.id ? `https://t.me/NovixGift_Bot?start=ref_${userData.id}` : 'Авторизуйтесь в боте';
+                    const refCode = userData.referral_code || userData.id || 'novix';
+                    document.getElementById('refLink').innerHTML = `https://t.me/NovixGift_Bot?start=ref_${refCode}`;
                 }
                 
                 function updateSettingsPage() {
@@ -739,12 +744,10 @@
                 return '🆕 Новичок';
             }
 
-            // В updateProfilePage добавь:
             const completedCount = userData.deals?.filter(d => d.status === 'completed').length || 0;
             userRole = getUserRole(completedCount);
-
-            // В HTML профиля добавь строку с ролью
-            document.getElementById('userRole').innerHTML = userRole;            
+            const userRoleEl = document.getElementById('userRole');
+            if (userRoleEl) userRoleEl.innerHTML = userRole;            
             </script>
             <script src="animations.js"></script>
         </body>

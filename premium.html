@@ -63,6 +63,8 @@
                     <button class="currency-option px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="USD">🇺🇸 USD</button>
                     <button class="currency-option px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="EUR">🇪🇺 EUR</button>
                     <button class="currency-option px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="TON">💎 TON</button>
+                    <button class="currency-option px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="USDT">💵 USDT</button>
+                    <button class="currency-option px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="STARS">⭐️ STARS</button>
                 </div>
             </div>
             
@@ -153,11 +155,11 @@
         let selectedDays = 30;
         
         const prices = {30: 299, 45: 419, 60: 559, 90: 799, 365: 2999};
-        const rates = {RUB: 1, USD: 92.5, EUR: 100, TON: 500};
+        const rates = {RUB: 1, USD: 92.5, EUR: 100, TON: 500, USDT: 92, STARS: 15};
         
         function navigateTo(page) {
-            tg.close();
-            tg.openTelegramLink(`https://t.me/NovixGift_Bot?startapp=${page}`);
+            const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html' };
+            window.location.href = pages[page] || 'index.html';
         }
         
         function updatePrices() {

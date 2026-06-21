@@ -69,6 +69,23 @@ async def answer_or_edit(msg, text: str, reply_markup, photo_name: str = None):
     else:
         await msg.answer(text, parse_mode="Markdown", reply_markup=reply_markup)
 
+def main_kb(is_admin: bool = False):
+    kb = [
+        [InlineKeyboardButton(text="📱 Открыть приложение", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/index.html"))],
+        [InlineKeyboardButton(text="💰 Пополнить", callback_data="deposit"),
+        InlineKeyboardButton(text="💸 Вывести", callback_data="withdraw")],
+        [InlineKeyboardButton(text="💳 Карта", callback_data="set_card"),
+        InlineKeyboardButton(text="📱 TON", callback_data="set_ton")],
+        [InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
+        InlineKeyboardButton(text="⭐ Premium", callback_data="buy_premium")],
+        [InlineKeyboardButton(text="➕ Создать сделку", callback_data="create_deal"),
+        InlineKeyboardButton(text="📋 Мои сделки", callback_data="my_deals")],
+        [InlineKeyboardButton(text="👥 Рефералы", callback_data="referral")]
+    ]
+    if is_admin:
+        kb.append([InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
 def back_kb():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="menu")]])
 
@@ -411,6 +428,13 @@ class Database:
         self.cursor.execute("SELECT * FROM users WHERE user_id = ?", (uid,))
         return self.cursor.fetchone()
 
+    def get_user_dict(self, uid):
+        user = self.get_user(uid)
+        if not user:
+            return None
+        col_names = [desc[0] for desc in self.cursor.description]
+        return dict(zip(col_names, user))
+
     def reg_user(self, uid, name):
         if not self.get_user(uid):
             # Генерируем реферальный код
@@ -531,7 +555,7 @@ class Database:
         return self.cursor.fetchall()
 
     def get_all_users(self, limit=10, offset=0):
-        self.cursor.execute("SELECT user_id, username, balance, is_premium FROM users ORDER BY user_id LIMIT ? OFFSET ?", (limit, offset))
+        self.cursor.execute("SELECT user_id, username, balance_RUB, is_premium FROM users ORDER BY user_id LIMIT ? OFFSET ?", (limit, offset))
         return self.cursor.fetchall()
 
     def get_users_count(self):
@@ -697,26 +721,28 @@ class Database:
         self.conn.commit()
 
     def add_notification(self, user_id: int, text: str):
-        self.cursor.execute("INSERT INTO notifications (user_id, text) VALUES (?, ?)", (user_id, text))
+        self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)", (user_id, "Уведомление", text))
         self.conn.commit()
 
     def get_unread(self, uid):
-        self.cursor.execute("SELECT id, text FROM notifications WHERE user_id = ? AND read = 0", (uid,))
+        self.cursor.execute("SELECT id, message FROM notifications WHERE user_id = ? AND is_read = 0", (uid,))
         return self.cursor.fetchall()
 
     def mark_read(self, uid):
-        self.cursor.execute("UPDATE notifications SET read = 1 WHERE user_id = ?", (uid,))
+        self.cursor.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (uid,))
         self.conn.commit()
 
     def get_all_users_for_mailing(self):
-        self.cursor.execute("SELECT user_id FROM users")
+        self.cursor.execute("SELECT user_id FROM users WHERE notifications_enabled = 1 OR notifications_enabled IS NULL")
         return [row[0] for row in self.cursor.fetchall()]
 
     def get_stats(self):
         self.cursor.execute("SELECT COUNT(*) FROM users")
         users = self.cursor.fetchone()[0]
-        self.cursor.execute("SELECT SUM(balance) FROM users")
-        balance = self.cursor.fetchone()[0] or 0
+        balance = 0
+        for curr in ["RUB", "BYN", "UAH", "KZT", "UZS", "EUR", "USD", "TON", "USDT", "STARS"]:
+            self.cursor.execute(f"SELECT COALESCE(SUM(balance_{curr}), 0) FROM users")
+            balance += self.cursor.fetchone()[0]
         self.cursor.execute("SELECT COUNT(*) FROM deals WHERE status = 'completed'")
         completed = self.cursor.fetchone()[0]
         self.cursor.execute("SELECT COUNT(*) FROM deals WHERE status NOT IN ('completed', 'cancelled')")
@@ -812,6 +838,8 @@ async def start_cmd(msg: types.Message, state: FSMContext):
     if ref_code:
         referrer_id = db.get_user_by_referral_code(ref_code)
         if referrer_id and referrer_id != uid:
+            db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, uid))
+            db.conn.commit()
             db.update_balance(referrer_id, "RUB", 50)
             db.update_balance(uid, "RUB", 50)
             db.add_notification(referrer_id, f"🎉 Пользователь @{name} перешёл по вашей реферальной ссылке! Вам начислено 50 RUB")
@@ -988,12 +1016,12 @@ async def withdraw_cb(call: CallbackQuery):
 # ========== РЕФЕРАЛЫ ==========
 @dp.callback_query(lambda c: c.data == "referral")
 async def referral_cb(call: CallbackQuery):
-    user = db.get_user(call.from_user.id)
+    user = db.get_user_dict(call.from_user.id)
     if not user:
         await call.answer("❌ Пользователь не найден", show_alert=True)
         return
     
-    ref_code = user[8] if len(user) > 8 and user[8] else "novix"
+    ref_code = user.get('referral_code') or "novix"
     ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{ref_code}"
     
     referral_count = db.get_referral_count(call.from_user.id)
@@ -1088,19 +1116,19 @@ async def set_ton_msg(msg: types.Message, state: FSMContext):
 # ========== ПРОФИЛЬ ==========
 @dp.callback_query(lambda c: c.data == "profile")
 async def profile_cb(call: CallbackQuery):
-    user = db.get_user(call.from_user.id)
+    user = db.get_user_dict(call.from_user.id)
     if not user:
         await call.answer("❌ Пользователь не найден", show_alert=True)
         return
     
-    ton = user[4] or "не указан"
-    card = user[3] or "не указана"
+    ton = user.get('ton') or user.get('ton_wallet') or "не указан"
+    card = user.get('card_details') or "не указана"
     
     is_premium = db.is_premium(call.from_user.id)
     premium_info = db.get_premium_info(call.from_user.id)
     
     deals = db.get_user_deals(call.from_user.id)
-    completed_deals = len([d for d in deals if d[6] == "completed"]) if deals else 0
+    completed_deals = len([d for d in deals if (d[7] if len(d) > 7 else "") == "completed"]) if deals else 0
     
     role = get_user_role(completed_deals)
     
@@ -1132,8 +1160,8 @@ async def profile_cb(call: CallbackQuery):
     text = (
         f"👤 *Личный кабинет*\n\n"
         f"{admin_badge}"
-        f"🆔 Ваш ID: `{user[0]}`\n"
-        f"🔗 Username: @{escape_md(user[1] or 'без username')}\n"
+        f"🆔 Ваш ID: `{user['user_id']}`\n"
+        f"🔗 Username: @{escape_md(user['username'] or 'без username')}\n"
         f"🏆 Роль: {role}\n"
         f"📊 Сделок завершено: {completed_deals}\n\n"
         f"💼 *Баланс:*\n{balances}\n"
@@ -1380,8 +1408,10 @@ async def my_deals_cb(call: CallbackQuery):
         text = "📋 *Мои сделки*\n\n"
         for d in deals[:10]:
             role = "🟢 Продажа" if d[1] == call.from_user.id else "🔵 Покупка"
-            emoji = {"awaiting": "⏳", "paid": "💰", "item_sent": "📦", "completed": "✅", "cancelled": "❌"}.get(d[6], "❓")
-            text += f"{emoji} *#{d[0]}* | {role}\n   🎁 {escape_md(d[3][:20])}\n   💰 {fmt_num(d[4])} RUB\n   📍 {d[6]}\n\n"
+            status = d[7] if len(d) > 7 else "awaiting"
+            currency = d[6] if len(d) > 6 else "RUB"
+            emoji = {"awaiting": "⏳", "paid": "💰", "item_sent": "📦", "completed": "✅", "cancelled": "❌"}.get(status, "❓")
+            text += f"{emoji} *#{d[0]}* | {role}\n   🎁 {escape_md(d[3][:20])}\n   💰 {fmt_num(d[4])} {currency}\n   📍 {status}\n\n"
         await call.message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
     await call.answer()
 
@@ -1703,8 +1733,10 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
         else:
             text = "📦 *Активные сделки*\n\n"
             for d in deals:
-                emoji = {"awaiting": "⏳", "paid": "💰", "item_sent": "📦"}.get(d[6], "❓")
-                text += f"{emoji} #{d[0]} | {escape_md(d[3][:20])} | {fmt_num(d[4])} RUB | {d[6]}\n"
+                status = d[7] if len(d) > 7 else "awaiting"
+                currency = d[6] if len(d) > 6 else "RUB"
+                emoji = {"awaiting": "⏳", "paid": "💰", "item_sent": "📦"}.get(status, "❓")
+                text += f"{emoji} #{d[0]} | {escape_md(d[3][:20])} | {fmt_num(d[4])} {currency} | {status}\n"
             await call.message.answer(text, parse_mode="Markdown", reply_markup=admin_kb())
     elif action == "disputes":
         disputes = db.get_disputes()
@@ -1714,7 +1746,7 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
         else:
             text = "⚠️ *Споры*\n\n"
             for d in disputes:
-                text += f"📝 Спор #{d[0]} | Сделка #{d[1]} | {escape_md(d[4][:50])}\n✅ /resolve_{d[0]}\n\n"
+                text += f"📝 Спор #{d[0]} | Сделка #{d[1]} | {escape_md(d[3][:50])}\n✅ /resolve_{d[0]}\n\n"
             await call.message.answer(text, parse_mode="Markdown", reply_markup=admin_kb())
     elif action == "stats":
         s = db.get_stats()
@@ -1784,7 +1816,7 @@ async def users_select_cb(call: CallbackQuery):
 @dp.callback_query(lambda c: c.data.startswith("user_info_"))
 async def user_info_cb(call: CallbackQuery):
     uid = int(call.data.split("_")[2])
-    user = db.get_user(uid)
+    user = db.get_user_dict(uid)
     
     if not user:
         await call.answer("Пользователь не найден", show_alert=True)
@@ -1818,16 +1850,16 @@ async def user_info_cb(call: CallbackQuery):
         if premium_info.get("duration_days"):
             granted_info += f"\n📆 Длительность: {premium_info['duration_days']} дней"
     
-    reg_date = user[10] if len(user) > 10 else '?'
+    reg_date = user.get('created_at', '?')
     text = (
         f"👤 *Информация о пользователе*\n\n"
-        f"🆔 ID: `{user[0]}`\n"
-        f"📝 Username: @{escape_md(user[1] or 'без username')}\n"
-        f"📅 Регистрация: {reg_date[:16] if reg_date != '?' else '?'}\n\n"
+        f"🆔 ID: `{user['user_id']}`\n"
+        f"📝 Username: @{escape_md(user['username'] or 'без username')}\n"
+        f"📅 Регистрация: {str(reg_date)[:16] if reg_date != '?' else '?'}\n\n"
         f"💰 *Балансы:*\n{balances}\n"
         f"⭐ *Premium:* {premium_status}{granted_info}\n\n"
-        f"💳 Карта: {escape_md(user[3] or 'не указана')}\n"
-        f"📱 TON: {escape_md(user[4] or 'не указан')}"
+        f"💳 Карта: {escape_md(user.get('card_details') or 'не указана')}\n"
+        f"📱 TON: {escape_md(user.get('ton') or user.get('ton_wallet') or 'не указан')}"
     )
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -1859,7 +1891,7 @@ async def admin_credit_uid(msg: types.Message, state: FSMContext):
             parse_mode="Markdown",
             reply_markup=admin_currency_kb("credit_amount", user_id)
         )
-        await state.clear()
+        # Не очищаем state — пользователь должен выбрать валюту
     except ValueError:
         await msg.answer("❌ Введите ID числом", reply_markup=cancel_kb())
 
@@ -1871,10 +1903,12 @@ async def admin_credit_amount(msg: types.Message, state: FSMContext):
             await msg.answer("❌ Сумма должна быть больше 0", reply_markup=cancel_kb())
             return
         data = await state.get_data()
-        db.upd_balance(data['uid'], amount)
-        await msg.answer(f"✅ Зачислено {fmt_num(amount)} RUB пользователю {data['uid']}")
+        uid = data.get('user_id', data.get('uid', 0))
+        currency = data.get('currency', 'RUB')
+        db.update_balance(uid, currency, amount)
+        await msg.answer(f"✅ Зачислено {fmt_num(amount)} {currency} пользователю {uid}")
         await state.clear()
-        await bot.send_message(data['uid'], f"💰 Вам зачислено {fmt_num(amount)} RUB!")
+        await bot.send_message(uid, f"💰 Вам зачислено {fmt_num(amount)} {currency}!")
         await menu_cb(msg)
     except ValueError:
         await msg.answer("❌ Введите число", reply_markup=cancel_kb())
@@ -1897,7 +1931,7 @@ async def admin_debit_uid(msg: types.Message, state: FSMContext):
             parse_mode="Markdown",
             reply_markup=admin_currency_kb("debit_amount", user_id)
         )
-        await state.clear()
+        # Не очищаем state — пользователь должен выбрать валюту
     except ValueError:
         await msg.answer("❌ Введите ID числом", reply_markup=cancel_kb())
 
@@ -1909,14 +1943,16 @@ async def admin_debit_amount(msg: types.Message, state: FSMContext):
             await msg.answer("❌ Сумма должна быть больше 0", reply_markup=cancel_kb())
             return
         data = await state.get_data()
-        user = db.get_user(data['uid'])
-        if amount > user[2]:
-            await msg.answer(f"❌ Недостаточно средств. Баланс: {fmt_num(user[2])} RUB", reply_markup=cancel_kb())
+        uid = data.get('user_id', data.get('uid', 0))
+        currency = data.get('currency', 'RUB')
+        current_balance = db.get_balance(uid, currency)
+        if amount > current_balance:
+            await msg.answer(f"❌ Недостаточно средств. Баланс: {fmt_num(current_balance)} {currency}", reply_markup=cancel_kb())
             return
-        db.upd_balance(data['uid'], -amount)
-        await msg.answer(f"✅ Списано {fmt_num(amount)} RUB у {data['uid']}")
+        db.update_balance(uid, currency, -amount)
+        await msg.answer(f"✅ Списано {fmt_num(amount)} {currency} у {uid}")
         await state.clear()
-        await bot.send_message(data['uid'], f"💸 С вашего баланса списано {fmt_num(amount)} RUB")
+        await bot.send_message(uid, f"💸 С вашего баланса списано {fmt_num(amount)} {currency}")
         await menu_cb(msg)
     except ValueError:
         await msg.answer("❌ Введите число", reply_markup=cancel_kb())
@@ -2144,19 +2180,10 @@ async def resolve_cmd(msg: types.Message):
     except ValueError:
         await msg.answer("❌ Используйте: /resolve_номер")
 
-@dp.message(lambda m: m.text and m.text.startswith("/claim_"))
-async def claim_achievement(msg: types.Message):
-    ach_id = msg.text.replace("/claim_", "")
-    reward = db.claim_achievement_reward(msg.from_user.id, ach_id)
-    if reward > 0:
-        await msg.answer(f"🎉 Поздравляем! Вы получили {reward} RUB за достижение!")
-    else:
-        await msg.answer("❌ Награда уже получена или недоступна")
-
 # ========== API ДЛЯ MINI APP ==========
 async def handle_api(request):
     user_id = int(request.query.get('user_id', 0))
-    user = db.get_user(user_id)
+    user = db.get_user_dict(user_id)
     
     if not user:
         return web.json_response({'error': 'User not found'}, status=404)
@@ -2164,6 +2191,9 @@ async def handle_api(request):
     balances = {}
     for curr in ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']:
         balances[curr] = db.get_balance(user_id, curr)
+    
+    # Получаем реферальные данные
+    referral_code = user.get('referral_code') or "novix"
     
     deals = db.get_user_deals(user_id)
     deals_list = []
@@ -2173,24 +2203,26 @@ async def handle_api(request):
             'item': d[3],
             'amount': d[4],
             'currency': d[6] if len(d) > 6 else 'RUB',
-            'status': d[6] if len(d) > 6 else 'awaiting',
+            'status': d[7] if len(d) > 7 else 'awaiting',
             'role': 'seller' if d[1] == user_id else 'buyer',
-            'created_at': d[7] if len(d) > 7 else None
+            'created_at': d[8] if len(d) > 8 else None
         })
     
     return web.json_response({
-        'id': user[0],
-        'username': user[1],
-        'firstName': user[1] or 'User',
+        'id': user['user_id'],
+        'username': user['username'],
+        'firstName': user['username'] or 'User',
         'balances': balances,
         'is_premium': db.is_premium(user_id),
-        'rating': user[7] if len(user) > 7 else 0,
-        'card': user[3] or '',
-        'ton': user[4] or '',
+        'rating': user.get('rating', 0) or 0,
+        'card': user.get('card_details') or '',
+        'ton': user.get('ton') or user.get('ton_wallet') or '',
         'deals': deals_list,
+        'referral_code': referral_code,
         'referral_count': db.get_referral_count(user_id),
         'referral_earnings': db.get_referral_earnings(user_id),
-        'is_admin': user_id in ADMIN_IDS
+        'is_admin': user_id in ADMIN_IDS,
+        'premium_until': db.get_premium_info(user_id).get('expires') if db.is_premium(user_id) else None
     })
 
 async def handle_create_deal(request):
@@ -2233,11 +2265,12 @@ async def handle_save_card(request):
         data = await request.json()
         user_id = data.get('user_id')
         card = data.get('card')
+        currency = data.get('currency', 'RUB')
         
         if not user_id or not card:
             return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
         
-        db.set_card(user_id, card)
+        db.set_card(user_id, card, currency)
         return web.json_response({'success': True})
     except Exception as e:
         return web.json_response({'success': False, 'error': str(e)}, status=500)
@@ -2269,40 +2302,6 @@ async def handle_currency_rates(request):
             'success': False,
             'error': str(e)
         }, status=500)
-
-async def handle_achievements(request):
-    user_id = int(request.query.get('user_id', 0))
-    achievements = db.get_user_achievements(user_id)
-    stats = db.get_achievement_stats(user_id)
-    
-    return web.json_response({
-        'stats': stats,
-        'achievements': [{
-            'id': a[0],
-            'name': a[1],
-            'description': a[2],
-            'icon': a[3],
-            'reward': a[4],
-            'earned_at': a[8],
-            'claimed': a[9]
-        } for a in achievements]
-    })
-
-async def handle_claim_achievement(request):
-    try:
-        data = await request.json()
-        user_id = data.get('user_id')
-        achievement_id = data.get('achievement_id')
-        
-        if not user_id or not achievement_id:
-            return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
-        
-        reward = db.claim_achievement_reward(user_id, achievement_id)
-        if reward > 0:
-            return web.json_response({'success': True, 'reward': reward})
-        return web.json_response({'success': False, 'error': 'Already claimed or not available'})
-    except Exception as e:
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
 
 async def get_user_balances_text(user_id: int) -> str:
     text = ""

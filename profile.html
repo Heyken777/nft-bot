@@ -200,7 +200,10 @@
         function formatNumber(n) { return (n || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
         function showToast(msg, type = 'success') { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; t.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#1f2937;color:white;padding:10px 20px;border-radius:40px;font-size:14px;z-index:1000;'; document.body.appendChild(t); setTimeout(() => t.remove(), 2000); }
         
-        function navigateTo(page) { tg.close(); tg.openTelegramLink(`https://t.me/NovixGift_Bot?startapp=${page}`); }
+        function navigateTo(page) {
+            const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html' };
+            window.location.href = pages[page] || 'index.html';
+        }
         
         // Получение роли по количеству сделок
         function getUserRole(dealsCount) {
@@ -357,8 +360,8 @@
             });
         });
         
-        document.getElementById('upgradePremiumBtn').onclick = () => navigateTo('premium');
-        document.getElementById('logoutBtn').onclick = () => { tg.close(); };
+        document.getElementById('upgradePremiumBtn').onclick = () => { window.location.href = 'premium.html'; };
+        document.getElementById('logoutBtn').onclick = () => { navigateTo('index.html'); };
         
         // Загрузка данных
         loadProfileData();

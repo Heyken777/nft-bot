@@ -114,8 +114,8 @@
         let selectedCurrency = 'RUB';
         
         function navigateTo(page) {
-            tg.close();
-            tg.openTelegramLink(`https://t.me/NovixGift_Bot?startapp=${page}`);
+            const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html' };
+            window.location.href = pages[page] || 'index.html';
         }
         
         // Выбор валюты
@@ -144,14 +144,40 @@
             document.getElementById('stepPrice').style.display = 'block';
         };
         
-        document.getElementById('createDealBtn').onclick = () => {
+        document.getElementById('createDealBtn').onclick = async () => {
             const itemName = document.getElementById('itemName').value.trim();
             const price = parseFloat(document.getElementById('itemPrice').value);
+            if (!itemName) {
+                tg.showPopup({title: 'Ошибка', message: 'Введите название товара'});
+                return;
+            }
             if (!price || price <= 0) {
                 tg.showPopup({title: 'Ошибка', message: 'Введите корректную цену'});
                 return;
             }
-            tg.openTelegramLink(`https://t.me/NovixGift_Bot?start=create_deal_${encodeURIComponent(itemName)}_${price}_${selectedCurrency}`);
+            const userId = tg.initDataUnsafe?.user?.id || 0;
+            try {
+                const response = await fetch('/api/create_deal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, item_name: itemName, price: price, currency: selectedCurrency })
+                });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    document.getElementById('dealId').innerText = result.deal_id;
+                    document.getElementById('dealItem').innerText = itemName;
+                    document.getElementById('dealPrice').innerText = `${result.amount} ${result.currency}`;
+                    document.getElementById('dealCommission').innerText = `${(result.commission || 0.02) * 100}%`;
+                    const link = `https://t.me/NovixGift_Bot?start=deal_${result.deal_id}`;
+                    document.getElementById('dealLink').innerText = link;
+                    document.getElementById('stepPrice').style.display = 'none';
+                    document.getElementById('resultContainer').style.display = 'block';
+                } else {
+                    tg.showPopup({title: 'Ошибка', message: result.error || 'Не удалось создать сделку'});
+                }
+            } catch (error) {
+                tg.showPopup({title: 'Ошибка', message: 'Ошибка соединения с сервером'});
+            }
         };
         
         document.getElementById('newDealBtn').onclick = () => location.reload();

@@ -116,8 +116,70 @@
         tg.expand();
         
         function navigateTo(page) {
-            tg.close();
-            tg.openTelegramLink(`https://t.me/NovixGift_Bot?startapp=${page}`);
+            const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html' };
+            window.location.href = pages[page] || 'index.html';
+        }
+        
+        let dealsData = [];
+        let currentFilter = 'all';
+        
+        async function loadDeals() {
+            try {
+                const userId = tg.initDataUnsafe?.user?.id || 0;
+                const response = await fetch(`/api/user?user_id=${userId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    dealsData = data.deals || [];
+                    renderDeals();
+                }
+            } catch (error) {
+                console.error('API error:', error);
+            }
+        }
+        
+        function getStatusText(s) {
+            const m = { 'awaiting': '⏳ Ожидает оплаты', 'paid': '💰 Оплачена', 'item_sent': '📦 Товар передан', 'completed': '✅ Завершена', 'cancelled': '❌ Отменена' };
+            return m[s] || s;
+        }
+        
+        function formatNumber(n) { return (n || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+        
+        function renderDeals() {
+            const container = document.getElementById('dealsList');
+            const emptyState = document.getElementById('emptyState');
+            let filtered = dealsData;
+            if (currentFilter !== 'all') filtered = filtered.filter(d => d.status === currentFilter);
+            
+            if (!filtered.length) {
+                container.style.display = 'none';
+                if (emptyState) emptyState.style.display = 'block';
+                return;
+            }
+            container.style.display = 'block';
+            if (emptyState) emptyState.style.display = 'none';
+            
+            container.innerHTML = filtered.map(d => `
+                <div class="glass rounded-xl p-4 border border-white/10">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <span class="text-xs text-gray-500">Сделка #${d.id}</span>
+                            <div class="font-semibold mt-1">${d.item || 'Без названия'}</div>
+                        </div>
+                        <span class="status-${d.status} text-xs px-2 py-0.5 rounded-full border">${getStatusText(d.status)}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-sm">
+                        <span>💰 ${formatNumber(d.amount)} ${d.currency || 'RUB'}</span>
+                        <span class="text-gray-500">${d.role === 'seller' ? 'Продавец' : 'Покупатель'}</span>
+                    </div>
+                    ${d.status === 'awaiting' && d.role === 'buyer' ? `<button class="pay-deal-btn w-full mt-3 bg-[#00f2fe] text-black py-1.5 rounded-lg text-sm font-semibold" data-id="${d.id}">✅ Оплатить</button>` : ''}
+                </div>
+            `).join('');
+            
+            document.querySelectorAll('.pay-deal-btn').forEach(btn => {
+                btn.onclick = () => {
+                    tg.openTelegramLink(`https://t.me/NovixGift_Bot?start=deal_${btn.dataset.id}`);
+                };
+            });
         }
         
         // Фильтрация
@@ -129,11 +191,12 @@
                 });
                 btn.classList.add('active', 'bg-[#00f2fe]/20', 'text-[#00f2fe]');
                 btn.classList.remove('bg-white/5', 'text-gray-400');
-                
-                const filter = btn.dataset.filter;
-                // Здесь будет логика фильтрации сделок
+                currentFilter = btn.dataset.filter;
+                renderDeals();
             };
         });
+        
+        loadDeals();
     </script>
     <script src="animations.js"></script>
 </body>

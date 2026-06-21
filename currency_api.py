@@ -30,7 +30,7 @@ class CurrencyAPI:
             if datetime.now() - datetime.fromisoformat(cached['timestamp']) < timedelta(hours=1):
                 return cached['rates']
         
-        # Резервные курсы на случай ошибки API
+        # Резервные курсы (сколько RUB за 1 единицу валюты)
         rates = {
             'USD': 71.91,
             'EUR': 82.97,
@@ -46,14 +46,15 @@ class CurrencyAPI:
         # Пробуем получить курсы из API
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get("https://api.exchangerate-api.com/v4/latest/RUB", timeout=10) as response:
+                async with session.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10) as response:
                     if response.status == 200:
                         data = await response.json()
                         api_rates = data.get('rates', {})
+                        # API возвращает курсы относительно USD, конвертируем в RUB
+                        rub_rate = api_rates.get('RUB', 71.91)
                         for currency in rates.keys():
-                            if currency in api_rates:
-                                if currency not in ['TON', 'USDT', 'STARS']:
-                                    rates[currency] = round(api_rates[currency], 2)
+                            if currency in api_rates and currency not in ['TON', 'USDT', 'STARS']:
+                                rates[currency] = round(rub_rate / api_rates[currency], 2)
         except Exception as e:
             print(f"⚠️ Не удалось обновить курсы: {e}")
         

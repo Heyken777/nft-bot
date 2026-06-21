@@ -73,6 +73,11 @@
         tg.expand();
         tg.enableClosingConfirmation();
         
+        function navigateTo(page) {
+            const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html' };
+            window.location.href = pages[page] || 'index.html';
+        }
+        
         const rates = { RUB: 1, USD: 92.5, EUR: 100, TON: 500, USDT: 92, STARS: 15 };
         const prices = {30: 299, 45: 419, 60: 559, 90: 799, 365: 2999};
         
@@ -123,9 +128,21 @@
         updatePrices();
         
         // Кнопка покупки
-        document.getElementById('buyPremiumBtn').onclick = () => {
+        document.getElementById('buyPremiumBtn').onclick = async () => {
             const rate = rates[selectedCurrency] || 1;
             const price = Math.floor(prices[selectedDays] / rate);
+            // Проверяем баланс пользователя
+            try {
+                const resp = await fetch(`/api/user?user_id=${tg.initDataUnsafe?.user?.id || 0}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const balance = (data.balances && data.balances[selectedCurrency]) || 0;
+                    if (balance < price) {
+                        tg.showPopup({title: 'Ошибка', message: `Недостаточно средств. Нужно ${price} ${selectedCurrency}, у вас ${balance} ${selectedCurrency}`});
+                        return;
+                    }
+                }
+            } catch (e) {}
             tg.openTelegramLink(`https://t.me/NovixGift_Bot?start=buy_premium_${selectedDays}_${selectedCurrency}`);
         };
         
