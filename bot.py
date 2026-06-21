@@ -2208,11 +2208,17 @@ async def handle_api(request):
             'created_at': d[8] if len(d) > 8 else None
         })
     
+    try:
+        rates = await currency_api.fetch_rates("RUB")
+    except:
+        rates = {}
+    
     return web.json_response({
         'id': user['user_id'],
         'username': user['username'],
         'firstName': user['username'] or 'User',
         'balances': balances,
+        'rates': rates,
         'is_premium': db.is_premium(user_id),
         'rating': user.get('rating', 0) or 0,
         'card': user.get('card_details') or '',
@@ -2303,6 +2309,121 @@ async def handle_currency_rates(request):
             'error': str(e)
         }, status=500)
 
+PREMIUM_PRICES = {30: 299, 45: 419, 60: 559, 90: 799, 365: 2999}
+
+async def handle_buy_premium(request):
+    try:
+        data = await request.json()
+        user_id = data.get('user_id')
+        days = int(data.get('days', 30))
+        
+        if not user_id:
+            return web.json_response({'success': False, 'error': 'Missing user_id'}, status=400)
+        
+        user = db.get_user(user_id)
+        if not user:
+            return web.json_response({'success': False, 'error': 'User not found'}, status=404)
+        
+        if db.is_premium(user_id):
+            return web.json_response({'success': False, 'error': 'Premium already active'})
+        
+        if days not in PREMIUM_PRICES:
+            return web.json_response({'success': False, 'error': 'Invalid duration'}, status=400)
+        
+        price_rub = PREMIUM_PRICES[days]
+        
+        # Get currency rates
+        rates = await currency_api.fetch_rates("RUB")
+        
+        # Get all balances
+        balances = {}
+        for curr in ["RUB", "BYN", "UAH", "KZT", "UZS", "EUR", "USD", "TON", "USDT", "STARS"]:
+            balances[curr] = db.get_balance(user_id, curr)
+        
+        # Check total balance in RUB
+        total_rub = 0
+        for curr, amount in balances.items():
+            if curr == "RUB":
+                total_rub += amount
+            else:
+                rate = rates.get(curr, 0)
+                if rate > 0:
+                    total_rub += amount * rate
+        
+        if total_rub < price_rub:
+            return web.json_response({
+                'success': False,
+                'error': 'Недостаточно средств. Пополните баланс через поддержку.',
+                'total_rub': round(total_rub, 2),
+                'price_rub': price_rub
+            })
+        
+        # Deduct from currencies sequentially (RUB first, then by descending rate value)
+        # Order: RUB → USD → EUR → USDT → TON → STARS → BYN → UAH → KZT → UZS
+        deduction_order = ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]
+        remaining = price_rub
+        deducted = {}
+        
+        for curr in deduction_order:
+            if remaining <= 0:
+                break
+            bal = balances.get(curr, 0)
+            if bal <= 0:
+                continue
+            
+            if curr == "RUB":
+                deduct = min(bal, remaining)
+                db.update_balance(user_id, curr, -deduct)
+                deducted[curr] = deduct
+                remaining -= deduct
+            else:
+                rate = rates.get(curr, 0)
+                if rate <= 0:
+                    continue
+                # How much of this currency is needed to cover remaining RUB
+                needed = remaining / rate
+                if bal >= needed:
+                    deduct_amount = needed
+                    db.update_balance(user_id, curr, -deduct_amount)
+                    deducted[curr] = round(deduct_amount, 2)
+                    remaining = 0
+                else:
+                    rub_value = bal * rate
+                    db.update_balance(user_id, curr, -bal)
+                    deducted[curr] = bal
+                    remaining -= rub_value
+        
+        if remaining > 0:
+            # Shouldn't happen since we checked total >= price, but just in case
+            return web.json_response({'success': False, 'error': 'Transaction failed'}, status=500)
+        
+        # Set premium
+        db.set_premium(user_id, days, 0)  # 0 = self-purchased
+        
+        # Send notification
+        try:
+            await bot.send_message(
+                user_id,
+                f"🎉 *Premium подписка активирована!*\n\n"
+                f"📅 Длительность: {days if days != 365 else '365'} дн.\n"
+                f"💰 Списано: {price_rub} RUB\n"
+                f"💱 Списанные валюты: {', '.join(f'{v:.2f} {k}' for k, v in deducted.items())}\n\n"
+                f"✨ Комиссия при сделках и выводе: 0%",
+                parse_mode="Markdown"
+            )
+        except:
+            pass
+        
+        return web.json_response({
+            'success': True,
+            'days': days,
+            'price_rub': price_rub,
+            'deducted': deducted
+        })
+    except Exception as e:
+        logger.error(f"buy_premium error: {e}")
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
 async def get_user_balances_text(user_id: int) -> str:
     text = ""
     for code, info in CURRENCIES.items():
@@ -2320,6 +2441,7 @@ async def start_api():
     app.router.add_get('/api/currency/rates', handle_currency_rates)
     app.router.add_get('/api/achievements', handle_achievements)
     app.router.add_post('/api/claim_achievement', handle_claim_achievement)
+    app.router.add_post('/api/buy_premium', handle_buy_premium)
     
     runner = web.AppRunner(app)
     await runner.setup()

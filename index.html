@@ -57,7 +57,7 @@
                     </div>
                     <div class="flex gap-2">
                         <button class="settings-btn w-10 h-10 rounded-full bg-gradient-to-tr from-gray-600 to-gray-700 flex items-center justify-center shadow-lg">⚙️</button>
-                        <button class="profile-btn w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">👤</button>
+                        <button class="profile-btn w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-blue-600 flex items-center justify-center shadow-lg" onclick="window.location.href='profile.html'">👤</button>
                     </div>
                 </div>
             </div>
@@ -88,25 +88,25 @@
                 </div>
                 
                 <div class="grid grid-cols-4 gap-2">
-                    <div class="glass-light rounded-xl p-3 text-center cursor-pointer transition hover:bg-white/5" data-page="profile">
+                    <div class="glass-light rounded-xl p-3 text-center cursor-pointer transition hover:bg-white/5" onclick="window.location.href='profile.html'">
                         <div class="w-10 h-10 mx-auto rounded-full bg-purple-500/10 flex items-center justify-center mb-1">
                             <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
                         </div>
                         <div class="text-xs font-medium">Профиль</div>
                     </div>
-                    <div class="glass-light rounded-xl p-3 text-center cursor-pointer transition hover:bg-white/5" data-page="premium">
+                    <div class="glass-light rounded-xl p-3 text-center cursor-pointer transition hover:bg-white/5" onclick="window.location.href='premium.html'">
                         <div class="w-10 h-10 mx-auto rounded-full bg-amber-500/10 flex items-center justify-center mb-1">
                             <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.562.562 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/></svg>
                         </div>
                         <div class="text-xs font-medium">Premium</div>
                     </div>
-                    <div class="glass-light rounded-xl p-3 text-center cursor-pointer transition hover:bg-white/5" data-page="referral">
+                    <div class="glass-light rounded-xl p-3 text-center cursor-pointer transition hover:bg-white/5" onclick="window.location.href='referral.html'">
                         <div class="w-10 h-10 mx-auto rounded-full bg-green-500/10 flex items-center justify-center mb-1">
                             <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                         </div>
                         <div class="text-xs font-medium">Рефералы</div>
                     </div>
-                    <div class="glass-light rounded-xl p-3 text-center cursor-pointer transition hover:bg-white/5" data-page="achievements">
+                    <div class="glass-light rounded-xl p-3 text-center cursor-pointer transition hover:bg-white/5" onclick="window.location.href='achievements.html'">
                         <div class="w-10 h-10 mx-auto rounded-full bg-[#00f2fe]/10 flex items-center justify-center mb-1">
                             <svg class="w-5 h-5 text-[#00f2fe]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.562.562 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/></svg>
                         </div>
@@ -128,25 +128,7 @@
             </div>
         </div>
         
-        <!-- ПРОФИЛЬ -->
-        <div id="page-profile" class="page">
-            <div class="glass px-5 pt-6 pb-3 border-b border-white/10 sticky top-0 z-10"><div class="flex items-center gap-3"><button class="back-btn w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">←</button><h1 class="text-xl font-semibold">👤 Профиль</h1></div></div>
-            <div class="px-5 py-5 space-y-5 pb-24">
-                <div class="glass rounded-2xl p-5 text-center"><div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl shadow-lg mb-3">👤</div><h2 class="text-xl font-semibold" id="profileName">Загрузка...</h2><p class="text-gray-400 text-sm" id="profileUsername">@username</p><p class="text-xs text-gray-500 mt-1" id="profileId">ID: --</p></div>
-                <div class="grid grid-cols-3 gap-3"><div class="glass rounded-xl p-3 text-center"><div class="text-xl font-bold text-blue-400" id="statDeals">0</div><div class="text-xs text-gray-500">Сделок</div></div><div class="glass rounded-xl p-3 text-center"><div class="text-xl font-bold text-green-400" id="statCompleted">0</div><div class="text-xs text-gray-500">Завершено</div></div><div class="glass rounded-xl p-3 text-center"><div class="text-xl font-bold text-amber-400" id="statRating">0</div><div class="text-xs text-gray-500">⭐ Рейтинг</div></div></div>
-                <div class="glass rounded-xl p-4"><div class="font-medium mb-2">💎 Премиум статус</div><div class="flex justify-between items-center"><span id="premiumStatus">Не активен</span><button class="upgrade-premium-btn text-sm text-blue-400">Купить</button></div></div>
-                <div class="glass rounded-xl p-4"><div class="font-medium mb-2">💼 Мои балансы</div><div id="profileBalances" class="space-y-2"></div></div>
-                <div class="glass rounded-xl p-4"><div class="font-medium mb-2">💳 Реквизиты</div><div id="profileDetails" class="space-y-2"></div><button class="edit-profile-btn w-full mt-3 bg-white/5 border border-white/10 rounded-xl py-2 text-sm">✏️ Редактировать</button></div>
-            </div>
-        </div>
-        
-        <!-- РЕДАКТИРОВАНИЕ ПРОФИЛЯ -->
-        <div id="page-profile_edit" class="page">
-            <div class="glass px-5 pt-6 pb-3 border-b border-white/10 sticky top-0 z-10"><div class="flex items-center gap-3"><button class="back-btn w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">←</button><h1 class="text-xl font-semibold">✏️ Редактировать</h1></div></div>
-            <div class="px-5 py-5 space-y-5 pb-24">
-                <div class="glass rounded-xl p-5"><div class="text-center mb-4"><div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl shadow-lg">👤</div><div class="mt-2 text-gray-400 text-sm">Telegram ID: <span id="editUserId"></span></div><div class="text-gray-400 text-sm">Username: @<span id="editUsername"></span></div><div class="text-xs text-gray-500 mt-1">⚠️ ID и Username нельзя изменить</div></div><div class="space-y-4"><div><label class="text-sm text-gray-400 block mb-1">💳 Номер карты</label><input type="text" id="editCard" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white" placeholder="0000 0000 0000 0000"></div><div><label class="text-sm text-gray-400 block mb-1">💎 TON кошелек</label><input type="text" id="editTon" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white" placeholder="UQ..."></div><button class="save-profile-btn w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-xl font-medium mt-4">💾 Сохранить изменения</button></div></div>
-            </div>
-        </div>
+
         
         <!-- МОИ СДЕЛКИ -->
         <div id="page-deals" class="page">
@@ -162,30 +144,7 @@
             </div>
         </div>
 
-                <!-- PREMIUM -->
-                <div id="page-premium" class="page">
-                    <div class="glass px-5 pt-6 pb-3 border-b border-white/10 sticky top-0 z-10"><div class="flex items-center gap-3"><button class="back-btn w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">←</button><h1 class="text-xl font-semibold">⭐ Premium</h1></div></div>
-                    <div class="px-5 py-5 space-y-5 pb-24">
-                        <div class="glass rounded-2xl p-5 text-center"><div class="text-3xl mb-2">⭐</div><div class="font-semibold text-lg" id="premiumStatusText">Premium не активен</div><div class="text-xs text-gray-500 mt-1" id="premiumExpiresText"></div></div>
-                        <div class="glass rounded-xl p-4"><div class="font-medium mb-2">✨ Преимущества</div><div class="space-y-2 text-sm"><div>• Комиссия при сделках: <span class="text-green-400">0%</span></div><div>• Комиссия при выводе: <span class="text-green-400">0%</span></div><div>• Приоритетная поддержка 24/7</div></div></div>
-                        <div><div class="text-sm font-medium mb-2">💰 Валюта оплаты</div><div class="flex flex-wrap gap-2" id="currencySelect"></div></div>
-                        <div><div class="text-sm font-medium mb-2">📅 Длительность</div><div class="space-y-2" id="plansList"></div></div>
-                        <button class="buy-premium-page-btn w-full bg-gradient-to-r from-amber-500 to-amber-600 py-3 rounded-xl font-medium shadow-lg">💎 Купить Premium</button>
-                    </div>
-                </div>
-                
-                <!-- РЕФЕРАЛЫ -->
-                <div id="page-referral" class="page">
-                    <div class="glass px-5 pt-6 pb-3 border-b border-white/10 sticky top-0 z-10"><div class="flex items-center gap-3"><button class="back-btn w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">←</button><h1 class="text-xl font-semibold">👥 Рефералы</h1></div></div>
-                    <div class="px-5 py-5 space-y-5 pb-24">
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="glass rounded-xl p-4 text-center"><div class="text-2xl font-bold text-blue-400" id="refCount">0</div><div class="text-xs text-gray-500">Приглашено</div></div>
-                            <div class="glass rounded-xl p-4 text-center"><div class="text-2xl font-bold text-green-400" id="refEarnings">0 RUB</div><div class="text-xs text-gray-500">Заработано</div></div>
-                        </div>
-                        <div class="glass rounded-xl p-5 text-center"><div class="font-medium mb-2">🔗 Твоя реферальная ссылка</div><div class="text-xs break-all bg-black/30 p-3 rounded-xl font-mono" id="refLink">Загрузка...</div><button class="copy-ref-btn mt-3 bg-blue-600/20 border border-blue-500/30 rounded-xl px-4 py-2 text-sm">📋 Копировать ссылку</button></div>
-                        <div class="glass rounded-xl p-4"><div class="font-medium mb-2">📖 Как это работает?</div><div class="space-y-2 text-sm"><div>1️⃣ Отправь ссылку другу</div><div>2️⃣ Друг регистрируется в боте</div><div>3️⃣ Вы получаете <span class="text-green-400">+50 RUB</span></div></div></div>
-                    </div>
-                </div>
+
                 
                 <!-- НАСТРОЙКИ (упрощённые) -->
                 <div id="page-settings" class="page">
@@ -261,7 +220,7 @@
                             <span class="text-[10px] font-medium text-gray-500">Сделки</span>
                             <div class="nav-dot w-1 h-1 rounded-full bg-transparent"></div>
                         </div>
-                        <div class="nav-item flex flex-col items-center gap-0.5 cursor-pointer" data-page="profile">
+                        <div class="nav-item flex flex-col items-center gap-0.5 cursor-pointer" onclick="window.location.href='profile.html'">
                             <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
                             <span class="text-[10px] font-medium text-gray-500">Профиль</span>
                             <div class="nav-dot w-1 h-1 rounded-full bg-transparent"></div>
@@ -293,18 +252,10 @@
                     username: tg.initDataUnsafe?.user?.username || '',
                     firstName: tg.initDataUnsafe?.user?.first_name || '',
                     balances: {},
-                    is_premium: false,
-                    rating: 0,
                     deals: [],
-                    referral_count: 0,
-                    referral_earnings: 0,
-                    card: '',
-                    ton: ''
                 };
                 let currentDisplayCurrency = 'RUB';
                 let currentFilter = 'all';
-                let selectedCurrency = 'RUB';
-                let selectedDays = 30;
                 let currentViewDeal = null;
                 
                 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
@@ -346,10 +297,7 @@
                 
                 function updateAllUI() {
                     updateHomePage();
-                    updateProfilePage();
                     updateDealsPage();
-                    updatePremiumPage();
-                    updateReferralPage();
                     updateSettingsPage();
                 }
                 
@@ -384,26 +332,7 @@
                     document.getElementById('activeDealsCount').innerHTML = activeCount;
                 }
                 
-                function updateProfilePage() {
-                    document.getElementById('profileName').innerHTML = userData.firstName || userData.username || 'Гость';
-                    document.getElementById('profileUsername').innerHTML = userData.username ? `@${userData.username}` : 'не авторизован';
-                    document.getElementById('profileId').innerHTML = `ID: ${userData.id || '?'}`;
-                    document.getElementById('statDeals').innerHTML = userData.deals?.length || 0;
-                    document.getElementById('statCompleted').innerHTML = userData.deals?.filter(d => d.status === 'completed').length || 0;
-                    document.getElementById('statRating').innerHTML = userData.rating || 0;
-                    document.getElementById('premiumStatus').innerHTML = userData.is_premium ? '<span class="text-amber-400">⭐ Активен</span>' : 'Не активен';
-                    const completedC = userData.deals?.filter(d => d.status === 'completed').length || 0;
-                    userRole = getUserRole(completedC);
-                    const roleEl = document.getElementById('userRole');
-                    if (roleEl) roleEl.innerHTML = userRole;
-                    
-                    let balHtml = '';
-                    for (const [c, a] of Object.entries(userData.balances || {})) {
-                        if (a > 0 || c === 'RUB') balHtml += `<div class="flex justify-between items-center py-1.5"><span>${getCurrencySymbol(c)} ${c}</span><span>${formatNumber(a)}</span></div>`;
-                    }
-                    document.getElementById('profileBalances').innerHTML = balHtml || '<div class="text-center text-gray-500">Нет балансов</div>';
-                    document.getElementById('profileDetails').innerHTML = `<div class="flex justify-between py-1.5"><span>💳 Карта</span><span>${userData.card || 'не указана'}</span></div><div class="flex justify-between py-1.5"><span>💎 TON кошелек</span><span class="text-xs break-all">${userData.ton || 'не указан'}</span></div>`;
-                }
+
                 
                 function updateDealsPage() {
                     let filtered = userData.deals || [];
@@ -448,27 +377,7 @@
                     navigateTo('view_deal');
                 }
                 
-                function updatePremiumPage() {
-                    document.getElementById('premiumStatusText').innerHTML = userData.is_premium ? '⭐ Premium активен' : 'Premium не активен';
-                    const curSelect = document.getElementById('currencySelect');
-                    if (curSelect) { curSelect.innerHTML = Object.keys(rates).map(c => `<button class="premium-currency px-4 py-1.5 rounded-full text-sm bg-white/5 border border-white/10" data-currency="${c}">${getCurrencySymbol(c)} ${c}</button>`).join(''); }
-                    document.querySelectorAll('.premium-currency').forEach(btn => btn.onclick = () => { selectedCurrency = btn.dataset.currency; updatePremiumPlans(); });
-                    updatePremiumPlans();
-                }
-                
-                function updatePremiumPlans() {
-                    const rate = rates[selectedCurrency] || 1;
-                    const plansDiv = document.getElementById('plansList');
-                    if (plansDiv) { plansDiv.innerHTML = Object.entries(prices).map(([days, rubPrice]) => { const price = Math.floor(rubPrice / rate); return `<div class="plan-item glass rounded-xl p-3 border border-white/10 cursor-pointer ${days == selectedDays ? 'selected' : ''}" data-days="${days}"><div class="flex justify-between"><span class="font-medium">${days === '365' ? '👑 FOREVER' : days + ' дней'}</span><span class="text-amber-400 font-semibold">${price.toLocaleString()} ${selectedCurrency}</span></div></div>`; }).join(''); }
-                    document.querySelectorAll('.plan-item').forEach(el => el.onclick = () => { selectedDays = parseInt(el.dataset.days); updatePremiumPlans(); });
-                }
-                
-                function updateReferralPage() {
-                    document.getElementById('refCount').innerHTML = userData.referral_count || 0;
-                    document.getElementById('refEarnings').innerHTML = `${userData.referral_earnings || 0} RUB`;
-                    const refCode = userData.referral_code || userData.id || 'novix';
-                    document.getElementById('refLink').innerHTML = `https://t.me/NovixGift_Bot?start=ref_${refCode}`;
-                }
+
                 
                 function updateSettingsPage() {
                     const currencyContainer = document.getElementById('settingsCurrencySelect');
@@ -479,6 +388,11 @@
                 }
                 
                 function navigateTo(page) {
+                    const externalPages = { profile: 'profile.html', premium: 'premium.html', referral: 'referral.html', achievements: 'achievements.html' };
+                    if (externalPages[page]) {
+                        window.location.href = externalPages[page];
+                        return;
+                    }
                     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
                     const targetPage = document.getElementById(`page-${page}`);
                     if (targetPage) targetPage.classList.add('active');
@@ -501,9 +415,6 @@
                     });
                     if (page === 'home') updateHomePage();
                     if (page === 'deals') updateDealsPage();
-                    if (page === 'premium') updatePremiumPage();
-                    if (page === 'referral') updateReferralPage();
-                    if (page === 'profile') updateProfilePage();
                     if (page === 'settings') { 
                         updateSettingsPage();
                         attachPolicyAndTermsHandlers();
@@ -513,15 +424,11 @@
                 function escapeHtml(str) { return str.replace(/[&<>]/g, function(m){ if(m === '&') return '&amp;'; if(m === '<') return '&lt;'; if(m === '>') return '&gt;'; return m;}); }
                 
                 // ========== ОБРАБОТЧИКИ СОБЫТИЙ ==========
-                document.querySelectorAll('.nav-item, .profile-btn, .settings-btn, .create-deal-btn, .my-deals-btn, .profile-menu-btn, .premium-menu-btn, .referral-menu-btn').forEach(el => {
-                    if (el.classList?.contains('profile-btn')) el.addEventListener('click', () => navigateTo('profile'));
-                    else if (el.classList?.contains('settings-btn')) el.addEventListener('click', () => navigateTo('settings'));
+                document.querySelectorAll('.nav-item, .settings-btn, .create-deal-btn, .my-deals-btn').forEach(el => {
+                    if (el.classList?.contains('settings-btn')) el.addEventListener('click', () => navigateTo('settings'));
                     else if (el.classList?.contains('create-deal-btn')) el.addEventListener('click', () => navigateTo('create_deal'));
                     else if (el.classList?.contains('my-deals-btn')) el.addEventListener('click', () => navigateTo('deals'));
-                    else if (el.classList?.contains('profile-menu-btn')) el.addEventListener('click', () => navigateTo('profile'));
-                    else if (el.classList?.contains('premium-menu-btn')) el.addEventListener('click', () => navigateTo('premium'));
-                    else if (el.classList?.contains('referral-menu-btn')) el.addEventListener('click', () => navigateTo('referral'));
-                    else if (el.dataset?.page) el.addEventListener('click', (e) => { e.preventDefault(); navigateTo(el.dataset.page); });
+                    else if (el.dataset?.page && !el.hasAttribute('onclick')) el.addEventListener('click', (e) => { e.preventDefault(); navigateTo(el.dataset.page); });
                 });
                 
                 document.querySelectorAll('.back-btn').forEach(btn => btn.onclick = () => navigateTo('home'));
@@ -531,11 +438,7 @@
                 document.querySelector('.withdraw-btn')?.addEventListener('click', () => {
                     tg.openTelegramLink('https://t.me/NovixProHelp');
                 });
-                document.querySelector('.edit-profile-btn')?.addEventListener('click', () => navigateTo('profile_edit'));
-                document.querySelector('.upgrade-premium-btn')?.addEventListener('click', () => navigateTo('premium'));
-                document.querySelector('.save-profile-btn')?.addEventListener('click', () => { showToast('✅ Данные сохранены!'); navigateTo('profile'); });
-                document.querySelector('.copy-ref-btn')?.addEventListener('click', () => { const link = document.getElementById('refLink')?.innerText; if (link) { navigator.clipboard.writeText(link); showToast('🔗 Ссылка скопирована'); } });
-                document.querySelector('.buy-premium-page-btn')?.addEventListener('click', () => tg.openTelegramLink(`https://t.me/NovixGift_Bot?start=buy_premium_${selectedDays}_${selectedCurrency}`));
+                document.querySelector('.upgrade-premium-btn')?.addEventListener('click', () => window.location.href = 'premium.html');
                 // Кнопка "Политика конфиденциальности"
                 document.querySelector('.privacy-btn')?.addEventListener('click', () => {
                     window.location.href = '/nft-bot/privacy.html';
@@ -710,9 +613,7 @@
                                 }
                             }
                             console.log('✅ Курсы валют обновлены:', rates);
-                            // Обновляем отображение балансов
                             updateHomePage();
-                            updateProfilePage();
                         }
                     }
                 } catch (error) {
@@ -731,23 +632,7 @@
             loadCurrencyRates();
             setInterval(loadCurrencyRates, 60 * 60 * 1000); // Каждый час
             
-            // Добавь переменную для роли
-            let userRole = '🆕 Новичок';
 
-            // Функция для получения роли
-            function getUserRole(dealsCount) {
-                if (dealsCount >= 100) return '👑 Бог сделок';
-                if (dealsCount >= 50) return '💰 Скупщик';
-                if (dealsCount >= 25) return '⚡ Опытный трейдер';
-                if (dealsCount >= 10) return '📈 Активный пользователь';
-                if (dealsCount >= 5) return '🟢 Начинающий трейдер';
-                return '🆕 Новичок';
-            }
-
-            const completedCount = userData.deals?.filter(d => d.status === 'completed').length || 0;
-            userRole = getUserRole(completedCount);
-            const userRoleEl = document.getElementById('userRole');
-            if (userRoleEl) userRoleEl.innerHTML = userRole;            
             </script>
             <script src="animations.js"></script>
         </body>
