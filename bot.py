@@ -2844,3 +2844,6 @@ async def main():
         # Закрываем сессию бота корректно
         await bot.session.close()
         logger.info("👋 Бот завершил работу")
+
+if __name__ == "__main__":
+    asyncio.run(main())
