@@ -10,41 +10,18 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="styles.css">
     <style>
-        * { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-        body { background: #0f0f13; }
-        .glass { background: rgba(18, 18, 24, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.06); }
-        .glass-light { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.05); }
-        .page { display: none; animation: fadeIn 0.25s ease; }
+        .page { display: none; }
         .page.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        .nav-item { transition: all 0.2s ease; cursor: pointer; position: relative; }
-        .nav-item.active svg { color: #3b82f6; filter: drop-shadow(0 0 5px #3b82f6); }
-        .nav-item.active span { color: #3b82f6; }
-        .nav-item.active .nav-dot { background: #3b82f6; box-shadow: 0 0 5px #3b82f6; }
-        .nav-item:active { transform: scale(0.95); }
-        .status-awaiting { background: #f59e0b15; color: #f59e0b; border: 1px solid #f59e0b30; }
-        .status-paid { background: #3b82f615; color: #3b82f6; border: 1px solid #3b82f630; }
-        .status-completed { background: #10b98115; color: #10b981; border: 1px solid #10b98130; }
-        .loading { width: 36px; height: 36px; border: 3px solid rgba(59,130,246,0.2); border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        input, textarea { transition: all 0.2s ease; }
-        input:focus, textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
-        button { transition: all 0.2s ease; cursor: pointer; }
-        button:active { transform: scale(0.97); }
         .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 10px 20px; border-radius: 40px; font-size: 14px; z-index: 1000; animation: toastFade 2s ease forwards; }
         @keyframes toastFade { 0% { opacity: 0; transform: translateX(-50%) translateY(10px); } 15% { opacity: 1; transform: translateX(-50%) translateY(0); } 85% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
-        .currency-item { transition: all 0.2s ease; cursor: pointer; }
-        .currency-item:active { transform: scale(0.98); }
-        .create-currency, .premium-currency, .plan-card, .settings-currency { transition: all 0.2s ease; cursor: pointer; }
-        .create-currency.active, .premium-currency.active { background: #3b82f6; color: white; border-color: #3b82f6; }
-        .plan-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
-        .filter-btn { transition: all 0.2s ease; cursor: pointer; }
-        .filter-btn.active { background: #3b82f6; color: white; }
-        .deal-card { transition: all 0.2s ease; }
-        .deal-card:active { transform: scale(0.98); }
+        .loading { width: 36px; height: 36px; border: 3px solid rgba(123,63,242,0.2); border-top-color: #7B3FF2; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .skeleton { background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%); background-size: 200% 100%; animation: skeleton 1.5s infinite; }
+        @keyframes skeleton { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     </style>
 </head>
-<body class="bg-[#0f0f13] text-white">
+    <body class="bg-[#0a0a12] text-white">
     <div class="max-w-md mx-auto min-h-screen flex flex-col">
         
         <!-- ГЛАВНАЯ СТРАНИЦА -->
@@ -52,7 +29,7 @@
             <div class="glass px-5 pt-6 pb-3 border-b border-white/10 sticky top-0 z-10">
                 <div class="flex justify-between items-center">
                     <div>
-                        <h1 class="text-2xl font-bold tracking-tight"><span class="text-white">Novix</span><span class="text-blue-500">Gift</span></h1>
+                        <h1 class="text-2xl font-bold tracking-tight"><span class="text-white">Novix</span><span class="text-[#7B3FF2]">Gift</span></h1>
                         <div class="flex items-center gap-2 mt-0.5"><div class="w-1.5 h-1.5 rounded-full bg-green-500"></div><span class="text-xs text-gray-500" id="networkStatus">киберсеть активна</span></div>
                     </div>
                     <div class="flex gap-2">
@@ -63,7 +40,7 @@
             </div>
             <div class="px-5 py-4 space-y-5 pb-24">
                 <!-- Крупный баланс (общий) -->
-                <div class="glass rounded-2xl p-6 text-center border border-blue-500/20">
+                <div class="glass rounded-2xl p-6 text-center border border-[#7B3FF2]/20">
                     <div class="text-gray-500 text-sm mb-1">💰 Общий баланс</div>
                     <div class="text-4xl font-bold text-white" id="mainBalance">0 <span id="mainCurrency">RUB</span></div>
                     <div class="text-xs text-gray-500 mt-2" id="balanceDetails"></div>
@@ -76,12 +53,12 @@
                 <!-- Быстрые действия -->
                 <div class="grid grid-cols-2 gap-3">
                     <div class="create-deal-btn glass-light rounded-xl p-4 text-center cursor-pointer transition hover:bg-white/5">
-                        <div class="w-12 h-12 mx-auto rounded-full bg-blue-500/10 flex items-center justify-center mb-2"><svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.5v15m7.5-7.5h-15"/></svg></div>
+                        <div class="w-12 h-12 mx-auto rounded-full bg-[#7B3FF2]/10 flex items-center justify-center mb-2"><svg class="w-6 h-6 text-[#7B3FF2]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.5v15m7.5-7.5h-15"/></svg></div>
                         <div class="font-medium text-sm">Создать сделку</div>
                         <div class="text-xs text-gray-500">новый эскроу</div>
                     </div>
                     <div class="my-deals-btn glass-light rounded-xl p-4 text-center cursor-pointer transition hover:bg-white/5">
-                        <div class="w-12 h-12 mx-auto rounded-full bg-blue-500/10 flex items-center justify-center mb-2"><svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25"/></svg></div>
+                        <div class="w-12 h-12 mx-auto rounded-full bg-[#7B3FF2]/10 flex items-center justify-center mb-2"><svg class="w-6 h-6 text-[#7B3FF2]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25"/></svg></div>
                         <div class="font-medium text-sm">Мои сделки</div>
                         <div class="text-xs text-gray-500"><span id="activeDealsCount">0</span> активных</div>
                     </div>
@@ -135,7 +112,7 @@
             <div class="glass px-5 pt-6 pb-3 border-b border-white/10 sticky top-0 z-10"><div class="flex items-center gap-3"><button class="back-btn w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">←</button><h1 class="text-xl font-semibold">📋 Мои сделки</h1></div></div>
             <div class="px-5 py-4 pb-24">
                 <div class="flex gap-2 mb-4 overflow-x-auto pb-2" id="filterButtons">
-                    <button class="filter-btn active px-4 py-1.5 rounded-full text-xs bg-blue-600/20 text-blue-400" data-filter="all">Все</button>
+                    <button class="filter-btn active px-4 py-1.5 rounded-full text-xs bg-[#7B3FF2]/20 text-[#7B3FF2]" data-filter="all">Все</button>
                     <button class="filter-btn px-4 py-1.5 rounded-full text-xs bg-white/5 text-gray-400" data-filter="awaiting">⏳ Ожидают</button>
                     <button class="filter-btn px-4 py-1.5 rounded-full text-xs bg-white/5 text-gray-400" data-filter="paid">💰 Оплачены</button>
                     <button class="filter-btn px-4 py-1.5 rounded-full text-xs bg-white/5 text-gray-400" data-filter="completed">✅ Завершены</button>
@@ -163,13 +140,13 @@
                             <div class="text-sm text-gray-500 mb-4">Шаг 1 из 3</div>
                             <div class="font-medium mb-4">🌍 Выберите валюту сделки</div>
                             <div class="flex flex-wrap gap-2 mb-6" id="createCurrencies"></div>
-                            <button class="create-next1-btn w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-xl font-medium">Продолжить →</button>
+                            <button class="create-next1-btn w-full bg-[#7B3FF2] hover:bg-[#6A35E0] py-3 rounded-xl font-medium">Продолжить →</button>
                         </div>
                         <div id="createStep2" style="display: none;">
                             <div class="text-sm text-gray-500 mb-4">Шаг 2 из 3</div>
                             <div class="font-medium mb-4">📦 Название товара</div>
                             <input type="text" id="createItemName" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-6" placeholder="Например: Legendary Sword NFT">
-                            <button class="create-next2-btn w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-xl font-medium">Продолжить →</button>
+                            <button class="create-next2-btn w-full bg-[#7B3FF2] hover:bg-[#6A35E0] py-3 rounded-xl font-medium">Продолжить →</button>
                         </div>
                         <div id="createStep3" style="display: none;">
                             <div class="text-sm text-gray-500 mb-4">Шаг 3 из 3</div>
@@ -195,8 +172,8 @@
                             <div class="flex justify-between"><span class="text-gray-400">💼 Комиссия:</span><span id="successDealCommission">-</span></div>
                             <div class="flex justify-between"><span class="text-gray-400">📅 Статус:</span><span class="text-amber-400">Ожидает оплаты</span></div>
                         </div>
-                        <div class="glass rounded-xl p-4 mb-5"><div class="text-sm text-gray-400 mb-2">🔗 Ссылка для покупателя</div><div class="text-xs break-all bg-black/30 p-3 rounded-lg font-mono" id="successDealLink">-</div><button class="copy-success-link-btn w-full mt-3 bg-blue-600/20 border border-blue-500/30 rounded-xl py-2 text-sm">📋 Копировать ссылку</button></div>
-                        <button class="view-deal-btn w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-xl font-medium mb-3">📋 Посмотреть сделку</button>
+                        <div class="glass rounded-xl p-4 mb-5"><div class="text-sm text-gray-400 mb-2">🔗 Ссылка для покупателя</div><div class="text-xs break-all bg-black/30 p-3 rounded-lg font-mono" id="successDealLink">-</div><button class="copy-success-link-btn w-full mt-3 bg-[#7B3FF2]/20 border border-[#7B3FF2]/30 rounded-xl py-2 text-sm">📋 Копировать ссылку</button></div>
+                        <button class="view-deal-btn w-full bg-[#7B3FF2] hover:bg-[#6A35E0] py-3 rounded-xl font-medium mb-3">📋 Посмотреть сделку</button>
                         <button class="new-deal-after-success-btn w-full bg-white/5 border border-white/10 py-3 rounded-xl">➕ Создать новую сделку</button>
                     </div>
                 </div>
@@ -349,7 +326,7 @@
                                 <span>💰 ${formatNumber(d.amount)} ${d.currency}</span>
                                 <span class="text-gray-500">${d.role === 'seller' ? 'Продавец' : 'Покупатель'}</span>
                             </div>
-                            ${d.status === 'awaiting' && d.role === 'buyer' ? `<button class="view-deal-from-list mt-3 w-full bg-blue-600/20 border border-blue-500/30 rounded-lg py-2 text-sm" data-id="${d.id}">🔍 Подробнее</button>` : ''}
+                            ${d.status === 'awaiting' && d.role === 'buyer' ? `<button class="view-deal-from-list mt-3 w-full bg-[#7B3FF2]/20 border border-[#7B3FF2]/30 rounded-lg py-2 text-sm" data-id="${d.id}">🔍 Подробнее</button>` : ''}
                         </div>
                     `).join('');
                     document.querySelectorAll('.view-deal-from-list').forEach(btn => btn.onclick = () => { currentViewDeal = parseInt(btn.dataset.id); showDealDetail(); });
@@ -364,7 +341,7 @@
                             <div class="flex justify-between"><span class="text-gray-400">📦 Товар</span><span>${escapeHtml(deal.item)}</span></div>
                             <div class="flex justify-between"><span class="text-gray-400">💰 Цена</span><span>${formatNumber(deal.amount)} ${deal.currency}</span></div>
                             <div class="flex justify-between"><span class="text-gray-400">📌 Статус</span><span class="status-${deal.status} px-2 py-0.5 rounded-full text-xs">${getStatusText(deal.status)}</span></div>
-                            ${deal.status === 'awaiting' && deal.role === 'buyer' ? `<button class="pay-from-view-btn w-full bg-blue-600 py-2 rounded-lg mt-3">✅ Оплатить</button>` : ''}
+                            ${deal.status === 'awaiting' && deal.role === 'buyer' ? `<button class="pay-from-view-btn w-full bg-[#7B3FF2] py-2 rounded-lg mt-3">✅ Оплатить</button>` : ''}
                             ${deal.status === 'paid' && deal.role === 'seller' ? `<button class="confirm-delivery-btn w-full bg-green-600 py-2 rounded-lg mt-3">📦 Товар передан</button>` : ''}
                             ${deal.status === 'item_sent' && deal.role === 'buyer' ? `<button class="confirm-receive-btn w-full bg-green-600 py-2 rounded-lg mt-3">✅ Подтвердить получение</button>` : ''}
                             <button class="close-view-btn w-full bg-white/5 border border-white/10 py-2 rounded-lg mt-2">🔙 Назад</button>
@@ -382,7 +359,7 @@
                 function updateSettingsPage() {
                     const currencyContainer = document.getElementById('settingsCurrencySelect');
                     if (currencyContainer) {
-                        currencyContainer.innerHTML = currenciesFull.map(c => `<button class="settings-currency px-3 py-1.5 rounded-full text-sm ${currentDisplayCurrency === c ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-gray-300'}" data-currency="${c}">${getCurrencySymbol(c)} ${c}</button>`).join('');
+                        currencyContainer.innerHTML = currenciesFull.map(c => `<button class="settings-currency px-3 py-1.5 rounded-full text-sm ${currentDisplayCurrency === c ? 'bg-[#7B3FF2]/20 text-[#7B3FF2] border border-[#7B3FF2]/30' : 'bg-white/5 text-gray-300'}" data-currency="${c}">${getCurrencySymbol(c)} ${c}</button>`).join('');
                         document.querySelectorAll('.settings-currency').forEach(btn => btn.onclick = () => { currentDisplayCurrency = btn.dataset.currency; updateHomePage(); updateSettingsPage(); showToast(`💰 Валюта изменена на ${currentDisplayCurrency}`); });
                     }
                 }
@@ -398,19 +375,13 @@
                     if (targetPage) targetPage.classList.add('active');
                     document.querySelectorAll('.nav-item').forEach(n => {
                         if (n.dataset.page === page) {
-                            n.querySelector('svg')?.classList.add('text-blue-500');
+                            n.classList.add('active');
                             n.querySelector('svg')?.classList.remove('text-gray-500');
-                            n.querySelector('span')?.classList.add('text-blue-500');
                             n.querySelector('span')?.classList.remove('text-gray-500');
-                            const dot = n.querySelector('.nav-dot');
-                            if (dot) dot.classList.add('bg-blue-500');
                         } else {
+                            n.classList.remove('active');
                             n.querySelector('svg')?.classList.add('text-gray-500');
-                            n.querySelector('svg')?.classList.remove('text-blue-500');
                             n.querySelector('span')?.classList.add('text-gray-500');
-                            n.querySelector('span')?.classList.remove('text-blue-500');
-                            const dot = n.querySelector('.nav-dot');
-                            if (dot) dot.classList.remove('bg-blue-500');
                         }
                     });
                     if (page === 'home') updateHomePage();
@@ -451,8 +422,8 @@
                 
                 document.querySelectorAll('.filter-btn').forEach(btn => {
                     btn.addEventListener('click', () => {
-                        document.querySelectorAll('.filter-btn').forEach(b => { b.classList.remove('active', 'bg-blue-600/20', 'text-blue-400'); b.classList.add('bg-white/5', 'text-gray-400'); });
-                        btn.classList.add('active', 'bg-blue-600/20', 'text-blue-400'); btn.classList.remove('bg-white/5', 'text-gray-400');
+                        document.querySelectorAll('.filter-btn').forEach(b => { b.classList.remove('active', 'bg-[#7B3FF2]/20', 'text-[#7B3FF2]'); b.classList.add('bg-white/5', 'text-gray-400'); });
+                        btn.classList.add('active', 'bg-[#7B3FF2]/20', 'text-[#7B3FF2]'); btn.classList.remove('bg-white/5', 'text-gray-400');
                         currentFilter = btn.dataset.filter; updateDealsPage();
                     });
                 });
@@ -462,7 +433,7 @@
                 document.getElementById('createCurrencies').innerHTML = createCurrencies.map(c => `<button class="create-currency px-4 py-2 rounded-xl bg-white/5 border border-white/10" data-currency="${c}">${getCurrencySymbol(c)} ${c}</button>`).join('');
                 let dealCurrency = 'RUB';
                 document.querySelectorAll('.create-currency').forEach(btn => {
-                    btn.onclick = () => { document.querySelectorAll('.create-currency').forEach(b => b.classList.remove('active', 'bg-blue-600/20', 'border-blue-500')); btn.classList.add('active', 'bg-blue-600/20', 'border-blue-500'); dealCurrency = btn.dataset.currency; document.getElementById('createCurrencyBadge').innerHTML = dealCurrency; };
+                    btn.onclick = () => { document.querySelectorAll('.create-currency').forEach(b => b.classList.remove('active', 'bg-[#7B3FF2]/20', 'border-[#7B3FF2]')); btn.classList.add('active', 'bg-[#7B3FF2]/20', 'border-[#7B3FF2]'); dealCurrency = btn.dataset.currency; document.getElementById('createCurrencyBadge').innerHTML = dealCurrency; };
                 });
                 document.querySelector('.create-currency')?.click();
                 document.querySelector('.create-next1-btn').onclick = () => { document.getElementById('createStep1').style.display = 'none'; document.getElementById('createStep2').style.display = 'block'; };
@@ -566,7 +537,7 @@
 
                 } catch (error) {
                     console.error('Ошибка загрузки страницы:', error);
-                    settingsContainer.innerHTML = `<div class="text-center py-10 text-red-400">❌ Ошибка загрузки. <span class="text-blue-400 cursor-pointer" onclick="location.reload()">Попробовать снова?</span></div>`;
+                    settingsContainer.innerHTML = `<div class="text-center py-10 text-red-400">❌ Ошибка загрузки. <span class="text-[#7B3FF2] cursor-pointer" onclick="location.reload()">Попробовать снова?</span></div>`;
                 }
             }
 
