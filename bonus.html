@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Получить бонус - Novix Gift</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body { background: #0a0a12; }
+        .glass { background: rgba(10,10,18,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); }
+    </style>
+</head>
+<body class="bg-[#0a0a12] text-white">
+    <div class="max-w-md mx-auto min-h-screen flex flex-col">
+        <div class="glass px-5 pt-6 pb-3 border-b border-white/10">
+            <div class="flex items-center gap-3">
+                <button onclick="window.location.href='index.html'" class="text-[#00f2fe] text-xl">←</button>
+                <h1 class="text-xl font-bold" style="text-shadow:0 0 10px #00f2fe,0 0 20px #00f2fe66">🎁 Получить бонус</h1>
+            </div>
+        </div>
+        <div class="flex-1 px-5 py-5 flex flex-col items-center justify-center space-y-6">
+            <div class="text-center">
+                <div class="text-6xl mb-4">🎁</div>
+                <div class="text-lg font-semibold">Введи реферальный код друга</div>
+                <div class="text-sm text-gray-500 mt-1">и получи бонус на баланс</div>
+            </div>
+            <div class="w-full glass rounded-2xl p-5 space-y-4">
+                <input type="text" id="refCodeInput" class="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-center text-lg font-mono uppercase tracking-widest" placeholder="XXXX-XXXX" maxlength="20">
+                <div id="errorMessage" class="text-xs text-red-400 text-center hidden"></div>
+                <button id="activateBtn" class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 rounded-xl font-semibold shadow-[0_0_15px_rgba(16,185,129,0.5)] text-lg">
+                    🚀 Активировать
+                </button>
+            </div>
+            <div class="text-xs text-gray-500 text-center">
+                Нельзя активировать свой собственный код
+            </div>
+        </div>
+    </div>
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const userId = tg.initDataUnsafe?.user?.id || 0;
+
+        document.getElementById('activateBtn').onclick = async () => {
+            const code = document.getElementById('refCodeInput').value.trim().toUpperCase();
+            const errorEl = document.getElementById('errorMessage');
+            const btn = document.getElementById('activateBtn');
+
+            if (!code) {
+                errorEl.textContent = 'Введите реферальный код';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            errorEl.classList.add('hidden');
+            btn.disabled = true;
+            btn.textContent = '⏳ Проверка...';
+
+            try {
+                const response = await fetch('/api/activate_ref_code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, code: code })
+                });
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    tg.showPopup({
+                        title: '🎉 Бонус получен!',
+                        message: result.message || `Вы получили бонус ${result.bonus || ''} на баланс!`,
+                        buttons: [{ id: 'ok', type: 'default', text: '✅ Отлично!' }]
+                    }, () => {
+                        window.location.href = 'index.html';
+                    });
+                } else {
+                    errorEl.textContent = result.error || 'Неверный код или код уже использован';
+                    errorEl.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Активировать';
+                }
+            } catch (e) {
+                errorEl.textContent = '❌ Ошибка соединения с сервером';
+                errorEl.classList.remove('hidden');
+                btn.disabled = false;
+                btn.textContent = '🚀 Активировать';
+            }
+        };
+    </script>
+    <script src="animations.js"></script>
+</body>
+</html>

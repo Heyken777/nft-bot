@@ -22,6 +22,7 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     CallbackQuery, FSInputFile, InputMediaPhoto
 )
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 WEBAPP_URL = "https://heyken777.github.io/nft-bot"
 
@@ -199,7 +200,8 @@ def admin_kb():
         InlineKeyboardButton(text="👑 Premium пользователи", callback_data="admin_premium_users")],
         [InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_mailing"),
         InlineKeyboardButton(text="⚠️ Споры", callback_data="admin_disputes")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton(text="🎫 Промокоды", callback_data="admin_promocodes"),
+        InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
         [InlineKeyboardButton(text="❌ Закрыть", callback_data="menu")]
     ])
 
@@ -400,6 +402,26 @@ class Database:
             )
         """)
         
+        # Таблица промокодов
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS promocodes (
+                code TEXT PRIMARY KEY,
+                amount REAL,
+                max_uses INTEGER DEFAULT 1,
+                used_count INTEGER DEFAULT 0,
+                expires_at TEXT,
+                active INTEGER DEFAULT 1
+            )
+        """)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS promocode_uses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                promo_code TEXT,
+                user_id INTEGER,
+                used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Добавляем базовые достижения
         self.cursor.execute("DELETE FROM achievements_list")
         achievements = [
@@ -736,6 +758,54 @@ class Database:
         self.cursor.execute("SELECT user_id FROM users WHERE notifications_enabled = 1 OR notifications_enabled IS NULL")
         return [row[0] for row in self.cursor.fetchall()]
 
+    def create_promocode(self, code: str, amount: float, max_uses: int = 1, expires_days: int = 30):
+        expires = (datetime.now() + timedelta(days=expires_days)).strftime('%Y-%m-%d %H:%M:%S')
+        self.cursor.execute("""
+            INSERT OR REPLACE INTO promocodes (code, amount, max_uses, used_count, expires_at, active)
+            VALUES (?, ?, ?, 0, ?, 1)
+        """, (code.upper(), amount, max_uses, expires))
+        self.conn.commit()
+
+    def get_promocode(self, code: str):
+        self.cursor.execute("SELECT * FROM promocodes WHERE code = ?", (code.upper(),))
+        row = self.cursor.fetchone()
+        if not row: return None
+        return {
+            'code': row[0], 'amount': row[1], 'max_uses': row[2],
+            'used_count': row[3], 'expires_at': row[4], 'active': row[5]
+        }
+
+    def use_promocode(self, code: str, user_id: int):
+        promo = self.get_promocode(code)
+        if not promo: return False, 'Промокод не найден'
+        if not promo['active']: return False, 'Промокод неактивен'
+        if promo['used_count'] >= promo['max_uses']: return False, 'Промокод уже использован максимальное количество раз'
+        if promo['expires_at']:
+            try:
+                expires = datetime.strptime(promo['expires_at'], '%Y-%m-%d %H:%M:%S')
+                if datetime.now() > expires: return False, 'Срок действия промокода истёк'
+            except: pass
+        self.cursor.execute("SELECT id FROM promocode_uses WHERE promo_code = ? AND user_id = ?", (code.upper(), user_id))
+        if self.cursor.fetchone(): return False, 'Вы уже активировали этот промокод'
+        self.update_balance(user_id, 'RUB', promo['amount'])
+        self.cursor.execute("UPDATE promocodes SET used_count = used_count + 1 WHERE code = ?", (code.upper(),))
+        self.cursor.execute("INSERT INTO promocode_uses (promo_code, user_id) VALUES (?, ?)", (code.upper(), user_id))
+        self.add_notification(user_id, f"🎉 Промокод {code} активирован! Получено {promo['amount']} RUB")
+        self.conn.commit()
+        return True, promo['amount']
+
+    def get_all_promocodes(self):
+        self.cursor.execute("SELECT * FROM promocodes ORDER BY code")
+        return self.cursor.fetchall()
+
+    def delete_promocode(self, code: str):
+        self.cursor.execute("DELETE FROM promocodes WHERE code = ?", (code.upper(),))
+        self.conn.commit()
+
+    def toggle_promocode(self, code: str):
+        self.cursor.execute("UPDATE promocodes SET active = CASE WHEN active = 1 THEN 0 ELSE 1 END WHERE code = ?", (code.upper(),))
+        self.conn.commit()
+
     def get_stats(self):
         self.cursor.execute("SELECT COUNT(*) FROM users")
         users = self.cursor.fetchone()[0]
@@ -752,6 +822,13 @@ class Database:
         return {"users": users, "balance": balance, "completed": completed, "active": active, "disputes": disputes}
 
 db = Database()
+
+# Default promocode
+try:
+    db.cursor.execute("SELECT code FROM promocodes WHERE code = 'NOVIX2026'")
+    if not db.cursor.fetchone():
+        db.create_promocode('NOVIX2026', 50, 1, 365)
+except: pass
 
 # ========== СОСТОЯНИЯ FSM ==========
 class CreateDealState(StatesGroup):
@@ -784,6 +861,15 @@ class AdminMailingState(StatesGroup):
 class AdminPremiumState(StatesGroup):
     user_id = State()
     days = State()
+
+class AdminStates(StatesGroup):
+    promo_code = State()
+    promo_amount = State()
+    promo_max_uses = State()
+    promo_expires_days = State()
+
+class PromoActivateState(StatesGroup):
+    code = State()
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ ==========
 @dp.message(Command("start"))
@@ -1016,28 +1102,141 @@ async def withdraw_cb(call: CallbackQuery):
 # ========== РЕФЕРАЛЫ ==========
 @dp.callback_query(lambda c: c.data == "referral")
 async def referral_cb(call: CallbackQuery):
-    user = db.get_user_dict(call.from_user.id)
+    uid = call.from_user.id
+    user = db.get_user_dict(uid)
     if not user:
         await call.answer("❌ Пользователь не найден", show_alert=True)
         return
     
-    ref_code = user.get('referral_code') or "novix"
-    ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{ref_code}"
+    ref_count = db.get_referral_count(uid)
+    ref_earnings = db.get_referral_earnings(uid)
+    ref_code = user.get('referral_code') or uid
     
-    referral_count = db.get_referral_count(call.from_user.id)
-    referral_earnings = db.get_referral_earnings(call.from_user.id)
+    text = (f"👥 *Реферальная программа*\n\n"
+            f"👤 Приглашено: {ref_count} друзей\n"
+            f"💰 Заработано: {ref_earnings} RUB\n\n"
+            f"🔗 Ваша ссылка:\n`https://t.me/NovixGift_Bot?start=ref_{ref_code}`")
     
-    text = (
-        f"👥 *Реферальная программа*\n\n"
-        f"🔗 Твоя реферальная ссылка:\n`{ref_link}`\n\n"
-        f"✨ За каждого приглашённого друга вы получите *50 RUB* на баланс!\n"
-        f"💰 Друг также получит *50 RUB* за регистрацию!\n\n"
-        f"📊 *Твоя статистика:*\n"
-        f"• Приглашено: {referral_count} чел.\n"
-        f"• Заработано: {fmt_num(referral_earnings)} RUB"
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔗 Создать приглашение", callback_data="ref_create_link")
+    builder.button(text="📱 QR-код", callback_data="ref_qr")
+    builder.button(text=f"💳 Вывести бонусы ({ref_earnings} ₽)", callback_data="ref_withdraw")
+    builder.button(text="📋 Список рефералов", callback_data="ref_list")
+    builder.button(text="📊 Аналитика", callback_data="ref_analytics")
+    builder.button(text="🔙 В меню", callback_data="menu")
+    builder.adjust(2)
+    
+    await edit_or_new(call, text, builder.as_markup(), "ПРИГЛАСИТЬ ДРУГА.jpg")
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data == "ref_create_link")
+async def ref_create_link_cb(call: CallbackQuery):
+    uid = call.from_user.id
+    user = db.get_user_dict(uid)
+    code = user.get('referral_code') or uid
+    link = f"https://t.me/NovixGift_Bot?start=ref_{code}"
+    text = (f"🔗 *Ваша реферальная ссылка*\n\n"
+            f"`{link}`\n\n"
+            f"📋 Нажмите, чтобы скопировать")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Копировать", callback_data=f"copy_ref_{code}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]
+    ])
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data == "ref_qr")
+async def ref_qr_cb(call: CallbackQuery):
+    uid = call.from_user.id
+    user = db.get_user_dict(uid)
+    code = user.get('referral_code') or uid
+    link = f"https://t.me/NovixGift_Bot?start=ref_{code}"
+    text = (f"📱 *QR-код приглашения*\n\n"
+            f"Ссылка: `{link}`\n\n"
+            f"QR-код будет сгенерирован в следующем обновлении")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_ref_{code}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]
+    ])
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data == "ref_withdraw")
+async def ref_withdraw_cb(call: CallbackQuery):
+    uid = call.from_user.id
+    earnings = db.get_referral_earnings(uid)
+    if earnings <= 0:
+        await call.answer("❌ На бонусном балансе нет средств!", show_alert=True)
+        return
+    db.cursor.execute("UPDATE users SET referral_earnings = 0 WHERE user_id = ?", (uid,))
+    db.conn.commit()
+    db.update_balance(uid, "RUB", earnings)
+    db.add_notification(uid, f"💳 Бонусы {earnings} RUB выведены на RUB баланс")
+    await call.answer(f"✅ {earnings} RUB выведены на ваш RUB баланс!", show_alert=True)
+    await referral_cb(call)
+
+@dp.callback_query(lambda c: c.data == "ref_list")
+async def ref_list_cb(call: CallbackQuery):
+    uid = call.from_user.id
+    db.cursor.execute("SELECT username, user_id FROM users WHERE referred_by = ? ORDER BY user_id DESC LIMIT 50", (uid,))
+    referrals = db.cursor.fetchall()
+    text = "📋 *Приглашённые друзья*\n\n"
+    if referrals:
+        for r in referrals[:20]:
+            tag = f"@{r[0]}" if r[0] else f"ID {r[1]}"
+            text += f"👤 {tag}\n"
+    else:
+        text += "Пока нет приглашённых друзей\n"
+    text += f"\nВсего: {len(referrals)}"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]])
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data == "ref_analytics")
+async def ref_analytics_cb(call: CallbackQuery):
+    uid = call.from_user.id
+    ref_count = db.get_referral_count(uid)
+    earnings = db.get_referral_earnings(uid)
+    db.cursor.execute("""
+        SELECT COUNT(DISTINCT d.seller) FROM deals d 
+        JOIN users u ON u.user_id = d.seller 
+        WHERE u.referred_by = ? AND d.status = 'completed'
+    """, (uid,))
+    active = db.cursor.fetchone()[0] or 0
+    text = (f"📊 *Реферальная аналитика*\n\n"
+            f"👥 Приглашено: {ref_count}\n"
+            f"✅ Активных: {active}\n"
+            f"💰 Заработано: {earnings} RUB\n"
+            f"📈 Конверсия: {round(active/ref_count*100, 1) if ref_count > 0 else 0}%")
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]])
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("copy_ref_"))
+async def copy_ref_cb(call: CallbackQuery):
+    code = call.data.replace("copy_ref_", "")
+    link = f"https://t.me/NovixGift_Bot?start=ref_{code}"
+    await call.answer(f"🔗 Ссылка скопирована!", show_alert=True)
+
+@dp.message(lambda m: m.text and m.text.startswith('/promo'))
+async def activate_promo_cmd(msg: types.Message):
+    parts = msg.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await msg.answer("📝 Используйте: /promo КОД\n\nНапример: /promo NOVIX2026")
+        return
+    code = parts[1].strip().upper()
+    success, result = db.use_promocode(code, msg.from_user.id)
+    if success:
+        await msg.answer(f"✅ Промокод {code} активирован!\n💰 Начислено: {result} RUB")
+    else:
+        await msg.answer(f"❌ {result}")
+
+@dp.callback_query(lambda c: c.data == "activate_promo")
+async def activate_promo_cb(call: CallbackQuery):
+    await call.message.answer(
+        "🎫 *Активация промокода*\n\nВведите код промокода:\n\nНапример: `/promo NOVIX2026`",
+        parse_mode="Markdown"
     )
-    
-    await edit_or_new(call, text, back_kb(), "ПРИГЛАСИТЬ ДРУГА.jpg")
     await call.answer()
 
 # ========== КАРТА ==========
@@ -1170,7 +1369,12 @@ async def profile_cb(call: CallbackQuery):
         f"⭐ *Premium статус:* {premium_status}"
     )
     
-    await edit_or_new(call, text, back_kb(), "ЛИЧНЫЙ КАБИНЕТ.jpg")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🎫 Активировать промокод", callback_data="activate_promo")
+    builder.button(text="🔙 В меню", callback_data="menu")
+    builder.adjust(1)
+    
+    await edit_or_new(call, text, builder.as_markup(), "ЛИЧНЫЙ КАБИНЕТ.jpg")
     await call.answer()
 
 # ========== PREMIUM ==========
@@ -2043,6 +2247,109 @@ async def premium_remove_cb(call: CallbackQuery):
     
     await call.answer()
 
+@dp.callback_query(lambda c: c.data == "admin_promocodes")
+async def admin_promocodes_cb(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS: return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    promos = db.get_all_promocodes()
+    text = "🎫 *Управление промокодами*\n\n"
+    if promos:
+        for p in promos:
+            status = "✅" if p[5] else "❌"
+            expires = p[4] or "∞"
+            text += f"{status} `{p[0]}` — {p[1]} RUB | {p[3]}/{p[2]} | до {expires}\n"
+    else:
+        text += "Промокодов пока нет\n"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
+    ])
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data == "admin_add_promo")
+async def admin_add_promo_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS: return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    await state.set_state(AdminStates.promo_code)
+    await call.message.edit_text("📝 *Введите код промокода:*", parse_mode="Markdown")
+    await call.answer()
+
+@dp.message(AdminStates.promo_code)
+async def admin_promo_code_msg(msg: types.Message, state: FSMContext):
+    code = msg.text.strip().upper()
+    if db.get_promocode(code):
+        await msg.answer("❌ Такой промокод уже существует. Введите другой код:", reply_markup=cancel_kb())
+        return
+    await state.update_data(promo_code=code)
+    await state.set_state(AdminStates.promo_amount)
+    await msg.answer(f"📝 Код: `{code}`\n\n💰 *Введите сумму бонуса (RUB):*", parse_mode="Markdown", reply_markup=cancel_kb())
+
+@dp.message(AdminStates.promo_amount)
+async def admin_promo_amount_msg(msg: types.Message, state: FSMContext):
+    try:
+        amount = float(msg.text.strip())
+        if amount <= 0:
+            await msg.answer("❌ Сумма должна быть больше 0", reply_markup=cancel_kb())
+            return
+    except ValueError:
+        await msg.answer("❌ Введите число", reply_markup=cancel_kb())
+        return
+    await state.update_data(promo_amount=amount)
+    await state.set_state(AdminStates.promo_max_uses)
+    await msg.answer(f"💰 Сумма: {amount} RUB\n\n📋 *Введите макс. количество использований (по умолчанию 1):*", parse_mode="Markdown", reply_markup=cancel_kb())
+
+@dp.message(AdminStates.promo_max_uses)
+async def admin_promo_max_uses_msg(msg: types.Message, state: FSMContext):
+    text = msg.text.strip()
+    max_uses = 1
+    if text:
+        try:
+            max_uses = int(text)
+            if max_uses <= 0: max_uses = 1
+        except ValueError:
+            pass
+    await state.update_data(promo_max_uses=max_uses)
+    await state.set_state(AdminStates.promo_expires_days)
+    await msg.answer(f"📋 Макс. использований: {max_uses}\n\n⏰ *Введите срок действия в днях (по умолчанию 30):*", parse_mode="Markdown", reply_markup=cancel_kb())
+
+@dp.message(AdminStates.promo_expires_days)
+async def admin_promo_expires_msg(msg: types.Message, state: FSMContext):
+    text = msg.text.strip()
+    expires_days = 30
+    if text:
+        try:
+            expires_days = int(text)
+            if expires_days <= 0: expires_days = 30
+        except ValueError:
+            pass
+    data = await state.get_data()
+    db.create_promocode(data['promo_code'], data['promo_amount'], data['promo_max_uses'], expires_days)
+    await state.clear()
+    await msg.answer(
+        f"✅ *Промокод создан!*\n\n"
+        f"📝 Код: `{data['promo_code']}`\n"
+        f"💰 Сумма: {data['promo_amount']} RUB\n"
+        f"📋 Использований: {data['promo_max_uses']}\n"
+        f"⏰ Дней: {expires_days}",
+        parse_mode="Markdown",
+        reply_markup=back_kb()
+    )
+
+@dp.callback_query(lambda c: c.data.startswith("admin_toggle_promo_"))
+async def admin_toggle_promo_cb(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS: return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    code = call.data.replace("admin_toggle_promo_", "")
+    db.toggle_promocode(code)
+    await admin_promocodes_cb(call)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("admin_delete_promo_"))
+async def admin_delete_promo_cb(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS: return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    code = call.data.replace("admin_delete_promo_", "")
+    db.delete_promocode(code)
+    await call.answer("✅ Промокод удалён!", show_alert=True)
+    await admin_promocodes_cb(call)
+
 @dp.callback_query(lambda c: c.data.startswith("admin_credit_user_"))
 async def admin_credit_user_from_info(call: CallbackQuery, state: FSMContext):
     uid = int(call.data.split("_")[3])
@@ -2311,6 +2618,45 @@ async def handle_currency_rates(request):
 
 PREMIUM_PRICES = {30: 299, 45: 419, 60: 559, 90: 799, 365: 2999}
 
+async def handle_activate_ref_code(request):
+    try:
+        data = await request.json()
+        user_id = data.get('user_id')
+        code = data.get('code', '').strip().upper()
+        
+        if not user_id or not code:
+            return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
+        
+        # Find user by referral code
+        referrer_id = db.get_user_by_referral_code(code)
+        if not referrer_id:
+            return web.json_response({'success': False, 'error': '❌ Реферальный код не найден'})
+        
+        if referrer_id == user_id:
+            return web.json_response({'success': False, 'error': '❌ Нельзя активировать свой собственный код'})
+        
+        # Check if already referred
+        user = db.get_user_dict(user_id)
+        if user and user.get('referred_by') is not None:
+            return web.json_response({'success': False, 'error': '❌ Вы уже активировали реферальный код'})
+        
+        # Apply referral bonus
+        db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
+        db.update_balance(referrer_id, "RUB", 50)
+        db.update_balance(user_id, "RUB", 50)
+        db.add_notification(referrer_id, f"🎉 Пользователь активировал ваш реферальный код! +50 RUB")
+        db.add_notification(user_id, "🎉 Добро пожаловать! +50 RUB за активацию реферального кода")
+        db.conn.commit()
+        
+        return web.json_response({
+            'success': True,
+            'bonus': 50,
+            'message': '✅ Реферальный код активирован! Вы получили 50 RUB'
+        })
+    except Exception as e:
+        logger.error(f"activate_ref_code error: {e}")
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
 async def handle_buy_premium(request):
     try:
         data = await request.json()
@@ -2442,6 +2788,7 @@ async def start_api():
     app.router.add_get('/api/achievements', handle_achievements)
     app.router.add_post('/api/claim_achievement', handle_claim_achievement)
     app.router.add_post('/api/buy_premium', handle_buy_premium)
+    app.router.add_post('/api/activate_ref_code', handle_activate_ref_code)
     
     runner = web.AppRunner(app)
     await runner.setup()

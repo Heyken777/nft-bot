@@ -1,0 +1,45 @@
+<!-- base.html — shared component for all pages -->
+<script>
+// Common navigation function
+function navigateTo(page) {
+    const pages = {
+        home: 'index.html',
+        deals: 'deals.html',
+        profile: 'profile.html',
+        premium: 'premium.html',
+        referral: 'referral.html',
+        achievements: 'achievements.html',
+        bonus: 'bonus.html',
+        create_deal: 'create_deal.html'
+    };
+    window.location.href = pages[page] || 'index.html';
+}
+
+function formatNumber(n) {
+    return (n || 0).toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function showToast(msg, type) {
+    const t = document.createElement('div');
+    Object.assign(t.style, {
+        position:'fixed', bottom:'90px', left:'50%', transform:'translateX(-50%)',
+        padding:'12px 24px', borderRadius:'30px', fontSize:'14px', fontWeight:'600',
+        zIndex:'10000', backdropFilter:'blur(10px)', boxShadow:'0 10px 25px rgba(0,0,0,0.2)',
+        animation:'toastSlideUp 0.3s ease forwards'
+    });
+    t.style.background = type === 'error' ? 'rgba(239,68,68,0.9)' : 'linear-gradient(135deg,#7B3FF2,#5A46FF)';
+    t.style.color = 'white';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => { t.style.animation = 'toastSlideDown 0.3s ease forwards'; setTimeout(() => t.remove(), 300); }, 2000);
+}
+
+const CURRENCIES = ['RUB','USD','EUR','UAH','KZT','UZS','BYN','TON','USDT','STARS'];
+const CURRENCY_SYMBOLS = {RUB:'🇷🇺', USD:'🇺🇸', EUR:'🇪🇺', UAH:'🇺🇦', KZT:'🇰🇿', UZS:'🇺🇿', BYN:'🇧🇾', TON:'💎', USDT:'💵', STARS:'⭐️'};
+const CURRENCY_RATES = {RUB:1, USD:73, EUR:83, UAH:1.6, KZT:0.15, UZS:0.0061, BYN:26, TON:120, USDT:73, STARS:2};
+
+function getCurrencySymbol(c) { return CURRENCY_SYMBOLS[c] || c; }
+function getRate(c) { return CURRENCY_RATES[c] || 1; }
+function convertToRub(amount, currency) { return amount * getRate(currency); }
+function convertFromRub(amountRub, currency) { return amountRub / getRate(currency); }
+</script>

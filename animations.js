@@ -13,11 +13,9 @@ class NovixAnimations {
         this.addRippleEffect();
         this.addGlowOnHover();
         this.addScaleOnTap();
-        this.addFloatingAnimation();
         this.addNeonPulse();
         this.addSkeletonLoader();
         this.initIntersectionObserver();
-        this.addParallaxGlow();
     }
 
     // 1. Fade In при загрузке
@@ -87,22 +85,14 @@ class NovixAnimations {
         });
     }
 
-    // 5. Glow эффект при наведении
+    // 5. Glow эффект при наведении (упрощённый)
     addGlowOnHover() {
-        document.querySelectorAll('.glass, .glass-light, .balance-card').forEach(el => {
+        document.querySelectorAll('.glass, .glass-light').forEach(el => {
             el.addEventListener('mouseenter', () => {
-                el.style.transition = 'all 0.3s ease';
-                el.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.35), 0 0 30px rgba(123, 63, 242, 0.2)';
-                if (el.classList.contains('glass')) {
-                    el.style.borderColor = 'rgba(123, 63, 242, 0.3)';
-                }
+                el.style.borderColor = 'rgba(123, 63, 242, 0.3)';
             });
-            
             el.addEventListener('mouseleave', () => {
-                el.style.boxShadow = '';
-                if (el.classList.contains('glass')) {
-                    el.style.borderColor = '';
-                }
+                el.style.borderColor = '';
             });
         });
     }
@@ -120,27 +110,6 @@ class NovixAnimations {
                 el.style.transform = '';
             });
         });
-    }
-
-    // 7. Floating анимация для элементов
-    addFloatingAnimation() {
-        const floatElements = document.querySelectorAll('.balance-card, .premium-card, .action-card');
-        floatElements.forEach((el, index) => {
-            el.style.animation = `float 4s ease-in-out ${index * 0.5}s infinite`;
-        });
-        
-        // Добавляем стиль для floating
-        if (!document.querySelector('#float-style')) {
-            const style = document.createElement('style');
-            style.id = 'float-style';
-            style.textContent = `
-                @keyframes float {
-                    0%, 100% { transform: translateY(0px); }
-                    50% { transform: translateY(-5px); }
-                }
-            `;
-            document.head.appendChild(style);
-        }
     }
 
     // 8. Neon Pulse для активных элементов
@@ -201,27 +170,6 @@ class NovixAnimations {
         });
     }
 
-    // 11. Parallax Glow (движение за мышью)
-    addParallaxGlow() {
-        const cards = document.querySelectorAll('.balance-card, .glass');
-        cards.forEach(card => {
-            card.addEventListener('mousemove', (e) => {
-                const rect = card.getBoundingClientRect();
-                const x = (e.clientX - rect.left) / rect.width;
-                const y = (e.clientY - rect.top) / rect.height;
-                
-                const glowX = (x - 0.5) * 20;
-                const glowY = (y - 0.5) * 20;
-                
-                card.style.transform = `perspective(1000px) rotateX(${glowY * -0.3}deg) rotateY(${glowX * 0.3}deg)`;
-                card.style.transition = 'transform 0.1s ease';
-            });
-            
-            card.addEventListener('mouseleave', () => {
-                card.style.transform = '';
-            });
-        });
-    }
 }
 
 // ========== TOAST УВЕДОМЛЕНИЯ (с анимацией) ==========
