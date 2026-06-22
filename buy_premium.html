@@ -73,6 +73,22 @@
         tg.expand();
         tg.enableClosingConfirmation();
         
+        const authToken = tg.initData || '';
+        const userId = tg.initDataUnsafe?.user?.id || 0;
+        
+        function getAuthHeaders(extra = {}) {
+            return { ...extra, 'Authorization': `tma ${authToken}`, 'X-Telegram-Init-Data': authToken };
+        }
+        
+        async function apiFetch(url, options = {}) {
+            const headers = getAuthHeaders(options.headers || {});
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401 || response.status === 403) {
+                tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия устарела. Откройте приложение заново из Telegram.' });
+            }
+            return response;
+        }
+        
         function navigateTo(page) {
             const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html' };
             window.location.href = pages[page] || 'index.html';
@@ -133,7 +149,7 @@
             const price = Math.floor(prices[selectedDays] / rate);
             // Проверяем баланс пользователя
             try {
-                const resp = await fetch(`/api/user?user_id=${tg.initDataUnsafe?.user?.id || 0}`);
+                const resp = await apiFetch(`/api/user?user_id=${userId}`);
                 if (resp.ok) {
                     const data = await resp.json();
                     const balance = (data.balances && data.balances[selectedCurrency]) || 0;
@@ -147,7 +163,7 @@
         };
         
         // Проверка статуса Premium
-        fetch('/api/user?user_id=' + (tg.initDataUnsafe?.user?.id || 0))
+        apiFetch('/api/user?user_id=' + userId)
             .then(res => res.json())
             .then(data => {
                 if (data.is_premium) {

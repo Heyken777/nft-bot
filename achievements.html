@@ -94,11 +94,26 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         
+        const authToken = tg.initData || '';
+        
         let userData = {
             id: tg.initDataUnsafe?.user?.id || 0,
             username: tg.initDataUnsafe?.user?.username || '',
             firstName: tg.initDataUnsafe?.user?.first_name || ''
         };
+        
+        function getAuthHeaders(extra = {}) {
+            return { ...extra, 'Authorization': `tma ${authToken}`, 'X-Telegram-Init-Data': authToken };
+        }
+        
+        async function apiFetch(url, options = {}) {
+            const headers = getAuthHeaders(options.headers || {});
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401 || response.status === 403) {
+                tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия устарела. Откройте приложение заново из Telegram.' });
+            }
+            return response;
+        }
         
         function navigateTo(page) {
             const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html', referral: 'referral.html', achievements: 'achievements.html' };
@@ -115,7 +130,7 @@
         
         async function loadAchievements() {
             try {
-                const response = await fetch(`/api/achievements?user_id=${userData.id}`);
+                const response = await apiFetch(`/api/achievements?user_id=${userData.id}`);
                 if (response.ok) {
                     const data = await response.json();
                     renderAchievements(data);
@@ -191,7 +206,7 @@
                 btn.onclick = async () => {
                     const achId = btn.dataset.achievement;
                     try {
-                        const response = await fetch('/api/claim_achievement', {
+                        const response = await apiFetch('/api/claim_achievement', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ user_id: userData.id, achievement_id: achId })

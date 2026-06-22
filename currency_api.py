@@ -1,37 +1,36 @@
 # currency_api.py
 import aiohttp
+import logging
 from datetime import datetime, timedelta
-from typing import Dict
+from typing import Dict, Tuple
 import json
 import os
+
+logger = logging.getLogger(__name__)
+
 
 class CurrencyAPI:
     def __init__(self, cache_file="currency_cache.json"):
         self.cache_file = cache_file
         self.cache = self.load_cache()
-    
+        self.last_source = "bootstrap"
+
     def load_cache(self) -> Dict:
         if os.path.exists(self.cache_file):
             try:
                 with open(self.cache_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except:
+            except Exception as e:
+                logger.warning(f"Не удалось загрузить кэш валют: {e}")
                 return {}
         return {}
-    
+
     def save_cache(self):
         with open(self.cache_file, 'w', encoding='utf-8') as f:
             json.dump(self.cache, f, ensure_ascii=False, indent=2)
-    
-    async def fetch_rates(self, base: str = "RUB") -> Dict:
-        # Проверяем кэш (обновляем раз в час)
-        if base in self.cache:
-            cached = self.cache[base]
-            if datetime.now() - datetime.fromisoformat(cached['timestamp']) < timedelta(hours=1):
-                return cached['rates']
-        
-        # Резервные курсы (сколько RUB за 1 единицу валюты)
-        rates = {
+
+    def _default_rates(self) -> Dict:
+        return {
             'USD': 73.0,
             'EUR': 83.0,
             'BYN': 26.0,
@@ -42,29 +41,60 @@ class CurrencyAPI:
             'USDT': 73.0,
             'STARS': 2.0
         }
-        
-        # Пробуем получить курсы из API
+
+    def _get_fresh_cache(self, base: str, max_age: timedelta = timedelta(hours=1)) -> Tuple[Dict, str] | Tuple[None, None]:
+        cached = self.cache.get(base)
+        if not cached:
+            return None, None
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        api_rates = data.get('rates', {})
-                        # API возвращает курсы относительно USD, конвертируем в RUB
-                        rub_rate = api_rates.get('RUB', 71.91)
-                        for currency in rates.keys():
-                            if currency in api_rates and currency not in ['TON', 'USDT', 'STARS']:
-                                rates[currency] = round(rub_rate / api_rates[currency], 2)
+            cached_at = datetime.fromisoformat(cached['timestamp'])
+            if datetime.now() - cached_at < max_age:
+                return cached['rates'], cached.get('source', 'cache')
         except Exception as e:
-            print(f"⚠️ Не удалось обновить курсы: {e}")
-        
-        # Сохраняем в кэш
-        self.cache[base] = {
-            'rates': rates,
-            'timestamp': datetime.now().isoformat()
-        }
-        self.save_cache()
-        
-        return rates
+            logger.warning(f"Поврежден кэш курсов {base}: {e}")
+        return None, None
+
+    def get_stale_cache(self, base: str = "RUB") -> Dict:
+        cached = self.cache.get(base)
+        if not cached:
+            return self._default_rates()
+        return cached.get('rates', self._default_rates())
+
+    async def fetch_rates(self, base: str = "RUB") -> Dict:
+        fresh_rates, source = self._get_fresh_cache(base)
+        if fresh_rates:
+            self.last_source = source or "cache"
+            return fresh_rates
+
+        rates = self._default_rates()
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get("https://api.exchangerate-api.com/v4/latest/USD") as response:
+                    if response.status != 200:
+                        raise RuntimeError(f"exchange API returned {response.status}")
+
+                    data = await response.json()
+                    api_rates = data.get('rates', {})
+                    rub_rate = api_rates.get('RUB', 71.91)
+                    for currency in list(rates.keys()):
+                        if currency in api_rates and currency not in ['TON', 'USDT', 'STARS']:
+                            rates[currency] = round(rub_rate / api_rates[currency], 2)
+
+            self.cache[base] = {
+                'rates': rates,
+                'timestamp': datetime.now().isoformat(),
+                'source': 'remote'
+            }
+            self.save_cache()
+            self.last_source = 'remote'
+            return rates
+        except Exception as e:
+            logger.warning(f"Не удалось обновить курсы валют: {e}")
+            stale = self.get_stale_cache(base)
+            self.last_source = 'stale_cache' if base in self.cache else 'fallback'
+            return stale
+
 
 currency_api = CurrencyAPI()

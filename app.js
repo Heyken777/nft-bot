@@ -3,11 +3,28 @@ const tg = window.Telegram.WebApp;
 tg.expand();
 tg.enableClosingConfirmation();
 
-// Основные переменные
-let tgUser = tg.initDataUnsafe?.user || {};
-let userId = tgUser.id;
-let userName = tgUser.username || tgUser.first_name || 'User';
-let authToken = null;
+// CHANGED: никогда не доверяем initDataUnsafe как источнику авторизации — только подписанному initData
+const tgUser = tg.initDataUnsafe?.user || {};
+const userId = tgUser.id || 0;
+const userName = tgUser.username || tgUser.first_name || 'User';
+const authToken = tg.initData || '';
+
+function getAuthHeaders(extra = {}) {
+    return {
+        ...extra,
+        'Authorization': `tma ${authToken}`,
+        'X-Telegram-Init-Data': authToken
+    };
+}
+
+async function apiFetch(url, options = {}) {
+    const headers = getAuthHeaders(options.headers || {});
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401 || response.status === 403) {
+        tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия Mini App недействительна. Откройте приложение заново из Telegram.' });
+    }
+    return response;
+}
 
 // База данных в памяти (заглушка, в реальности через API)
 let userData = {
@@ -49,11 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Загрузка данных пользователя через API бота
 async function loadUserData() {
     try {
-        const response = await fetch(`/api/user?user_id=${userId}`, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
-        });
+        const response = await apiFetch(`/api/user?user_id=${userId}`);
         if (response.ok) {
             const data = await response.json();
             userData = { ...userData, ...data };
@@ -251,7 +264,7 @@ function initCreateDealPage() {
         }, async (buttonId) => {
             if (buttonId === 'ok') {
                 // Отправка запроса на создание сделки
-                const response = await fetch('/api/create_deal', {
+                const response = await apiFetch('/api/create_deal', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -404,7 +417,7 @@ async function initDealsPage() {
     
     // Загрузка сделок
     async function loadDeals() {
-        const response = await fetch(`/api/user?user_id=${userId}`);
+        const response = await apiFetch(`/api/user?user_id=${userId}`);
         if (response.ok) {
             const data = await response.json();
             renderDeals(data.deals || []);

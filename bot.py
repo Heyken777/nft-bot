@@ -3,12 +3,17 @@ import sqlite3
 import logging
 import random
 import secrets
+import hashlib
+import hmac
+from decimal import Decimal, ROUND_DOWN
+from urllib.parse import parse_qsl
 from aiohttp import web
+import aiohttp
 import json
 import re
 import os
-from datetime import datetime, timedelta
-from typing import Optional, Tuple, List
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Tuple, List, Dict
 from bot_config import *
 from currency_api import currency_api
 from aiohttp import ClientTimeout
@@ -31,6 +36,76 @@ logger = logging.getLogger(__name__)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+deal_lock = asyncio.Lock()  # CHANGED: глобальная блокировка для атомарных операций по сделкам/балансам в SQLite
+ton_monitor_task = None  # CHANGED: фоновая задача мониторинга входящих TON/USDT платежей
+db_batch_lock = asyncio.Lock()  # CHANGED: блокировка для массовых атомарных операций с БД
+
+
+def quantize_amount(value, places: str = "0.000001") -> float:
+    return float(Decimal(str(value)).quantize(Decimal(places), rounding=ROUND_DOWN))
+
+
+def generate_payment_comment(deal_id: int, buyer_id: int) -> str:
+    return f"NOVIX-{deal_id}-{buyer_id}"
+
+
+def verify_telegram_webapp_init_data(init_data: str) -> Optional[Dict]:
+    """CHANGED: backend-проверка подписи initData для Telegram Mini App."""
+    if not init_data or not BOT_TOKEN:
+        return None
+
+    try:
+        parsed = dict(parse_qsl(init_data, keep_blank_values=True))
+        received_hash = parsed.pop("hash", None)
+        if not received_hash:
+            return None
+
+        data_check_string = "\n".join(f"{key}={value}" for key, value in sorted(parsed.items()))
+        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+        calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(calculated_hash, received_hash):
+            return None
+
+        auth_date = int(parsed.get("auth_date", "0"))
+        if not auth_date:
+            return None
+        auth_dt = datetime.fromtimestamp(auth_date, tz=timezone.utc)
+        if datetime.now(timezone.utc) - auth_dt > timedelta(seconds=MINI_APP_AUTH_MAX_AGE):
+            return None
+
+        user_raw = parsed.get("user")
+        if not user_raw:
+            return None
+
+        return json.loads(user_raw)
+    except Exception as e:
+        logger.warning(f"Mini App auth validation failed: {e}")
+        return None
+
+
+async def get_authenticated_webapp_user(request) -> Optional[Dict]:
+    """CHANGED: извлекает и проверяет initData из Authorization или X-Telegram-Init-Data."""
+    auth_header = request.headers.get("Authorization", "")
+    init_data = ""
+    if auth_header.startswith("tma "):
+        init_data = auth_header[4:].strip()
+    elif auth_header.startswith("Bearer "):
+        init_data = auth_header[7:].strip()
+    else:
+        init_data = request.headers.get("X-Telegram-Init-Data", "").strip()
+
+    return verify_telegram_webapp_init_data(init_data)
+
+
+async def notify_user(user_id: int, text: str, parse_mode: str = "Markdown", reply_markup=None):
+    """CHANGED: единая функция push-уведомлений в Telegram + запись в локальные notifications."""
+    db.add_notification(user_id, text)
+    try:
+        await bot.send_message(user_id, text, parse_mode=parse_mode, reply_markup=reply_markup)
+    except Exception as e:
+        logger.warning(f"Не удалось отправить push-уведомление пользователю {user_id}: {e}")
+
 
 def escape_md(text: str) -> str:
     chars = r'[_*[\]()~`>#+\-=|{}.!]'
@@ -97,10 +172,18 @@ def deal_kb(deal_id: int, role: str, status: str):
     kb = []
     if role == "buyer" and status == "awaiting":
         kb.append([InlineKeyboardButton(text="✅ Оплатить", callback_data=f"pay_{deal_id}")])
+        kb.append([InlineKeyboardButton(text="⚠️ Открыть спор", callback_data=f"dispute_{deal_id}")])
+    elif role == "buyer" and status == "payment_pending":
+        kb.append([InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"pay_{deal_id}")])
+        kb.append([InlineKeyboardButton(text="⚠️ Открыть спор", callback_data=f"dispute_{deal_id}")])
     elif role == "seller" and status == "paid":
         kb.append([InlineKeyboardButton(text="📦 Товар передан", callback_data=f"sent_{deal_id}")])
+        kb.append([InlineKeyboardButton(text="⚠️ Открыть спор", callback_data=f"dispute_{deal_id}")])
     elif role == "buyer" and status == "item_sent":
         kb.append([InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"recv_{deal_id}")])
+        kb.append([InlineKeyboardButton(text="⚠️ Открыть спор", callback_data=f"dispute_{deal_id}")])
+    elif status == "disputed":
+        kb.append([InlineKeyboardButton(text="⚖️ Спор открыт", callback_data=f"dispute_{deal_id}")])
     kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -293,6 +376,13 @@ class Database:
                 completed TIMESTAMP
             )
         """)
+        self.add_column_if_not_exists("deals", "payment_method", "TEXT DEFAULT 'internal'")  # CHANGED: способ оплаты сделки
+        self.add_column_if_not_exists("deals", "payment_comment", "TEXT")  # CHANGED: уникальный payload/comment для TON/USDT
+        self.add_column_if_not_exists("deals", "payment_address", "TEXT")  # CHANGED: escrow-адрес для on-chain оплаты
+        self.add_column_if_not_exists("deals", "payment_amount", "REAL")  # CHANGED: сумма on-chain оплаты
+        self.add_column_if_not_exists("deals", "paid_tx_hash", "TEXT")  # CHANGED: tx hash подтвержденного платежа
+        self.add_column_if_not_exists("deals", "paid_at", "TIMESTAMP")  # CHANGED: время подтверждения оплаты
+        self.add_column_if_not_exists("deals", "disputed_at", "TIMESTAMP")  # CHANGED: время перевода в спор
         
         # Таблица заявок на вывод
         self.cursor.execute("""
@@ -422,6 +512,43 @@ class Database:
             )
         """)
 
+        # Таблица логов платежей TON/USDT
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ton_payments (
+                tx_hash TEXT PRIMARY KEY,
+                deal_id INTEGER,
+                buyer_id INTEGER,
+                currency TEXT,
+                amount REAL,
+                comment TEXT,
+                source_address TEXT,
+                confirmed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Таблица логов реферальных начислений с комиссии
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS referral_commission_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER,
+                referred_user_id INTEGER,
+                deal_id INTEGER,
+                currency TEXT,
+                commission_amount REAL,
+                reward_amount REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Таблица служебного состояния мониторинга блокчейна
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS service_state (
+                state_key TEXT PRIMARY KEY,
+                state_value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Добавляем базовые достижения
         self.cursor.execute("DELETE FROM achievements_list")
         achievements = [
@@ -497,8 +624,24 @@ class Database:
 
     def update_balance(self, uid, currency, delta):
         col_name = f"balance_{currency}"
-        self.cursor.execute(f"UPDATE users SET {col_name} = {col_name} + ? WHERE user_id = ?", (delta, uid))
-        self.conn.commit()
+        self.cursor.execute("BEGIN IMMEDIATE")
+        try:
+            self.cursor.execute(f"SELECT {col_name} FROM users WHERE user_id = ?", (uid,))
+            current = self.cursor.fetchone()
+            if current is None:
+                self.conn.rollback()
+                return False
+            new_balance = (current[0] or 0) + delta
+            if new_balance < 0:
+                self.conn.rollback()
+                return False
+            self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (new_balance, uid))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"update_balance error (uid={uid}, cur={currency}, delta={delta}): {e}")
+            return False
 
     def get_all_balances(self, uid):
         balances = {}
@@ -528,14 +671,14 @@ class Database:
         else:
             return COMMISSION_WITHDRAW
 
-    def create_deal(self, seller, item, amount, commission, deal_id, currency="RUB"):
+    def create_deal(self, seller, item, amount, commission, deal_id, currency="RUB", payment_method="internal", payment_comment=None, payment_address=None, payment_amount=None):
         allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
         if currency not in allowed:
             currency = 'RUB'
         self.cursor.execute("""
-            INSERT INTO deals (id, seller, item, amount, commission, currency, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'awaiting')
-        """, (deal_id, seller, item, amount, commission, currency))
+            INSERT INTO deals (id, seller, item, amount, commission, currency, status, payment_method, payment_comment, payment_address, payment_amount)
+            VALUES (?, ?, ?, ?, ?, ?, 'awaiting', ?, ?, ?, ?)
+        """, (deal_id, seller, item, amount, commission, currency, payment_method, payment_comment, payment_address, payment_amount))
         self.conn.commit()
         return deal_id
 
@@ -543,18 +686,11 @@ class Database:
         self.cursor.execute("SELECT * FROM deals WHERE id = ?", (did,))
         row = self.cursor.fetchone()
         if row:
-            return {
-                "id": row[0],
-                "seller": row[1],
-                "buyer": row[2],
-                "item": row[3],
-                "amount": row[4],
-                "commission": row[5],
-                "currency": row[6] if len(row) > 6 else "RUB",
-                "status": row[7] if len(row) > 7 else "awaiting",
-                "created": row[8] if len(row) > 8 else None,
-                "completed": row[9] if len(row) > 9 else None
-            }
+            col_names = [desc[0] for desc in self.cursor.description]
+            deal = dict(zip(col_names, row))
+            deal.setdefault("currency", "RUB")
+            deal.setdefault("status", "awaiting")
+            return deal
         return None
 
     def upd_deal_status(self, did, status):
@@ -806,6 +942,129 @@ class Database:
         self.cursor.execute("UPDATE promocodes SET active = CASE WHEN active = 1 THEN 0 ELSE 1 END WHERE code = ?", (code.upper(),))
         self.conn.commit()
 
+    def set_service_state(self, key: str, value: str):
+        self.cursor.execute("""
+            INSERT INTO service_state (state_key, state_value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(state_key) DO UPDATE SET state_value = excluded.state_value, updated_at = CURRENT_TIMESTAMP
+        """, (key, value))
+        self.conn.commit()
+
+    def get_service_state(self, key: str, default: str = "") -> str:
+        self.cursor.execute("SELECT state_value FROM service_state WHERE state_key = ?", (key,))
+        row = self.cursor.fetchone()
+        return row[0] if row else default
+
+    def add_ton_payment(self, tx_hash: str, deal_id: int, buyer_id: int, currency: str, amount: float, comment: str, source_address: str):
+        self.cursor.execute("""
+            INSERT OR IGNORE INTO ton_payments (tx_hash, deal_id, buyer_id, currency, amount, comment, source_address)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (tx_hash, deal_id, buyer_id, currency, amount, comment, source_address))
+        self.conn.commit()
+
+    def has_ton_payment(self, tx_hash: str) -> bool:
+        self.cursor.execute("SELECT 1 FROM ton_payments WHERE tx_hash = ?", (tx_hash,))
+        return self.cursor.fetchone() is not None
+
+    def mark_deal_paid_onchain(self, deal_id: int, tx_hash: str) -> bool:
+        self.cursor.execute("""
+            UPDATE deals
+            SET status = 'paid', paid_tx_hash = ?, paid_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'payment_pending'
+        """, (tx_hash, deal_id))
+        changed = self.cursor.rowcount > 0
+        self.conn.commit()
+        return changed
+
+    def start_external_payment(self, deal_id: int, buyer_id: int, comment: str, payment_address: str, payment_amount: float) -> bool:
+        self.cursor.execute("""
+            UPDATE deals
+            SET buyer = COALESCE(buyer, ?),
+                status = CASE WHEN status = 'awaiting' THEN 'payment_pending' ELSE status END,
+                payment_comment = ?,
+                payment_address = ?,
+                payment_amount = ?
+            WHERE id = ?
+              AND status = 'awaiting'
+              AND (buyer IS NULL OR buyer = ?)
+        """, (buyer_id, comment, payment_address, payment_amount, deal_id, buyer_id))
+        changed = self.cursor.rowcount > 0
+        self.conn.commit()
+        return changed
+
+    def open_dispute(self, deal_id: int, opened_by: int, reason: str) -> bool:
+        self.cursor.execute("SELECT status FROM deals WHERE id = ?", (deal_id,))
+        row = self.cursor.fetchone()
+        if not row or row[0] in ('completed', 'cancelled', 'disputed'):
+            return False
+        self.cursor.execute("UPDATE deals SET status = 'disputed', disputed_at = CURRENT_TIMESTAMP WHERE id = ?", (deal_id,))
+        self.cursor.execute("INSERT INTO disputes (deal_id, opened_by, reason) VALUES (?, ?, ?)", (deal_id, opened_by, reason))
+        self.conn.commit()
+        return True
+
+    def resolve_dispute_with_decision(self, dispute_id: int, decision: str) -> Optional[dict]:
+        self.cursor.execute("SELECT deal_id FROM disputes WHERE id = ? AND status = 'pending'", (dispute_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        deal_id = row[0]
+        deal = self.get_deal(deal_id)
+        if not deal:
+            return None
+
+        amount = float(deal['amount'])
+        currency = deal['currency']
+        seller_id = deal['seller']
+        buyer_id = deal.get('buyer')
+        commission = self.get_user_commission(seller_id, 'deal')
+        seller_amount = quantize_amount(amount - amount * commission)
+
+        if decision == 'seller':
+            self.update_balance(seller_id, currency, seller_amount)
+            new_status = 'completed'
+        elif decision == 'buyer' and buyer_id:
+            self.update_balance(buyer_id, currency, amount)
+            new_status = 'cancelled'
+        else:
+            return None
+
+        self.cursor.execute("UPDATE deals SET status = ?, completed = CURRENT_TIMESTAMP WHERE id = ?", (new_status, deal_id))
+        self.cursor.execute("UPDATE disputes SET status = 'resolved' WHERE id = ?", (dispute_id,))
+        self.conn.commit()
+        return {
+            'deal_id': deal_id,
+            'seller_id': seller_id,
+            'buyer_id': buyer_id,
+            'currency': currency,
+            'amount': amount,
+            'seller_amount': seller_amount,
+            'decision': decision,
+            'status': new_status
+        }
+
+    def credit_referral_commission(self, seller_id: int, deal_id: int, currency: str, commission_amount: float) -> Optional[dict]:
+        self.cursor.execute("SELECT referred_by FROM users WHERE user_id = ?", (seller_id,))
+        row = self.cursor.fetchone()
+        referrer_id = row[0] if row else None
+        if not referrer_id:
+            return None
+
+        self.cursor.execute("SELECT 1 FROM referral_commission_log WHERE deal_id = ?", (deal_id,))
+        if self.cursor.fetchone():
+            return None
+
+        reward = quantize_amount(commission_amount * REFERRAL_COMMISSION_SHARE)
+        if reward <= 0:
+            return None
+
+        self.cursor.execute("""
+            INSERT INTO referral_commission_log (referrer_id, referred_user_id, deal_id, currency, commission_amount, reward_amount)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (referrer_id, seller_id, deal_id, currency, commission_amount, reward))
+        self.cursor.execute("UPDATE users SET referral_earnings = COALESCE(referral_earnings, 0) + ? WHERE user_id = ?", (reward, referrer_id))
+        self.conn.commit()
+        return {'referrer_id': referrer_id, 'reward': reward, 'currency': currency, 'commission_amount': commission_amount}
+
     def get_stats(self):
         self.cursor.execute("SELECT COUNT(*) FROM users")
         users = self.cursor.fetchone()[0]
@@ -820,6 +1079,8 @@ class Database:
         self.cursor.execute("SELECT COUNT(*) FROM disputes WHERE status = 'pending'")
         disputes = self.cursor.fetchone()[0]
         return {"users": users, "balance": balance, "completed": completed, "active": active, "disputes": disputes}
+
+
 
 db = Database()
 
@@ -1623,39 +1884,66 @@ async def my_deals_cb(call: CallbackQuery):
 @dp.callback_query(lambda c: c.data.startswith("pay_"))
 async def pay_cb(call: CallbackQuery):
     did = int(call.data[4:])
-    deal = db.get_deal(did)
-    
-    if not deal or deal.get("status") != "awaiting":
-        await call.answer("❌ Сделка недоступна для оплаты", show_alert=True)
-        return
-    
     buyer = call.from_user.id
-    seller = deal["seller"]
-    
-    if buyer == seller:
-        await call.answer("❌ Вы не можете оплатить свою собственную сделку!", show_alert=True)
-        return
-    
-    if deal.get("buyer") and deal["buyer"] != buyer:
-        await call.answer("❌ Сделка уже ожидает оплаты от другого", show_alert=True)
-        return
-    
-    if not deal.get("buyer"):
-        db.set_buyer(did, buyer)
-    
-    currency = deal["currency"]
-    amount = deal["amount"]
-    buyer_balance = db.get_balance(buyer, currency)
-    
-    if buyer_balance < amount:
-        await call.answer(f"❌ Недостаточно средств. Баланс: {fmt_num(buyer_balance)} {currency}", show_alert=True)
-        return
-    
-    db.update_balance(buyer, currency, -amount)
-    db.upd_deal_status(did, "paid")
-    
+
+    async with deal_lock:  # CHANGED: защита от race condition при оплате сделки
+        deal = db.get_deal(did)
+        if not deal or deal.get("status") not in ("awaiting", "payment_pending"):
+            await call.answer("❌ Сделка недоступна для оплаты", show_alert=True)
+            return
+
+        seller = deal["seller"]
+        if buyer == seller:
+            await call.answer("❌ Вы не можете оплатить свою собственную сделку!", show_alert=True)
+            return
+
+        if deal.get("buyer") and deal["buyer"] != buyer:
+            await call.answer("❌ Сделка уже закреплена за другим покупателем", show_alert=True)
+            return
+
+        currency = deal["currency"]
+        amount = float(deal["amount"])
+        payment_method = deal.get("payment_method") or ("ton" if currency in ("TON", "USDT") else "internal")
+
+        if payment_method == "ton":  # CHANGED: on-chain flow для TON/USDT
+            payment_comment = deal.get("payment_comment") or generate_payment_comment(did, buyer)
+            payment_address = deal.get("payment_address") or TON_ESCROW_ADDRESS
+            if not payment_address:
+                await call.answer("❌ TON escrow-адрес не настроен в backend", show_alert=True)
+                return
+
+            payment_amount = quantize_amount(deal.get("payment_amount") or amount, "0.000001")
+            started = db.start_external_payment(did, buyer, payment_comment, payment_address, payment_amount)
+            if not started:
+                deal = db.get_deal(did)
+                if deal and deal.get("status") == "payment_pending" and deal.get("buyer") == buyer:
+                    pass
+                else:
+                    await call.answer("❌ Не удалось зафиксировать on-chain оплату", show_alert=True)
+                    return
+
+            text = (
+                f"💎 *Оплата сделки #{did}*\n\n"
+                f"Отправьте *{payment_amount} {currency}* на адрес:\n`{escape_md(payment_address)}`\n\n"
+                f"Комментарий / payload:\n`{payment_comment}`\n\n"
+                f"После входящей транзакции сделка автоматически перейдёт в статус *Оплачено*."
+            )
+            await call.message.edit_text(text, parse_mode="Markdown", reply_markup=deal_kb(did, "buyer", "payment_pending"))
+            await call.answer("⏳ Ожидаем входящую транзакцию", show_alert=True)
+            return
+
+        buyer_balance = db.get_balance(buyer, currency)
+        if buyer_balance < amount:
+            await call.answer(f"❌ Недостаточно средств. Баланс: {fmt_num(buyer_balance)} {currency}", show_alert=True)
+            return
+
+        if not deal.get("buyer"):
+            db.set_buyer(did, buyer)
+        db.update_balance(buyer, currency, -amount)
+        db.upd_deal_status(did, "paid")
+
     await call.answer("✅ Оплата прошла успешно!", show_alert=True)
-    
+
     text = f"✅ *Сделка #{did} оплачена!*\n\nОжидайте передачи товара от продавца"
     if img_exists("ВАША СДЕЛКА БЫЛА ОПЛАЧЕНА.jpg"):
         await call.message.edit_media(
@@ -1663,14 +1951,13 @@ async def pay_cb(call: CallbackQuery):
         )
     else:
         await call.message.edit_text(text, parse_mode="Markdown")
-    
-    await bot.send_message(
+
+    await notify_user(
         seller,
         f"💰 *Сделка #{did} оплачена!*\n\n"
         f"🎁 {escape_md(deal['item'])}\n"
         f"💰 {fmt_num(amount)} {currency}\n\n"
-        f"Отправьте товар: @{call.from_user.username}",
-        parse_mode="Markdown",
+        f"Покупатель внёс средства. Передайте товар.",
         reply_markup=deal_kb(did, "seller", "paid")
     )
 
@@ -1678,24 +1965,25 @@ async def pay_cb(call: CallbackQuery):
 @dp.callback_query(lambda c: c.data.startswith("sent_"))
 async def sent_cb(call: CallbackQuery):
     did = int(call.data[5:])
-    deal = db.get_deal(did)
-    
-    if not deal or deal.get("status") != "paid":
-        await call.answer("❌ Сделка не оплачена", show_alert=True)
-        return
-    
-    if deal["seller"] != call.from_user.id:
-        await call.answer("❌ Вы не продавец", show_alert=True)
-        return
-    
-    db.upd_deal_status(did, "item_sent")
+
+    async with deal_lock:
+        deal = db.get_deal(did)
+        if not deal or deal.get("status") != "paid":
+            await call.answer("❌ Сделка не оплачена", show_alert=True)
+            return
+
+        if deal["seller"] != call.from_user.id:
+            await call.answer("❌ Вы не продавец", show_alert=True)
+            return
+
+        db.upd_deal_status(did, "item_sent")
+
     await call.answer("✅ Товар передан!", show_alert=True)
     await call.message.edit_text(f"✅ *Товар передан!*\nОжидайте подтверждения", parse_mode="Markdown")
-    
-    await bot.send_message(
+
+    await notify_user(
         deal["buyer"],
         f"📦 *Товар передан!*\n\nСделка #{did}\n✅ Подтвердите получение",
-        parse_mode="Markdown",
         reply_markup=deal_kb(did, "buyer", "item_sent")
     )
 
@@ -1703,36 +1991,51 @@ async def sent_cb(call: CallbackQuery):
 @dp.callback_query(lambda c: c.data.startswith("recv_"))
 async def receive_cb(call: CallbackQuery):
     did = int(call.data[5:])
-    deal = db.get_deal(did)
-    
-    if not deal or deal.get("status") != "item_sent":
-        await call.answer("❌ Товар не передан", show_alert=True)
-        return
-    
-    if deal["buyer"] != call.from_user.id:
-        await call.answer("❌ Вы не покупатель", show_alert=True)
-        return
-    
-    seller_id = deal["seller"]
-    amount = deal["amount"]
-    currency = deal["currency"]
-    
-    commission = db.get_user_commission(seller_id, "deal")
-    seller_amount = amount - amount * commission
-    
-    db.update_balance(seller_id, currency, seller_amount)
-    db.upd_deal_status(did, "completed")
-    
+
+    async with deal_lock:  # CHANGED: атомарное завершение сделки и начисление продавцу
+        deal = db.get_deal(did)
+        if not deal or deal.get("status") != "item_sent":
+            await call.answer("❌ Товар не передан", show_alert=True)
+            return
+
+        if deal["buyer"] != call.from_user.id:
+            await call.answer("❌ Вы не покупатель", show_alert=True)
+            return
+
+        seller_id = deal["seller"]
+        amount = float(deal["amount"])
+        currency = deal["currency"]
+
+        commission = db.get_user_commission(seller_id, "deal")
+        commission_amount = quantize_amount(amount * commission)
+        seller_amount = quantize_amount(amount - commission_amount)
+
+        db.update_balance(seller_id, currency, seller_amount)
+        db.upd_deal_status(did, "completed")
+        referral_bonus = db.credit_referral_commission(seller_id, did, currency, commission_amount)
+
     await call.answer("✅ Сделка завершена!", show_alert=True)
     await call.message.edit_text(f"✅ *Сделка #{did} завершена!*\nСпасибо!", parse_mode="Markdown")
-    
+
     premium_text = " (без комиссии)" if commission == 0 else ""
-    await bot.send_message(
+    await notify_user(
         seller_id,
         f"✅ *Сделка #{did} завершена!*\n\n"
-        f"💰 Получено: {fmt_num(seller_amount)} {currency}{premium_text}",
-        parse_mode="Markdown"
+        f"💰 Получено: {fmt_num(seller_amount)} {currency}{premium_text}\n"
+        f"🟢 Статус сделки обновлён: успешно завершена."
     )
+    await notify_user(
+        call.from_user.id,
+        f"✅ *Сделка #{did} успешно завершена!*\n\nСредства переведены продавцу."
+    )
+
+    if referral_bonus:
+        await notify_user(
+            referral_bonus['referrer_id'],
+            f"👥 *Реферальный бонус*\n\n"
+            f"По сделке #{did} начислено {referral_bonus['reward']} RUB "
+            f"(10% от сервисной комиссии)."
+        )
 
 # ========== СПОРЫ ==========
 @dp.callback_query(lambda c: c.data.startswith("dispute_"))
@@ -1758,24 +2061,52 @@ async def dispute_cb(call: CallbackQuery, state: FSMContext):
 async def dispute_msg(msg: types.Message, state: FSMContext):
     data = await state.get_data()
     deal_id = data.get('deal_id')
-    
+
     if not deal_id:
         await msg.answer("❌ Ошибка: сделка не найдена", reply_markup=back_kb())
         await state.clear()
         return
-    
-    db.add_dispute(deal_id, msg.from_user.id, msg.text[:500])
-    
+
+    reason = (msg.text or "").strip()[:500]
+    if not reason:
+        await msg.answer("❌ Укажите причину спора", reply_markup=cancel_kb())
+        return
+
+    async with deal_lock:
+        deal = db.get_deal(deal_id)
+        if not deal or msg.from_user.id not in [deal.get('seller'), deal.get('buyer')]:
+            await msg.answer("❌ Вы не участник этой сделки", reply_markup=back_kb())
+            await state.clear()
+            return
+
+        opened = db.open_dispute(deal_id, msg.from_user.id, reason)
+        if not opened:
+            await msg.answer("❌ Спор уже открыт или сделка недоступна", reply_markup=back_kb())
+            await state.clear()
+            return
+
+        db.cursor.execute("SELECT last_insert_rowid()")
+        dispute_id = db.cursor.fetchone()[0]
+
+    admin_kb_markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Выплатить продавцу", callback_data=f"dispute_decide_seller_{dispute_id}"),
+         InlineKeyboardButton(text="↩️ Вернуть покупателю", callback_data=f"dispute_decide_buyer_{dispute_id}")]
+    ])
+
     for admin in ADMIN_IDS:
-        await bot.send_message(
+        await notify_user(
             admin,
-            f"⚠️ *Новый спор*\nСделка #{deal_id}\nПричина: {msg.text[:200]}",
-            parse_mode="Markdown"
+            f"⚠️ *Новый спор*\n\nСделка #{deal_id}\nОткрыл: `{msg.from_user.id}`\nПричина: {escape_md(reason)}",
+            reply_markup=admin_kb_markup
         )
-    
+
+    counterpart_id = deal['buyer'] if msg.from_user.id == deal['seller'] else deal['seller']
+    if counterpart_id:
+        await notify_user(counterpart_id, f"⚖️ *По сделке #{deal_id} открыт спор.*\n\nСредства временно заморожены.")
+
     await state.clear()
     await msg.answer(
-        "✅ *Спор открыт!*\nАдминистратор рассмотрит в течение 24 часов",
+        "✅ *Спор открыт!*\nАдминистратор рассмотрит его, пока сделка заморожена.",
         parse_mode="Markdown",
         reply_markup=back_kb()
     )
@@ -1835,7 +2166,14 @@ async def claim_achievement(msg: types.Message):
 
 # ========== API ДЛЯ ДОСТИЖЕНИЙ ==========
 async def handle_achievements(request):
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return web.json_response({'error': 'Unauthorized Mini App request'}, status=401)
+
     user_id = int(request.query.get('user_id', 0))
+    if auth_user.get('id') != user_id:
+        return web.json_response({'error': 'User mismatch'}, status=403)
+
     achievements = db.get_user_achievements(user_id)
     stats = db.get_achievement_stats(user_id)
     
@@ -1854,11 +2192,17 @@ async def handle_achievements(request):
 
 async def handle_claim_achievement(request):
     try:
+        auth_user = await get_authenticated_webapp_user(request)
+        if not auth_user:
+            return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+
         data = await request.json()
-        user_id = data.get('user_id')
+        user_id = int(data.get('user_id', 0))
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+
         achievement_id = data.get('achievement_id')
-        
-        if not user_id or not achievement_id:
+        if not achievement_id:
             return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
         
         reward = db.claim_achievement_reward(user_id, achievement_id)
@@ -2475,57 +2819,94 @@ async def mailing_text(msg: types.Message, state: FSMContext):
     await msg.answer(f"✅ Рассылка завершена!\nОтправлено: {sent} пользователям")
     await menu_cb(msg)
 
-@dp.message(lambda m: m.text and m.text.startswith("/resolve_"))
-async def resolve_cmd(msg: types.Message):
-    if msg.from_user.id not in ADMIN_IDS:
+@dp.callback_query(lambda c: c.data.startswith("dispute_decide_"))
+async def dispute_decide_cb(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer("⛔ Доступ запрещен", show_alert=True)
         return
-    
-    try:
-        did = int(msg.text.replace("/resolve_", ""))
-        db.resolve_dispute(did)
-        await msg.answer(f"✅ Спор #{did} закрыт")
-    except ValueError:
-        await msg.answer("❌ Используйте: /resolve_номер")
 
-# ========== API ДЛЯ MINI APP ==========
+    parts = call.data.split("_")
+    decision = parts[2]
+    dispute_id = int(parts[3])
+
+    async with deal_lock:
+        result = db.resolve_dispute_with_decision(dispute_id, decision)
+
+    if not result:
+        await call.answer("❌ Спор уже обработан или данные некорректны", show_alert=True)
+        return
+
+    if result['decision'] == 'seller':
+        await notify_user(result['seller_id'], f"✅ *Спор по сделке #{result['deal_id']} решён в вашу пользу.*\n\nНачислено {fmt_num(result['seller_amount'])} {result['currency']}")
+        if result.get('buyer_id'):
+            await notify_user(result['buyer_id'], f"⚖️ *Спор по сделке #{result['deal_id']} закрыт.*\n\nРешение: выплата продавцу.")
+    else:
+        if result.get('buyer_id'):
+            await notify_user(result['buyer_id'], f"↩️ *Спор по сделке #{result['deal_id']} решён в вашу пользу.*\n\nВозврат: {fmt_num(result['amount'])} {result['currency']}")
+        await notify_user(result['seller_id'], f"⚖️ *Спор по сделке #{result['deal_id']} закрыт.*\n\nРешение: возврат покупателю.")
+
+    await call.message.edit_text(
+        f"✅ *Спор #{dispute_id} обработан.*\n\nСделка #{result['deal_id']}\nРешение: {'выплата продавцу' if decision == 'seller' else 'возврат покупателю'}",
+        parse_mode="Markdown"
+    )
+    await call.answer("✅ Решение применено", show_alert=True)
+
+def build_deal_payload(deal: dict, viewer_id: int) -> dict:
+    payment_instructions = None
+    if deal.get('payment_method') == 'ton' and deal.get('status') in ('payment_pending', 'paid'):
+        payment_instructions = {
+            'address': deal.get('payment_address') or TON_ESCROW_ADDRESS,
+            'comment': deal.get('payment_comment'),
+            'amount': deal.get('payment_amount') or deal.get('amount')
+        }
+
+    return {
+        'id': deal['id'],
+        'item': deal['item'],
+        'amount': deal['amount'],
+        'currency': deal.get('currency', 'RUB'),
+        'status': deal.get('status', 'awaiting'),
+        'role': 'seller' if deal['seller'] == viewer_id else 'buyer',
+        'created_at': deal.get('created'),
+        'payment_method': deal.get('payment_method', 'internal'),
+        'payment_instructions': payment_instructions,
+        'can_open_dispute': deal.get('status') not in ('completed', 'cancelled')
+    }
+
+
 async def handle_api(request):
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return web.json_response({'error': 'Unauthorized Mini App request'}, status=401)
+
     user_id = int(request.query.get('user_id', 0))
+    if auth_user.get('id') != user_id:
+        return web.json_response({'error': 'User mismatch'}, status=403)
+
     user = db.get_user_dict(user_id)
-    
     if not user:
         return web.json_response({'error': 'User not found'}, status=404)
-    
+
     balances = {}
     for curr in ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']:
         balances[curr] = db.get_balance(user_id, curr)
-    
-    # Получаем реферальные данные
-    referral_code = user.get('referral_code') or "novix"
-    
+
+    referral_code = user.get('referral_code') or 'novix'
     deals = db.get_user_deals(user_id)
-    deals_list = []
-    for d in deals[:20]:
-        deals_list.append({
-            'id': d[0],
-            'item': d[3],
-            'amount': d[4],
-            'currency': d[6] if len(d) > 6 else 'RUB',
-            'status': d[7] if len(d) > 7 else 'awaiting',
-            'role': 'seller' if d[1] == user_id else 'buyer',
-            'created_at': d[8] if len(d) > 8 else None
-        })
-    
+    deals_list = [build_deal_payload(db.get_deal(d[0]), user_id) for d in deals[:20]]
+
     try:
-        rates = await currency_api.fetch_rates("RUB")
-    except:
-        rates = {}
-    
+        rates = await currency_api.fetch_rates('RUB')
+    except Exception:
+        rates = currency_api.get_stale_cache('RUB')
+
     return web.json_response({
         'id': user['user_id'],
         'username': user['username'],
         'firstName': user['username'] or 'User',
         'balances': balances,
         'rates': rates,
+        'rates_source': getattr(currency_api, 'last_source', 'unknown'),
         'is_premium': db.is_premium(user_id),
         'rating': user.get('rating', 0) or 0,
         'card': user.get('card_details') or '',
@@ -2535,54 +2916,86 @@ async def handle_api(request):
         'referral_count': db.get_referral_count(user_id),
         'referral_earnings': db.get_referral_earnings(user_id),
         'is_admin': user_id in ADMIN_IDS,
-        'premium_until': db.get_premium_info(user_id).get('expires') if db.is_premium(user_id) else None
+        'premium_until': db.get_premium_info(user_id).get('expires') if db.is_premium(user_id) else None,
+        'ton_escrow_enabled': bool(TON_ESCROW_ADDRESS and TON_API_KEY)
     })
 
 async def handle_create_deal(request):
     try:
+        auth_user = await get_authenticated_webapp_user(request)
+        if not auth_user:
+            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+
         data = await request.json()
-        user_id = data.get('user_id')
-        item_name = data.get('item_name')
-        price = data.get('price')
+        user_id = int(data.get('user_id') or 0)
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+
+        item_name = (data.get('item_name') or '').strip()
+        price = float(data.get('price') or 0)
         currency = data.get('currency', 'RUB')
-        
+
         allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
         if currency not in allowed:
             currency = 'RUB'
-        
+
+        if not item_name or len(item_name) > 200:
+            return web.json_response({'success': False, 'error': 'Некорректное название товара'}, status=400)
+        if price <= 0:
+            return web.json_response({'success': False, 'error': 'Некорректная сумма'}, status=400)
+
         user = db.get_user(user_id)
         if not user:
             return web.json_response({'error': 'User not found'}, status=404)
-        
-        import random
+
         deal_id = random.randint(100000, 999999)
         while db.get_deal(deal_id):
             deal_id = random.randint(100000, 999999)
-        
-        commission = db.get_user_commission(user_id, "deal")
-        db.create_deal(user_id, item_name, price, commission, deal_id, currency)
-        
+
+        commission = db.get_user_commission(user_id, 'deal')
+        payment_method = 'ton' if currency in ('TON', 'USDT') else 'internal'
+        payment_comment = None
+        payment_address = None
+        payment_amount = None
+        if payment_method == 'ton':
+            payment_comment = generate_payment_comment(deal_id, user_id)
+            payment_address = TON_ESCROW_ADDRESS
+            payment_amount = quantize_amount(price, '0.000001')
+
+        db.create_deal(user_id, item_name, price, commission, deal_id, currency, payment_method, payment_comment, payment_address, payment_amount)
+
         return web.json_response({
             'success': True,
             'deal_id': deal_id,
             'item': item_name,
             'amount': price,
             'currency': currency,
-            'commission': commission
+            'commission': commission,
+            'payment_method': payment_method,
+            'payment_comment': payment_comment,
+            'payment_address': payment_address,
+            'payment_amount': payment_amount
         })
     except Exception as e:
+        logger.exception('create_deal error')
         return web.json_response({'success': False, 'error': str(e)}, status=500)
 
 async def handle_save_card(request):
     try:
+        auth_user = await get_authenticated_webapp_user(request)
+        if not auth_user:
+            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+
         data = await request.json()
-        user_id = data.get('user_id')
-        card = data.get('card')
+        user_id = int(data.get('user_id') or 0)
+        card = (data.get('card') or '').replace(' ', '')
         currency = data.get('currency', 'RUB')
-        
-        if not user_id or not card:
-            return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
-        
+
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+        if not card or not card.isdigit() or len(card) not in (16, 19):
+            return web.json_response({'success': False, 'error': 'Invalid card format'}, status=400)
+
         db.set_card(user_id, card, currency)
         return web.json_response({'success': True})
     except Exception as e:
@@ -2590,13 +3003,19 @@ async def handle_save_card(request):
 
 async def handle_save_ton(request):
     try:
+        auth_user = await get_authenticated_webapp_user(request)
+        if not auth_user:
+            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+
         data = await request.json()
-        user_id = data.get('user_id')
-        ton = data.get('ton')
-        
-        if not user_id or not ton:
-            return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
-        
+        user_id = int(data.get('user_id') or 0)
+        ton = (data.get('ton') or '').strip()
+
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+        if not ton or (not ton.startswith('UQ') and not ton.startswith('EQ')):
+            return web.json_response({'success': False, 'error': 'Invalid TON wallet format'}, status=400)
+
         db.set_ton(user_id, ton)
         return web.json_response({'success': True})
     except Exception as e:
@@ -2608,46 +3027,51 @@ async def handle_currency_rates(request):
         return web.json_response({
             'success': True,
             'rates': rates,
+            'source': getattr(currency_api, 'last_source', 'unknown'),
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return web.json_response({
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'rates': currency_api.get_stale_cache('RUB'),
+            'source': getattr(currency_api, 'last_source', 'unknown')
         }, status=500)
 
 PREMIUM_PRICES = {30: 299, 45: 419, 60: 559, 90: 799, 365: 2999}
 
 async def handle_activate_ref_code(request):
     try:
+        auth_user = await get_authenticated_webapp_user(request)
+        if not auth_user:
+            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+
         data = await request.json()
-        user_id = data.get('user_id')
+        user_id = int(data.get('user_id') or 0)
         code = data.get('code', '').strip().upper()
-        
+
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
         if not user_id or not code:
             return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
-        
-        # Find user by referral code
+
         referrer_id = db.get_user_by_referral_code(code)
         if not referrer_id:
             return web.json_response({'success': False, 'error': '❌ Реферальный код не найден'})
-        
         if referrer_id == user_id:
             return web.json_response({'success': False, 'error': '❌ Нельзя активировать свой собственный код'})
-        
-        # Check if already referred
+
         user = db.get_user_dict(user_id)
         if user and user.get('referred_by') is not None:
             return web.json_response({'success': False, 'error': '❌ Вы уже активировали реферальный код'})
-        
-        # Apply referral bonus
+
         db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
         db.update_balance(referrer_id, "RUB", 50)
         db.update_balance(user_id, "RUB", 50)
         db.add_notification(referrer_id, f"🎉 Пользователь активировал ваш реферальный код! +50 RUB")
         db.add_notification(user_id, "🎉 Добро пожаловать! +50 RUB за активацию реферального кода")
         db.conn.commit()
-        
+
         return web.json_response({
             'success': True,
             'bonus': 50,
@@ -2659,8 +3083,15 @@ async def handle_activate_ref_code(request):
 
 async def handle_buy_premium(request):
     try:
+        auth_user = await get_authenticated_webapp_user(request)
+        if not auth_user:
+            return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+
         data = await request.json()
-        user_id = data.get('user_id')
+        user_id = int(data.get('user_id', 0))
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+
         days = int(data.get('days', 30))
         
         if not user_id:
@@ -2678,73 +3109,66 @@ async def handle_buy_premium(request):
         
         price_rub = PREMIUM_PRICES[days]
         
-        # Get currency rates
         rates = await currency_api.fetch_rates("RUB")
         
-        # Get all balances
-        balances = {}
-        for curr in ["RUB", "BYN", "UAH", "KZT", "UZS", "EUR", "USD", "TON", "USDT", "STARS"]:
-            balances[curr] = db.get_balance(user_id, curr)
-        
-        # Check total balance in RUB
-        total_rub = 0
-        for curr, amount in balances.items():
-            if curr == "RUB":
-                total_rub += amount
-            else:
-                rate = rates.get(curr, 0)
-                if rate > 0:
-                    total_rub += amount * rate
-        
-        if total_rub < price_rub:
-            return web.json_response({
-                'success': False,
-                'error': 'Недостаточно средств. Пополните баланс через поддержку.',
-                'total_rub': round(total_rub, 2),
-                'price_rub': price_rub
-            })
-        
-        # Deduct from currencies sequentially (RUB first, then by descending rate value)
-        # Order: RUB → USD → EUR → USDT → TON → STARS → BYN → UAH → KZT → UZS
-        deduction_order = ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]
-        remaining = price_rub
-        deducted = {}
-        
-        for curr in deduction_order:
-            if remaining <= 0:
-                break
-            bal = balances.get(curr, 0)
-            if bal <= 0:
-                continue
+        async with db_batch_lock:
+            balances = {}
+            for curr in ["RUB", "BYN", "UAH", "KZT", "UZS", "EUR", "USD", "TON", "USDT", "STARS"]:
+                balances[curr] = db.get_balance(user_id, curr)
             
-            if curr == "RUB":
-                deduct = min(bal, remaining)
-                db.update_balance(user_id, curr, -deduct)
-                deducted[curr] = deduct
-                remaining -= deduct
-            else:
-                rate = rates.get(curr, 0)
-                if rate <= 0:
-                    continue
-                # How much of this currency is needed to cover remaining RUB
-                needed = remaining / rate
-                if bal >= needed:
-                    deduct_amount = needed
-                    db.update_balance(user_id, curr, -deduct_amount)
-                    deducted[curr] = round(deduct_amount, 2)
-                    remaining = 0
+            total_rub = 0
+            for curr, amount in balances.items():
+                if curr == "RUB":
+                    total_rub += amount
                 else:
-                    rub_value = bal * rate
-                    db.update_balance(user_id, curr, -bal)
-                    deducted[curr] = bal
-                    remaining -= rub_value
-        
-        if remaining > 0:
-            # Shouldn't happen since we checked total >= price, but just in case
-            return web.json_response({'success': False, 'error': 'Transaction failed'}, status=500)
-        
-        # Set premium
-        db.set_premium(user_id, days, 0)  # 0 = self-purchased
+                    rate = rates.get(curr, 0)
+                    if rate > 0:
+                        total_rub += amount * rate
+            
+            if total_rub < price_rub:
+                return web.json_response({
+                    'success': False,
+                    'error': 'Недостаточно средств. Пополните баланс через поддержку.',
+                    'total_rub': round(total_rub, 2),
+                    'price_rub': price_rub
+                })
+            
+            deduction_order = ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]
+            remaining = price_rub
+            deducted = {}
+            
+            for curr in deduction_order:
+                if remaining <= 0:
+                    break
+                bal = balances.get(curr, 0)
+                if bal <= 0:
+                    continue
+                
+                if curr == "RUB":
+                    deduct = min(bal, remaining)
+                    db.update_balance(user_id, curr, -deduct)
+                    deducted[curr] = deduct
+                    remaining -= deduct
+                else:
+                    rate = rates.get(curr, 0)
+                    if rate <= 0:
+                        continue
+                    needed = remaining / rate
+                    if bal >= needed:
+                        deduct_amount = needed
+                        db.update_balance(user_id, curr, -deduct_amount)
+                        deducted[curr] = round(deduct_amount, 2)
+                        remaining = 0
+                    else:
+                        rub_value = bal * rate
+                        db.update_balance(user_id, curr, -bal)
+                        deducted[curr] = bal
+                        remaining -= rub_value
+            
+            if remaining > 0:
+                return web.json_response({'success': False, 'error': 'Transaction failed'}, status=500)
+            
+            db.set_premium(user_id, days, 0)
         
         # Send notification
         try:
@@ -2770,12 +3194,386 @@ async def handle_buy_premium(request):
         logger.error(f"buy_premium error: {e}")
         return web.json_response({'success': False, 'error': str(e)}, status=500)
 
+
 async def get_user_balances_text(user_id: int) -> str:
     text = ""
     for code, info in CURRENCIES.items():
         bal = db.get_balance(user_id, code)
         text += f"• {bal:.2f} {info['symbol']} ({code})\n"
     return text
+
+
+# ========== TON/USDT БЛОКЧЕЙН МОНИТОР ==========
+
+async def fetch_ton_transactions(address: str, limit: int = 50) -> list:
+    if not TON_API_KEY:
+        logger.warning("TON_API_KEY not configured, skipping blockchain monitor")
+        return []
+    try:
+        url = f"{TON_API_BASE}/getTransactions"
+        params = {"address": address, "limit": limit, "api_key": TON_API_KEY}
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    logger.warning(f"TON API returned {resp.status}")
+                    return []
+                data = await resp.json()
+                if not data.get("ok"):
+                    return []
+                return data.get("result", [])
+    except Exception as e:
+        logger.warning(f"TON API fetch error: {e}")
+        return []
+
+
+async def poll_ton_payments():
+    while True:
+        try:
+            await asyncio.sleep(TON_POLL_INTERVAL_SECONDS)
+            if not TON_ESCROW_ADDRESS:
+                continue
+
+            txs = await fetch_ton_transactions(TON_ESCROW_ADDRESS)
+            if not txs:
+                continue
+
+            last_processed_tx = db.get_service_state("last_ton_tx_hash", "")
+
+            for tx in txs:
+                tx_hash = tx.get("hash", "")
+                if not tx_hash or tx_hash == last_processed_tx:
+                    continue
+
+                in_msg = tx.get("in_msg", {})
+                if not in_msg:
+                    continue
+
+                source = in_msg.get("source", "")
+                value_nano = int(in_msg.get("value", "0"))
+                value_ton = value_nano / 1e9
+
+                comment_hex = in_msg.get("msg_data", {}).get("body", "")
+                comment = ""
+                if comment_hex and len(comment_hex) > 8:
+                    try:
+                        raw = bytes.fromhex(comment_hex[4:]) if len(comment_hex) > 4 else b""
+                        if raw:
+                            comment = raw.decode("utf-8", errors="ignore").strip("\x00").strip()
+                    except Exception:
+                        comment = ""
+
+                async with deal_lock:
+                    db.cursor.execute(
+                        "SELECT id, status, payment_comment, amount, buyer, currency, seller FROM deals "
+                        "WHERE status IN ('awaiting', 'payment_pending') AND payment_method = 'ton'"
+                    )
+                    pending = db.cursor.fetchall()
+
+                    for deal_row in pending:
+                        deal_id = deal_row[0]
+                        deal_status = deal_row[1]
+                        deal_comment = deal_row[2] or ""
+                        deal_amount = float(deal_row[3] or 0)
+                        buyer_id = deal_row[4]
+                        currency = deal_row[5]
+                        seller_id = deal_row[6]
+
+                        if comment != deal_comment:
+                            continue
+                        if currency == "TON" and abs(value_ton - deal_amount) > 0.01:
+                            continue
+                        tx_amount = value_ton if currency == "TON" else value_ton
+
+                        if db.has_ton_payment(tx_hash):
+                            continue
+
+                        db.add_ton_payment(tx_hash, deal_id, buyer_id, currency, tx_amount, comment, source)
+                        db.mark_deal_paid_onchain(deal_id, tx_hash)
+                        db.set_service_state("last_ton_tx_hash", tx_hash)
+                        logger.info(f"TON payment confirmed: deal #{deal_id}, tx {tx_hash}")
+
+                        if buyer_id:
+                            asyncio.create_task(notify_user(
+                                buyer_id,
+                                f"✅ *On-chain оплата подтверждена!*\n\nСделка #{deal_id}\nСумма: {tx_amount} {currency}"
+                            ))
+                        asyncio.create_task(notify_user(
+                            seller_id,
+                            f"💰 *Сделка #{deal_id} оплачена через блокчейн!*\n\nПередайте товар покупателю."
+                        ))
+                        break
+
+        except asyncio.CancelledError:
+            logger.info("TON monitor cancelled")
+            break
+        except Exception as e:
+            logger.error(f"TON monitor error: {e}")
+            await asyncio.sleep(TON_POLL_INTERVAL_SECONDS)
+
+
+async def verify_ton_usdt_payment(deal_id: int, tx_hash: str) -> dict:
+    if not TON_API_KEY:
+        return {"verified": False, "error": "TON API key not configured"}
+    try:
+        url = f"{TON_API_BASE}/getTransaction"
+        params = {"hash": tx_hash, "api_key": TON_API_KEY}
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    return {"verified": False, "error": f"API returned {resp.status}"}
+                data = await resp.json()
+                if not data.get("ok") or not data.get("result"):
+                    return {"verified": False, "error": "Transaction not found"}
+                tx = data["result"]
+                in_msg = tx.get("in_msg", {})
+                value_nano = int(in_msg.get("value", "0"))
+                value_ton = value_nano / 1e9
+                source = in_msg.get("source", "")
+                return {
+                    "verified": True,
+                    "tx_hash": tx_hash,
+                    "amount_ton": value_ton,
+                    "source": source,
+                    "timestamp": tx.get("utime", 0)
+                }
+    except Exception as e:
+        return {"verified": False, "error": str(e)}
+
+
+# ========== API: АДМИНИСТРИРОВАНИЕ СПОРОВ ==========
+
+async def get_admin_or_deny(request) -> Optional[Dict]:
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return None
+    user_id = auth_user.get("id")
+    if user_id not in ADMIN_IDS:
+        return None
+    return auth_user
+
+
+async def handle_admin_disputes(request):
+    admin = await get_admin_or_deny(request)
+    if not admin:
+        return web.json_response({'error': 'Unauthorized'}, status=401)
+    disputes = db.get_disputes()
+    result = []
+    for d in disputes:
+        result.append({
+            'dispute_id': d[0],
+            'deal_id': d[1],
+            'opened_by': d[2],
+            'reason': d[3],
+            'status': d[4],
+            'created_at': str(d[5])
+        })
+    return web.json_response({'disputes': result})
+
+
+async def handle_admin_resolve_dispute(request):
+    admin = await get_admin_or_deny(request)
+    if not admin:
+        return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+
+    try:
+        data = await request.json()
+        dispute_id = int(data.get('dispute_id', 0))
+        decision = data.get('decision', '')
+
+        if not dispute_id or decision not in ('seller', 'buyer'):
+            return web.json_response({'success': False, 'error': 'Invalid params'}, status=400)
+
+        async with deal_lock:
+            result = db.resolve_dispute_with_decision(dispute_id, decision)
+
+        if not result:
+            return web.json_response({'success': False, 'error': 'Dispute already resolved or invalid'})
+
+        if result['decision'] == 'seller':
+            asyncio.create_task(notify_user(
+                result['seller_id'],
+                f"✅ *Спор по сделке #{result['deal_id']} решён в вашу пользу.*\n\nНачислено {fmt_num(result['seller_amount'])} {result['currency']}"
+            ))
+            if result.get('buyer_id'):
+                asyncio.create_task(notify_user(
+                    result['buyer_id'],
+                    f"⚖️ *Спор по сделке #{result['deal_id']} закрыт.*\n\nРешение: выплата продавцу."
+                ))
+        else:
+            if result.get('buyer_id'):
+                asyncio.create_task(notify_user(
+                    result['buyer_id'],
+                    f"↩️ *Спор по сделке #{result['deal_id']} решён в вашу пользу.*\n\nВозврат: {fmt_num(result['amount'])} {result['currency']}"
+                ))
+            asyncio.create_task(notify_user(
+                result['seller_id'],
+                f"⚖️ *Спор по сделке #{result['deal_id']} закрыт.*\n\nРешение: возврат покупателю."
+            ))
+
+        return web.json_response({
+            'success': True,
+            'deal_id': result['deal_id'],
+            'decision': decision,
+            'status': result['status']
+        })
+    except Exception as e:
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+
+# ========== API: ОПЛАТА/ПОДТВЕРЖДЕНИЕ СДЕЛОК (Mini App) ==========
+
+async def handle_pay_deal(request):
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+
+    try:
+        data = await request.json()
+        user_id = int(data.get('user_id', 0))
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+
+        did = int(data.get('deal_id', 0))
+        if not did:
+            return web.json_response({'success': False, 'error': 'Missing deal_id'}, status=400)
+
+        async with deal_lock:
+            deal = db.get_deal(did)
+            if not deal or deal.get("status") not in ("awaiting", "payment_pending"):
+                return web.json_response({'success': False, 'error': 'Deal not available for payment'})
+
+            if deal["seller"] == user_id:
+                return web.json_response({'success': False, 'error': 'Cannot pay own deal'})
+
+            if deal.get("buyer") and deal["buyer"] != user_id:
+                return web.json_response({'success': False, 'error': 'Deal locked to another buyer'})
+
+            currency = deal["currency"]
+            amount = float(deal["amount"])
+            payment_method = deal.get("payment_method") or ("ton" if currency in ("TON", "USDT") else "internal")
+
+            if payment_method == "ton":
+                payment_comment = deal.get("payment_comment") or generate_payment_comment(did, user_id)
+                payment_address = deal.get("payment_address") or TON_ESCROW_ADDRESS
+                if not payment_address:
+                    return web.json_response({'success': False, 'error': 'TON escrow not configured'})
+
+                payment_amount = quantize_amount(deal.get("payment_amount") or amount, "0.000001")
+                started = db.start_external_payment(did, user_id, payment_comment, payment_address, payment_amount)
+                if not started:
+                    return web.json_response({'success': False, 'error': 'Could not initiate on-chain payment'})
+
+                return web.json_response({
+                    'success': True,
+                    'method': 'ton',
+                    'payment_address': payment_address,
+                    'payment_comment': payment_comment,
+                    'payment_amount': payment_amount,
+                    'currency': currency,
+                    'deal_id': did
+                })
+
+            if not db.update_balance(user_id, currency, -amount):
+                balance = db.get_balance(user_id, currency)
+                return web.json_response({'success': False, 'error': f'Insufficient funds. Balance: {balance} {currency}'})
+
+            if not deal.get("buyer"):
+                db.set_buyer(did, user_id)
+            db.upd_deal_status(did, "paid")
+
+        asyncio.create_task(notify_user(
+            deal["seller"],
+            f"💰 *Сделка #{did} оплачена!*\n\n🎁 {escape_md(deal['item'])}\n💰 {fmt_num(amount)} {currency}\n\nПокупатель внёс средства. Передайте товар."
+        ))
+
+        return web.json_response({'success': True, 'method': 'internal', 'deal_id': did})
+    except Exception as e:
+        logger.exception(f"pay_deal error: {e}")
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+
+async def handle_mark_sent(request):
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+
+    try:
+        data = await request.json()
+        user_id = int(data.get('user_id', 0))
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+
+        did = int(data.get('deal_id', 0))
+        async with deal_lock:
+            deal = db.get_deal(did)
+            if not deal or deal.get("status") != "paid":
+                return web.json_response({'success': False, 'error': 'Deal not paid'})
+            if deal["seller"] != user_id:
+                return web.json_response({'success': False, 'error': 'Not the seller'})
+
+            db.upd_deal_status(did, "item_sent")
+
+        asyncio.create_task(notify_user(
+            deal["buyer"],
+            f"📦 *Товар передан!*\n\nСделка #{did}\n✅ Подтвердите получение"
+        ))
+
+        return web.json_response({'success': True, 'deal_id': did})
+    except Exception as e:
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+
+async def handle_confirm_receipt(request):
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+
+    try:
+        data = await request.json()
+        user_id = int(data.get('user_id', 0))
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+
+        did = int(data.get('deal_id', 0))
+        async with deal_lock:
+            deal = db.get_deal(did)
+            if not deal or deal.get("status") != "item_sent":
+                return web.json_response({'success': False, 'error': 'Item not sent yet'})
+            if deal["buyer"] != user_id:
+                return web.json_response({'success': False, 'error': 'Not the buyer'})
+
+            seller_id = deal["seller"]
+            amount = float(deal["amount"])
+            currency = deal["currency"]
+            commission = db.get_user_commission(seller_id, "deal")
+            commission_amount = quantize_amount(amount * commission)
+            seller_amount = quantize_amount(amount - commission_amount)
+
+            db.update_balance(seller_id, currency, seller_amount)
+            db.upd_deal_status(did, "completed")
+            referral_bonus = db.credit_referral_commission(seller_id, did, currency, commission_amount)
+
+        premium_text = " (без комиссии)" if commission == 0 else ""
+        asyncio.create_task(notify_user(
+            seller_id,
+            f"✅ *Сделка #{did} завершена!*\n\n💰 Получено: {fmt_num(seller_amount)} {currency}{premium_text}"
+        ))
+        asyncio.create_task(notify_user(
+            user_id,
+            f"✅ *Сделка #{did} успешно завершена!*\n\nСредства переведены продавцу."
+        ))
+
+        if referral_bonus:
+            asyncio.create_task(notify_user(
+                referral_bonus['referrer_id'],
+                f"👥 *Реферальный бонус*\n\nПо сделке #{did} начислено {referral_bonus['reward']} RUB (10% от сервисной комиссии)."
+            ))
+
+        return web.json_response({'success': True, 'deal_id': did, 'seller_amount': seller_amount, 'currency': currency})
+    except Exception as e:
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
 
 # ========== ЗАПУСК ВЕБ-СЕРВЕРА ==========
 async def start_api():
@@ -2789,6 +3587,11 @@ async def start_api():
     app.router.add_post('/api/claim_achievement', handle_claim_achievement)
     app.router.add_post('/api/buy_premium', handle_buy_premium)
     app.router.add_post('/api/activate_ref_code', handle_activate_ref_code)
+    app.router.add_get('/api/admin/disputes', handle_admin_disputes)
+    app.router.add_post('/api/admin/resolve_dispute', handle_admin_resolve_dispute)
+    app.router.add_post('/api/pay_deal', handle_pay_deal)
+    app.router.add_post('/api/mark_sent', handle_mark_sent)
+    app.router.add_post('/api/confirm_receipt', handle_confirm_receipt)
     
     runner = web.AppRunner(app)
     await runner.setup()
@@ -2834,6 +3637,13 @@ async def main():
         asyncio.create_task(start_api())
     except Exception as e:
         logger.error(f"Ошибка запуска API: {e}")
+    
+    # Запускаем TON блокчейн монитор
+    try:
+        asyncio.create_task(poll_ton_payments())
+        logger.info("✅ TON/USDT блокчейн монитор запущен")
+    except Exception as e:
+        logger.error(f"Ошибка запуска TON монитора: {e}")
     
     # Запускаем бота
     try:

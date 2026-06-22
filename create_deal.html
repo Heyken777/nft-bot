@@ -115,6 +115,22 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         
+        const authToken = tg.initData || '';
+        const userId = tg.initDataUnsafe?.user?.id || 0;
+        
+        function getAuthHeaders(extra = {}) {
+            return { ...extra, 'Authorization': `tma ${authToken}`, 'X-Telegram-Init-Data': authToken };
+        }
+        
+        async function apiFetch(url, options = {}) {
+            const headers = getAuthHeaders(options.headers || {});
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401 || response.status === 403) {
+                tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия устарела. Откройте приложение заново из Telegram.' });
+            }
+            return response;
+        }
+        
         let selectedCurrency = 'RUB';
         
         function navigateTo(page) {
@@ -161,7 +177,7 @@
             }
             const userId = tg.initDataUnsafe?.user?.id || 0;
             try {
-                const response = await fetch('/api/create_deal', {
+                const response = await apiFetch('/api/create_deal', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: userId, item_name: itemName, price: price, currency: selectedCurrency })

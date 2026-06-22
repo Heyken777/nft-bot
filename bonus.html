@@ -42,7 +42,21 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
+        const authToken = tg.initData || '';
         const userId = tg.initDataUnsafe?.user?.id || 0;
+
+        function getAuthHeaders(extra = {}) {
+            return { ...extra, 'Authorization': `tma ${authToken}`, 'X-Telegram-Init-Data': authToken };
+        }
+
+        async function apiFetch(url, options = {}) {
+            const headers = getAuthHeaders(options.headers || {});
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401 || response.status === 403) {
+                tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия устарела. Откройте приложение заново из Telegram.' });
+            }
+            return response;
+        }
 
         document.getElementById('activateBtn').onclick = async () => {
             const code = document.getElementById('refCodeInput').value.trim().toUpperCase();
@@ -60,7 +74,7 @@
             btn.textContent = '⏳ Проверка...';
 
             try {
-                const response = await fetch('/api/activate_ref_code', {
+                const response = await apiFetch('/api/activate_ref_code', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: userId, code: code })

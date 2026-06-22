@@ -111,6 +111,22 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         
+        const authToken = tg.initData || '';
+        const userId = tg.initDataUnsafe?.user?.id || 0;
+        
+        function getAuthHeaders(extra = {}) {
+            return { ...extra, 'Authorization': `tma ${authToken}`, 'X-Telegram-Init-Data': authToken };
+        }
+        
+        async function apiFetch(url, options = {}) {
+            const headers = getAuthHeaders(options.headers || {});
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401 || response.status === 403) {
+                tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия устарела. Откройте приложение заново из Telegram.' });
+            }
+            return response;
+        }
+        
         function navigateTo(page) {
             const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html', referral: 'referral.html' };
             window.location.href = pages[page] || 'index.html';
@@ -121,8 +137,7 @@
         
         async function loadDeals() {
             try {
-                const userId = tg.initDataUnsafe?.user?.id || 0;
-                const response = await fetch(`/api/user?user_id=${userId}`);
+                const response = await apiFetch(`/api/user?user_id=${userId}`);
                 if (response.ok) {
                     const data = await response.json();
                     dealsData = data.deals || [];
