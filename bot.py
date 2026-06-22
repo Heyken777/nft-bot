@@ -3575,9 +3575,40 @@ async def handle_confirm_receipt(request):
     except Exception as e:
         return web.json_response({'success': False, 'error': str(e)}, status=500)
 
+# ========== CORS MIDDLEWARE ==========
+@web.middleware
+async def cors_middleware(request: web.Request, handler):
+    origin = request.headers.get("Origin", "")
+    allowed_origins = [
+        WEBAPP_URL.rstrip("/"),
+        "https://heyken777.github.io",
+        "https://telegram.org",
+        "https://t.me",
+    ]
+    if origin.rstrip("/") in allowed_origins or "localhost" in origin or "127.0.0.1" in origin:
+        if request.method == "OPTIONS":
+            return web.Response(
+                headers={
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data",
+                    "Access-Control-Max-Age": "86400",
+                }
+            )
+        try:
+            resp = await handler(request)
+            resp.headers["Access-Control-Allow-Origin"] = origin
+            resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Telegram-Init-Data"
+            return resp
+        except web.HTTPException as ex:
+            ex.headers["Access-Control-Allow-Origin"] = origin
+            raise
+    return await handler(request)
+
+
 # ========== ЗАПУСК ВЕБ-СЕРВЕРА ==========
 async def start_api():
-    app = web.Application()
+    app = web.Application(middlewares=[cors_middleware])
     app.router.add_get('/api/user', handle_api)
     app.router.add_post('/api/create_deal', handle_create_deal)
     app.router.add_post('/api/save_card', handle_save_card)

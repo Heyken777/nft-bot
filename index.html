@@ -216,6 +216,31 @@
                 const tg = window.Telegram.WebApp;
                 tg.expand();
                 tg.enableClosingConfirmation();
+                tg.ready();
+                
+                // ========== АВТОРИЗАЦИОННЫЕ ЗАГОЛОВКИ ==========
+                const authToken = tg.initData || '';
+                
+                function getAuthHeaders(extra = {}) {
+                    return { ...extra, 'Authorization': `tma ${authToken}`, 'X-Telegram-Init-Data': authToken };
+                }
+                
+                async function apiFetch(url, options = {}) {
+                    const headers = getAuthHeaders(options.headers || {});
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 15000);
+                    try {
+                        const response = await fetch(url, { ...options, headers, signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (response.status === 401 || response.status === 403) {
+                            tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия Mini App недействительна. Откройте приложение заново из Telegram.' });
+                        }
+                        return response;
+                    } catch (err) {
+                        clearTimeout(timeoutId);
+                        throw err;
+                    }
+                }
                 
                 // ========== КОНСТАНТЫ ==========
                 const currenciesFull = ['RUB', 'USD', 'EUR', 'UAH', 'KZT', 'UZS', 'BYN', 'TON', 'USDT', 'STARS'];
@@ -256,19 +281,28 @@
                 
                 // ========== ЗАГРУЗКА ДАННЫХ ИЗ API ==========
                 async function loadUserData() {
+                    const allBalancesContainer = document.getElementById('allBalancesList');
                     try {
-                        const response = await fetch(`/api/user?user_id=${userData.id}`);
+                        const response = await apiFetch(`/api/user?user_id=${userData.id}`);
                         if (response.ok) {
                             const data = await response.json();
                             userData = { ...userData, ...data };
                             updateAllUI();
+                        } else if (response.status === 401) {
+                            if (allBalancesContainer) {
+                                allBalancesContainer.innerHTML = '<div class="glass-light rounded-xl p-4 text-center text-sm text-gray-500">🔒 Требуется авторизация Telegram</div>';
+                            }
                         } else {
                             console.error('API вернул ошибку:', response.status);
-                            showToast('❌ Не удалось загрузить данные. Перезагрузите приложение.');
+                            if (allBalancesContainer) {
+                                allBalancesContainer.innerHTML = '<div class="glass-light rounded-xl p-4 text-center text-sm text-red-400">❌ Ошибка загрузки данных</div>';
+                            }
                         }
                     } catch (error) {
                         console.error('API не доступен:', error);
-                        showToast('❌ Ошибка соединения с сервером. Попробуйте позже.');
+                        if (allBalancesContainer) {
+                            allBalancesContainer.innerHTML = '<div class="glass-light rounded-xl p-4 text-center text-sm text-red-400">❌ Сервер временно недоступен</div>';
+                        }
                     }
                 }
                 
@@ -448,7 +482,7 @@
                     showToast('⏳ Создаём сделку...');
                     
                     try {
-                        const response = await fetch('/api/create_deal', {
+                        const response = await apiFetch('/api/create_deal', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -573,7 +607,7 @@
             // Загрузка актуальных курсов валют
             async function loadCurrencyRates() {
                 try {
-                    const response = await fetch('/api/currency/rates');
+                    const response = await apiFetch('/api/currency/rates');
                     if (response.ok) {
                         const data = await response.json();
                         if (data.success) {
