@@ -2962,11 +2962,17 @@ async def handle_create_deal(request):
             payment_address = TON_ESCROW_ADDRESS
             payment_amount = quantize_amount(price, '0.000001')
 
-        db.create_deal(user_id, item_name, price, commission, deal_id, currency, payment_method, payment_comment, payment_address, payment_amount)
+        deal_code = secrets.token_hex(3).upper()
+        db.cursor.execute("UPDATE deals SET payment_comment = ? WHERE id = ?", (deal_code, deal_id))
+        db.conn.commit()
+
+        bot_link = f"tg://resolve?domain={BOT_USERNAME}&start=deal_{deal_id}"
 
         return web.json_response({
             'success': True,
             'deal_id': deal_id,
+            'deal_code': deal_code,
+            'bot_link': bot_link,
             'item': item_name,
             'amount': price,
             'currency': currency,
@@ -3057,7 +3063,14 @@ async def handle_activate_ref_code(request):
 
         referrer_id = db.get_user_by_referral_code(code)
         if not referrer_id:
-            return web.json_response({'success': False, 'error': '❌ Реферальный код не найден'})
+            success, result = db.use_promocode(code, user_id)
+            if success:
+                return web.json_response({
+                    'success': True,
+                    'bonus': result,
+                    'message': f'✅ Промокод активирован! Получено {result} RUB'
+                })
+            return web.json_response({'success': False, 'error': result or '❌ Код не найден'})
         if referrer_id == user_id:
             return web.json_response({'success': False, 'error': '❌ Нельзя активировать свой собственный код'})
 
