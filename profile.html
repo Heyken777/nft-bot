@@ -127,23 +127,19 @@
             <div class="glass rounded-2xl p-4 border border-white/10">
                 <div class="font-semibold mb-3">💳 Реквизиты для вывода</div>
                 <div class="space-y-3">
-                    <div class="flex justify-between items-center">
+                    <div class="flex justify-between items-center cursor-pointer hover:bg-white/5 rounded-lg p-1 -mx-1" onclick="window.location.href='settings.html'">
                         <span class="text-sm text-gray-400">💳 Карта:</span>
                         <span class="text-sm font-mono" id="cardDetails">не указана</span>
-                        <button class="edit-card-btn text-blue-400 text-xs" data-type="card">✏️</button>
+                        <span class="text-blue-400 text-xs">✏️</span>
                     </div>
-                    <div class="flex justify-between items-center">
+                    <div class="flex justify-between items-center cursor-pointer hover:bg-white/5 rounded-lg p-1 -mx-1" onclick="window.location.href='settings.html'">
                         <span class="text-sm text-gray-400">💎 TON кошелёк:</span>
                         <span class="text-sm font-mono truncate max-w-[150px]" id="tonDetails">не указан</span>
-                        <button class="edit-ton-btn text-blue-400 text-xs" data-type="ton">✏️</button>
+                        <span class="text-blue-400 text-xs">✏️</span>
                     </div>
                 </div>
             </div>
             
-            <!-- Кнопка выхода -->
-            <button class="w-full bg-red-600/20 border border-red-500/30 rounded-xl py-3 text-red-400 font-medium" id="logoutBtn">
-                🚪 Выйти из аккаунта
-            </button>
             
         </div>
         
@@ -372,37 +368,7 @@
             document.getElementById('balanceUpdateTime').innerText = `Обновлено: ${new Date().toLocaleTimeString()}`;
         }
         
-        // Обработчики редактирования
-        document.querySelector('.edit-card-btn')?.addEventListener('click', () => {
-            tg.showPopup({
-                title: '💳 Введите номер карты',
-                message: 'Формат: 16 цифр',
-                buttons: [{ type: 'default', text: 'OK' }]
-            }, (text) => {
-                if (text && text.trim()) {
-                    const card = text.trim().replace(/\s/g, '');
-                    if (/^\d{16}$/.test(card)) saveCard(card);
-                    else showToast('❌ Неверный формат карты', 'error');
-                }
-            });
-        });
-        
-        document.querySelector('.edit-ton-btn')?.addEventListener('click', () => {
-            tg.showPopup({
-                title: '💎 Введите TON кошелек',
-                message: 'Адрес начинается с UQ или EQ',
-                buttons: [{ type: 'default', text: 'OK' }]
-            }, (text) => {
-                if (text && text.trim()) {
-                    const wallet = text.trim();
-                    if (wallet.startsWith('UQ') || wallet.startsWith('EQ')) saveTonWallet(wallet);
-                    else showToast('❌ Неверный формат TON кошелька', 'error');
-                }
-            });
-        });
-        
         document.getElementById('upgradePremiumBtn').onclick = () => { window.location.href = 'premium.html'; };
-        document.getElementById('logoutBtn').onclick = () => { navigateTo('index.html'); };
         
         // Загрузка данных
         loadProfileData();

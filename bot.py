@@ -1308,6 +1308,23 @@ async def menu_cb(call: CallbackQuery):
         await call.message.edit_text(text, parse_mode="Markdown", reply_markup=main_kb(is_admin))
     await call.answer()
 
+
+async def send_admin_menu(msg: types.Message):
+    """Отправляет админ-панель как новое сообщение (используется из Message-хэндлеров)."""
+    uid = msg.from_user.id
+    is_admin = uid in ADMIN_IDS
+    text = f"🎁 *{BOT_NAME}*\n\n✨ *Главное меню*"
+    if img_exists("ГЛАВНОЕ МЕНЮ.jpg"):
+        await msg.answer_photo(
+            photo=FSInputFile(img_path("ГЛАВНОЕ МЕНЮ.jpg")),
+            caption=text,
+            parse_mode="Markdown",
+            reply_markup=main_kb(is_admin)
+        )
+    else:
+        await msg.answer(text, parse_mode="Markdown", reply_markup=main_kb(is_admin))
+
+
 @dp.callback_query(lambda c: c.data == "cancel")
 async def cancel_cb(call: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -2457,7 +2474,7 @@ async def admin_credit_amount(msg: types.Message, state: FSMContext):
         await msg.answer(f"✅ Зачислено {fmt_num(amount)} {currency} пользователю {uid}")
         await state.clear()
         await bot.send_message(uid, f"💰 Вам зачислено {fmt_num(amount)} {currency}!")
-        await menu_cb(msg)
+        await send_admin_menu(msg)
     except ValueError:
         await msg.answer("❌ Введите число", reply_markup=cancel_kb())
 
@@ -2501,7 +2518,7 @@ async def admin_debit_amount(msg: types.Message, state: FSMContext):
         await msg.answer(f"✅ Списано {fmt_num(amount)} {currency} у {uid}")
         await state.clear()
         await bot.send_message(uid, f"💸 С вашего баланса списано {fmt_num(amount)} {currency}")
-        await menu_cb(msg)
+        await send_admin_menu(msg)
     except ValueError:
         await msg.answer("❌ Введите число", reply_markup=cancel_kb())
 
