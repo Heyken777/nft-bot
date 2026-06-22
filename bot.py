@@ -3605,6 +3605,156 @@ async def handle_confirm_receipt(request):
     except Exception as e:
         return web.json_response({'success': False, 'error': str(e)}, status=500)
 
+# ========== API: GET_PROFILE (для нового фронтенда) ==========
+
+async def handle_get_profile(request):
+    """GET /api/get_profile?tg_id={id} — alias для /api/user, но с tg_id."""
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return web.json_response({'error': 'Unauthorized Mini App request'}, status=401)
+
+    user_id = int(request.query.get('tg_id', 0) or request.query.get('user_id', 0))
+    if auth_user.get('id') != user_id:
+        return web.json_response({'error': 'User mismatch'}, status=403)
+
+    user = db.get_user_dict(user_id)
+    if not user:
+        return web.json_response({'error': 'User not found'}, status=404)
+
+    balances = {}
+    for curr in ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']:
+        balances[curr] = db.get_balance(user_id, curr)
+
+    referral_code = user.get('referral_code') or 'novix'
+    deals = db.get_user_deals(user_id)
+    deals_list = [build_deal_payload(db.get_deal(d[0]), user_id) for d in deals[:20]]
+
+    try:
+        rates = await currency_api.fetch_rates('RUB')
+    except Exception:
+        rates = currency_api.get_stale_cache('RUB')
+
+    return web.json_response({
+        'id': user['user_id'],
+        'username': user['username'],
+        'firstName': user['username'] or 'User',
+        'balances': balances,
+        'rates': rates,
+        'rates_source': getattr(currency_api, 'last_source', 'unknown'),
+        'is_premium': db.is_premium(user_id),
+        'rating': user.get('rating', 0) or 0,
+        'card': user.get('card_details') or '',
+        'ton': user.get('ton') or user.get('ton_wallet') or '',
+        'deals': deals_list,
+        'referral_code': referral_code,
+        'referral_count': db.get_referral_count(user_id),
+        'referral_earnings': db.get_referral_earnings(user_id),
+        'is_admin': user_id in ADMIN_IDS,
+        'premium_until': db.get_premium_info(user_id).get('expires') if db.is_premium(user_id) else None,
+        'ton_escrow_enabled': bool(TON_ESCROW_ADDRESS and TON_API_KEY)
+    })
+
+
+# ========== API: GET_DEALS (только сделки) ==========
+
+async def handle_get_deals(request):
+    """GET /api/get_deals?tg_id={id} — реальные сделки из БД, без хардкода."""
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return web.json_response({'error': 'Unauthorized Mini App request'}, status=401)
+
+    user_id = int(request.query.get('tg_id', 0) or request.query.get('user_id', 0))
+    if auth_user.get('id') != user_id:
+        return web.json_response({'error': 'User mismatch'}, status=403)
+
+    deals = db.get_user_deals(user_id)
+    deals_list = [build_deal_payload(db.get_deal(d[0]), user_id) for d in deals]
+
+    return web.json_response({'success': True, 'deals': deals_list})
+
+
+# ========== API: SAVE_BILLING (карта + TON одним запросом) ==========
+
+async def handle_save_billing(request):
+    """POST /api/save_billing — сохраняет карту и/или TON кошелёк."""
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+
+    try:
+        data = await request.json()
+        user_id = int(data.get('tg_id', 0) or data.get('user_id', 0))
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+
+        card_number = data.get('card_number', '').replace(' ', '')
+        ton_wallet = (data.get('ton_wallet') or '').strip()
+
+        if card_number:
+            if not card_number.isdigit() or len(card_number) not in (16, 19):
+                return web.json_response({'success': False, 'error': 'Invalid card format'}, status=400)
+            db.set_card(user_id, card_number)
+
+        if ton_wallet:
+            if not ton_wallet.startswith('UQ') and not ton_wallet.startswith('EQ'):
+                return web.json_response({'success': False, 'error': 'Invalid TON wallet format'}, status=400)
+            db.set_ton(user_id, ton_wallet)
+
+        return web.json_response({'success': True})
+    except Exception as e:
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+
+# ========== API: ACTIVATE_PROMO (промокоды/реф-коды) ==========
+
+async def handle_activate_promo(request):
+    """POST /api/activate_promo — активация промокода или реферального кода."""
+    try:
+        auth_user = await get_authenticated_webapp_user(request)
+        if not auth_user:
+            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+
+        data = await request.json()
+        user_id = int(data.get('tg_id', 0) or data.get('user_id', 0))
+        promo_code = data.get('promo_code', '').strip().upper()
+
+        if auth_user.get('id') != user_id:
+            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+        if not user_id or not promo_code:
+            return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
+
+        referrer_id = db.get_user_by_referral_code(promo_code)
+        if referrer_id:
+            if referrer_id == user_id:
+                return web.json_response({'success': False, 'error': 'Нельзя активировать свой собственный код'})
+            user = db.get_user_dict(user_id)
+            if user and user.get('referred_by') is not None:
+                return web.json_response({'success': False, 'error': 'Вы уже активировали реферальный код'})
+            db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
+            db.update_balance(referrer_id, "RUB", 50)
+            db.update_balance(user_id, "RUB", 50)
+            db.add_notification(referrer_id, "🎉 Пользователь активировал ваш реферальный код! +50 RUB")
+            db.add_notification(user_id, "🎉 Добро пожаловать! +50 RUB за активацию реферального кода")
+            db.conn.commit()
+            return web.json_response({
+                'success': True,
+                'bonus': 50,
+                'message': '✅ Реферальный код активирован! Вы получили 50 RUB'
+            })
+
+        success, result = db.use_promocode(promo_code, user_id)
+        if success:
+            return web.json_response({
+                'success': True,
+                'bonus': result,
+                'message': f'✅ Промокод активирован! Получено {result} RUB'
+            })
+        return web.json_response({'success': False, 'error': result or '❌ Код не найден'})
+    except Exception as e:
+        logger.error(f"activate_promo error: {e}")
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+
 # ========== CORS MIDDLEWARE ==========
 @web.middleware
 async def cors_middleware(request: web.Request, handler):
@@ -3615,7 +3765,7 @@ async def cors_middleware(request: web.Request, handler):
         "https://telegram.org",
         "https://t.me",
     ]
-    if origin.rstrip("/") in allowed_origins or "localhost" in origin or "127.0.0.1" in origin:
+    if origin.rstrip("/") in allowed_origins or "localhost" in origin or "127.0.0.1" in origin or "github.io" in origin:
         if request.method == "OPTIONS":
             return web.Response(
                 headers={
@@ -3640,14 +3790,18 @@ async def cors_middleware(request: web.Request, handler):
 async def start_api():
     app = web.Application(middlewares=[cors_middleware])
     app.router.add_get('/api/user', handle_api)
+    app.router.add_get('/api/get_profile', handle_get_profile)
+    app.router.add_get('/api/get_deals', handle_get_deals)
     app.router.add_post('/api/create_deal', handle_create_deal)
     app.router.add_post('/api/save_card', handle_save_card)
     app.router.add_post('/api/save_ton', handle_save_ton)
+    app.router.add_post('/api/save_billing', handle_save_billing)
     app.router.add_get('/api/currency/rates', handle_currency_rates)
     app.router.add_get('/api/achievements', handle_achievements)
     app.router.add_post('/api/claim_achievement', handle_claim_achievement)
     app.router.add_post('/api/buy_premium', handle_buy_premium)
     app.router.add_post('/api/activate_ref_code', handle_activate_ref_code)
+    app.router.add_post('/api/activate_promo', handle_activate_promo)
     app.router.add_get('/api/admin/disputes', handle_admin_disputes)
     app.router.add_post('/api/admin/resolve_dispute', handle_admin_resolve_dispute)
     app.router.add_post('/api/pay_deal', handle_pay_deal)
