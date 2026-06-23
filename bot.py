@@ -1693,27 +1693,30 @@ async def profile_cb(call: CallbackQuery):
     if not balances:
         balances = "• 0 🇷🇺 (RUB)\n"
     
-    # ===== ИСПРАВЛЕНИЕ: парсим дату с микросекундами =====
+    # ===== ПАРСИМ ДАТУ С МИКРОСЕКУНДАМИ =====
     if is_premium and premium_info.get("active"):
         expires = premium_info.get("expires", "")
         if expires and expires != "FOREVER" and expires is not None:
             try:
                 # Если дата с микросекундами
                 if '.' in str(expires):
-                    # Парсим с микросекундами
                     exp_date = datetime.strptime(str(expires), '%Y-%m-%d %H:%M:%S.%f').strftime('%d.%m.%Y')
                 else:
                     exp_date = datetime.strptime(str(expires), '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y')
                 premium_status = f"✅ Активен до {exp_date}"
             except Exception as e:
-                # Если не получилось, показываем как есть
                 premium_status = f"✅ Активен до {expires}"
         else:
             premium_status = "✅ Активен (FOREVER)"
         
+        # === ИСПРАВЛЕНИЕ: показываем username создателя ===
         granted_by = premium_info.get("granted_by")
         if granted_by and granted_by != 0:
-            premium_status += f"\n👑 Выдал: `{granted_by}`"
+            creator = db.get_user_dict(granted_by)
+            if creator and creator.get('username'):
+                premium_status += f"\n👑 Выдал: @{creator.get('username')}"
+            else:
+                premium_status += f"\n👑 Выдал: `{granted_by}`"
     else:
         premium_status = "❌ Не активен"
     
@@ -2373,7 +2376,18 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
     elif action == "mailing":
         await state.set_state(AdminMailingState.title)
         await call.message.delete()
-        await call.message.answer("📢 *Введите заголовок рассылки:*", parse_mode="Markdown", reply_markup=cancel_kb())
+        
+        # Получаем количество пользователей
+        users = db.get_all_users_for_mailing()
+        total_users = len(users)
+        
+        text = (
+            f"📨 *Рассылка по вашему боту*\n\n"
+            f"👥 Получателей: *{total_users}* человек\n\n"
+            f"Отправьте сообщение — оно уйдёт всем пользователям вашего бота "
+            f"с сохранением форматирования, фото/видео и премиум-эмодзи."
+        )
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
     elif action == "users":
         user_page[call.from_user.id] = 0
         await show_users_page(call, 0)
@@ -2494,9 +2508,15 @@ async def user_info_cb(call: CallbackQuery):
             except:
                 pass
     
+    # === ИСПРАВЛЕНИЕ: показываем username создателя ===
     granted_info = ""
     if premium_info.get("granted_by") and premium_info["granted_by"] != 0:
-        granted_info = f"\n👑 Выдал: `{premium_info['granted_by']}`"
+        creator_id = premium_info["granted_by"]
+        creator = db.get_user_dict(creator_id)
+        if creator and creator.get('username'):
+            granted_info = f"\n👑 Выдал: @{creator.get('username')}"
+        else:
+            granted_info = f"\n👑 Выдал: `{creator_id}`"
         if premium_info.get("granted_at"):
             granted_info += f"\n📅 Дата выдачи: {premium_info['granted_at'][:16]}"
         if premium_info.get("duration_days"):
@@ -2697,20 +2717,196 @@ async def premium_remove_cb(call: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "admin_promocodes")
 async def admin_promocodes_cb(call: CallbackQuery):
-    if call.from_user.id not in ADMIN_IDS: return await call.answer("⛔ Доступ запрещен", show_alert=True)
-    promos = db.get_all_promocodes()
-    text = "🎫 *Управление промокодами*\n\n"
-    if promos:
-        for p in promos:
-            status = "✅" if p[5] else "❌"
-            expires = p[4] or "∞"
-            text += f"{status} `{p[0]}` — {p[1]} RUB | {p[3]}/{p[2]} | до {expires}\n"
-    else:
-        text += "Промокодов пока нет\n"
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
+    text = "🎫 *Управление промокодами*\n\nЗдесь вы можете создавать и управлять промокодами для ваших пользователей."
+    
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
+        [InlineKeyboardButton(text="📋 Действующие промокоды", callback_data="admin_active_promos")],
+        [InlineKeyboardButton(text="📋 Использованные промокоды", callback_data="admin_used_promos")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ])
+    
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data == "admin_active_promos")
+async def admin_active_promos_cb(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
+    db.cursor.execute("""
+        SELECT code, amount, max_uses, used_count, expires_at, active 
+        FROM promocodes 
+        WHERE active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))
+        ORDER BY code
+    """)
+    promos = db.cursor.fetchall()
+    
+    if not promos:
+        text = "📭 *Нет действующих промокодов*"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
+        ])
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+        await call.answer()
+        return
+    
+    text = "📋 *Действующие промокоды*\n\n"
+    kb = []
+    
+    for promo in promos:
+        code, amount, max_uses, used_count, expires_at, active = promo
+        status = "✅" if active else "❌"
+        expires = expires_at if expires_at else "∞ (бессрочный)"
+        if expires != "∞ (бессрочный)":
+            try:
+                exp_date = datetime.strptime(expires, '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y')
+                expires = exp_date
+            except:
+                pass
+        
+        # Получаем информацию о создателе
+        db.cursor.execute("SELECT admin_id, timestamp FROM admin_logs WHERE action = 'create_promo' AND target_id = ? ORDER BY timestamp DESC LIMIT 1", (code,))
+        admin_log = db.cursor.fetchone()
+        creator_info = "неизвестен"
+        if admin_log:
+            creator_id = admin_log[0]
+            user = db.get_user_dict(creator_id)
+            if user:
+                creator_info = f"@{user.get('username') or creator_id}" if user.get('username') else str(creator_id)
+        
+        text += f"• `{code}`\n"
+        text += f"  💰 {amount} RUB | {used_count}/{max_uses} использований\n"
+        text += f"  📅 До: {expires}\n"
+        text += f"  👤 Создал: {creator_info}\n\n"
+        
+        kb.append([InlineKeyboardButton(
+            text=f"📊 {code}",
+            callback_data=f"admin_promo_stats_{code}"
+        )])
+    
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
+    
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await call.answer()
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_promo_stats_"))
+async def admin_promo_stats_cb(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
+    code = call.data.replace("admin_promo_stats_", "")
+    promo = db.get_promocode(code)
+    
+    if not promo:
+        await call.answer("❌ Промокод не найден", show_alert=True)
+        return
+    
+    # Получаем информацию о создателе
+    db.cursor.execute("SELECT admin_id, timestamp FROM admin_logs WHERE action = 'create_promo' AND target_id = ? ORDER BY timestamp DESC LIMIT 1", (code,))
+    admin_log = db.cursor.fetchone()
+    creator_info = "неизвестен"
+    created_at = "неизвестно"
+    if admin_log:
+        creator_id = admin_log[0]
+        created_at = admin_log[1]
+        user = db.get_user_dict(creator_id)
+        if user:
+            creator_info = f"@{user.get('username') or creator_id}" if user.get('username') else str(creator_id)
+    
+    status = "✅ Активен" if promo['active'] else "❌ Неактивен"
+    expires = promo['expires_at'] if promo['expires_at'] else "∞ (бессрочный)"
+    if expires != "∞ (бессрочный)":
+        try:
+            exp_date = datetime.strptime(expires, '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y %H:%M')
+            expires = exp_date
+        except:
+            pass
+    
+    text = (
+        f"📊 *Статистика промокода*\n\n"
+        f"📝 Код: `{code}`\n"
+        f"💰 Сумма: {promo['amount']} RUB\n"
+        f"📋 Использований: {promo['used_count']}/{promo['max_uses']}\n"
+        f"📅 Действует до: {expires}\n"
+        f"📌 Статус: {status}\n"
+        f"👤 Создал: {creator_info}\n"
+        f"📆 Создан: {created_at if created_at != 'неизвестно' else 'неизвестно'}\n"
+    )
+    
+    # Список использований
+    db.cursor.execute("""
+        SELECT user_id, used_at FROM promocode_uses 
+        WHERE promo_code = ? 
+        ORDER BY used_at DESC LIMIT 10
+    """, (code,))
+    uses = db.cursor.fetchall()
+    
+    if uses:
+        text += "\n*Последние использований:*\n"
+        for user_id, used_at in uses:
+            user = db.get_user_dict(user_id)
+            username = f"@{user.get('username')}" if user and user.get('username') else str(user_id)
+            text += f"• {username} — {used_at[:16]}\n"
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Деактивировать", callback_data=f"admin_toggle_promo_{code}")],
+        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"admin_delete_promo_{code}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_active_promos")]
+    ])
+    
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
+
+
+@dp.callback_query(lambda c: c.data == "admin_used_promos")
+async def admin_used_promos_cb(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
+    db.cursor.execute("""
+        SELECT code, amount, max_uses, used_count, expires_at, active 
+        FROM promocodes 
+        WHERE active = 0 OR (expires_at IS NOT NULL AND expires_at <= datetime('now'))
+        ORDER BY expires_at DESC
+    """)
+    promos = db.cursor.fetchall()
+    
+    if not promos:
+        text = "📭 *Нет использованных/просроченных промокодов*"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
+        ])
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+        await call.answer()
+        return
+    
+    text = "📋 *Использованные/просроченные промокоды*\n\n"
+    
+    for promo in promos:
+        code, amount, max_uses, used_count, expires_at, active = promo
+        status = "❌ Истёк" if expires_at and expires_at <= datetime.now().strftime('%Y-%m-%d %H:%M:%S') else "❌ Деактивирован"
+        expires = expires_at if expires_at else "∞"
+        if expires != "∞":
+            try:
+                exp_date = datetime.strptime(expires, '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y')
+                expires = exp_date
+            except:
+                pass
+        
+        text += f"• `{code}` — {status}\n"
+        text += f"  💰 {amount} RUB | {used_count}/{max_uses} использований\n"
+        text += f"  📅 Истёк: {expires}\n\n"
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
+    ])
+    
     await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
@@ -2769,34 +2965,64 @@ async def admin_promo_expires_msg(msg: types.Message, state: FSMContext):
             if expires_days <= 0: expires_days = 30
         except ValueError:
             pass
+    
     data = await state.get_data()
     db.create_promocode(data['promo_code'], data['promo_amount'], data['promo_max_uses'], expires_days)
+    
+    # Логируем создание промокода
+    db.cursor.execute("""
+        INSERT INTO admin_logs (admin_id, action, target_id, amount, timestamp)
+        VALUES (?, 'create_promo', ?, ?, CURRENT_TIMESTAMP)
+    """, (msg.from_user.id, data['promo_code'], data['promo_amount']))
+    db.conn.commit()
+    
     await state.clear()
     await msg.answer(
         f"✅ *Промокод создан!*\n\n"
         f"📝 Код: `{data['promo_code']}`\n"
         f"💰 Сумма: {data['promo_amount']} RUB\n"
         f"📋 Использований: {data['promo_max_uses']}\n"
-        f"⏰ Дней: {expires_days}",
+        f"⏰ Дней: {expires_days}\n"
+        f"👤 Создал: @{msg.from_user.username or msg.from_user.id}",
         parse_mode="Markdown",
         reply_markup=back_kb()
     )
 
 @dp.callback_query(lambda c: c.data.startswith("admin_toggle_promo_"))
 async def admin_toggle_promo_cb(call: CallbackQuery):
-    if call.from_user.id not in ADMIN_IDS: return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
     code = call.data.replace("admin_toggle_promo_", "")
     db.toggle_promocode(code)
-    await admin_promocodes_cb(call)
-    await call.answer()
+    
+    # Логируем
+    db.cursor.execute("""
+        INSERT INTO admin_logs (admin_id, action, target_id, timestamp)
+        VALUES (?, 'toggle_promo', ?, CURRENT_TIMESTAMP)
+    """, (call.from_user.id, code))
+    db.conn.commit()
+    
+    await call.answer("🔄 Статус промокода изменён!", show_alert=True)
+    await admin_active_promos_cb(call)
 
 @dp.callback_query(lambda c: c.data.startswith("admin_delete_promo_"))
 async def admin_delete_promo_cb(call: CallbackQuery):
-    if call.from_user.id not in ADMIN_IDS: return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
     code = call.data.replace("admin_delete_promo_", "")
+    
+    # Логируем
+    db.cursor.execute("""
+        INSERT INTO admin_logs (admin_id, action, target_id, timestamp)
+        VALUES (?, 'delete_promo', ?, CURRENT_TIMESTAMP)
+    """, (call.from_user.id, code))
+    db.conn.commit()
+    
     db.delete_promocode(code)
     await call.answer("✅ Промокод удалён!", show_alert=True)
-    await admin_promocodes_cb(call)
+    await admin_active_promos_cb(call)
 
 @dp.callback_query(lambda c: c.data.startswith("admin_credit_user_"))
 async def admin_credit_user_from_info(call: CallbackQuery, state: FSMContext):
