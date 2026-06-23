@@ -2729,7 +2729,9 @@ async def admin_promocodes_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ])
     
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    # Используем delete + answer вместо edit_text
+    await call.message.delete()
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_active_promos")
@@ -2751,7 +2753,8 @@ async def admin_active_promos_cb(call: CallbackQuery):
             [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
         await call.answer()
         return
     
@@ -2760,7 +2763,6 @@ async def admin_active_promos_cb(call: CallbackQuery):
     
     for promo in promos:
         code, amount, max_uses, used_count, expires_at, active = promo
-        status = "✅" if active else "❌"
         expires = expires_at if expires_at else "∞ (бессрочный)"
         if expires != "∞ (бессрочный)":
             try:
@@ -2791,7 +2793,8 @@ async def admin_active_promos_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
     
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await call.message.delete()
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
     await call.answer()
 
 
@@ -2860,7 +2863,8 @@ async def admin_promo_stats_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_active_promos")]
     ])
     
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.message.delete()
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 
@@ -2882,7 +2886,8 @@ async def admin_used_promos_cb(call: CallbackQuery):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
         await call.answer()
         return
     
@@ -2907,7 +2912,8 @@ async def admin_used_promos_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
     ])
     
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.message.delete()
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_add_promo")
