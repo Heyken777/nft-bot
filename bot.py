@@ -1085,6 +1085,14 @@ class Database:
             'status': new_status
         }
 
+    def create_promocode_with_expires(self, code: str, amount: float, max_uses: int, expires_at: str = None):
+        """Создаёт промокод с указанным сроком действия"""
+        self.cursor.execute("""
+            INSERT OR REPLACE INTO promocodes (code, amount, max_uses, used_count, expires_at, active)
+            VALUES (?, ?, ?, 0, ?, 1)
+        """, (code.upper(), amount, max_uses, expires_at))
+        self.conn.commit()    
+
     def credit_referral_commission(self, seller_id: int, deal_id: int, currency: str, commission_amount: float) -> Optional[dict]:
         self.cursor.execute("SELECT referred_by FROM users WHERE user_id = ?", (seller_id,))
         row = self.cursor.fetchone()
@@ -1167,10 +1175,13 @@ class AdminPremiumState(StatesGroup):
     days = State()
 
 class AdminStates(StatesGroup):
-    promo_code = State()
-    promo_amount = State()
-    promo_max_uses = State()
-    promo_expires_days = State()
+    promo_code = State()          # Название промокода
+    promo_amount = State()        # Сумма бонуса
+    promo_type = State()          # Тип: ограниченный/бесконечный (limited/unlimited)
+    promo_expires_type = State()  # Тип срока: дата/дни/бессрочный (date/days/forever)
+    promo_expires_date = State()  # Конкретная дата (если выбран тип date)
+    promo_expires_days = State()  # Количество дней (если выбран тип days)
+    promo_max_uses = State()      # Максимальное количество использований (если ограниченный)
 
 class PromoActivateState(StatesGroup):
     code = State()
@@ -2729,9 +2740,8 @@ async def admin_promocodes_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ])
     
-    # Используем delete + answer вместо edit_text
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    # Используем edit_or_new без картинки
+    await edit_or_new(call, text, kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_active_promos")
@@ -2753,8 +2763,7 @@ async def admin_active_promos_cb(call: CallbackQuery):
             [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await call.message.delete()
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+        await edit_or_new(call, text, kb)
         await call.answer()
         return
     
@@ -2793,8 +2802,7 @@ async def admin_active_promos_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
     
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb))
     await call.answer()
 
 
@@ -2863,8 +2871,7 @@ async def admin_promo_stats_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_active_promos")]
     ])
     
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    await edit_or_new(call, text, kb)
     await call.answer()
 
 
@@ -2886,8 +2893,7 @@ async def admin_used_promos_cb(call: CallbackQuery):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await call.message.delete()
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+        await edit_or_new(call, text, kb)
         await call.answer()
         return
     
@@ -2912,54 +2918,320 @@ async def admin_used_promos_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
     ])
     
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    await edit_or_new(call, text, kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_add_promo")
 async def admin_add_promo_cb(call: CallbackQuery, state: FSMContext):
-    if call.from_user.id not in ADMIN_IDS: return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
     await state.set_state(AdminStates.promo_code)
-    await call.message.edit_text("📝 *Введите код промокода:*", parse_mode="Markdown")
+    
+    text = (
+        "📝 *Создание промокода (Шаг 1 из 6)*\n\n"
+        "Введите код промокода:\n"
+        "• Только буквы и цифры\n"
+        "• Без пробелов\n"
+        "• Уникальное название"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
+    ])
+    
+    await edit_or_new(call, text, kb)
     await call.answer()
 
 @dp.message(AdminStates.promo_code)
 async def admin_promo_code_msg(msg: types.Message, state: FSMContext):
     code = msg.text.strip().upper()
+    
+    # Проверяем, что только буквы и цифры
+    if not code.isalnum():
+        await msg.answer("❌ Код должен содержать только буквы и цифры. Попробуйте снова:", reply_markup=cancel_kb())
+        return
+    
+    # Проверяем, что код уникален
     if db.get_promocode(code):
         await msg.answer("❌ Такой промокод уже существует. Введите другой код:", reply_markup=cancel_kb())
         return
+    
     await state.update_data(promo_code=code)
     await state.set_state(AdminStates.promo_amount)
-    await msg.answer(f"📝 Код: `{code}`\n\n💰 *Введите сумму бонуса (RUB):*", parse_mode="Markdown", reply_markup=cancel_kb())
+    
+    text = (
+        f"📝 *Создание промокода (Шаг 2 из 6)*\n\n"
+        f"Код: `{code}`\n\n"
+        f"💰 Введите сумму бонуса в RUB:\n"
+        f"• Только число\n"
+        f"• Например: 50, 100, 500"
+    )
+    await msg.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
 
 @dp.message(AdminStates.promo_amount)
 async def admin_promo_amount_msg(msg: types.Message, state: FSMContext):
     try:
         amount = float(msg.text.strip())
         if amount <= 0:
-            await msg.answer("❌ Сумма должна быть больше 0", reply_markup=cancel_kb())
+            await msg.answer("❌ Сумма должна быть больше 0. Введите число:", reply_markup=cancel_kb())
+            return
+        if amount > 100000:
+            await msg.answer("❌ Сумма не может превышать 100 000 RUB. Введите меньше:", reply_markup=cancel_kb())
             return
     except ValueError:
-        await msg.answer("❌ Введите число", reply_markup=cancel_kb())
+        await msg.answer("❌ Введите число (например: 50, 100, 500):", reply_markup=cancel_kb())
         return
+    
     await state.update_data(promo_amount=amount)
-    await state.set_state(AdminStates.promo_max_uses)
-    await msg.answer(f"💰 Сумма: {amount} RUB\n\n📋 *Введите макс. количество использований (по умолчанию 1):*", parse_mode="Markdown", reply_markup=cancel_kb())
+    await state.set_state(AdminStates.promo_type)
+    
+    data = await state.get_data()
+    text = (
+        f"📝 *Создание промокода (Шаг 3 из 6)*\n\n"
+        f"Код: `{data['promo_code']}`\n"
+        f"💰 Сумма: {amount} RUB\n\n"
+        f"🔢 Выберите тип использований:"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="♾️ Бесконечный (∞)", callback_data="promo_type_unlimited")],
+        [InlineKeyboardButton(text="🔢 Ограниченный", callback_data="promo_type_limited")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_add_promo")]
+    ])
+    await msg.answer(text, parse_mode="Markdown", reply_markup=kb)
+
+@dp.callback_query(lambda c: c.data.startswith("promo_type_"))
+async def admin_promo_type_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
+    promo_type = call.data.replace("promo_type_", "")
+    await state.update_data(promo_type=promo_type)
+    
+    data = await state.get_data()
+    
+    if promo_type == "unlimited":
+        # Если бесконечный, сразу переходим к сроку
+        await state.set_state(AdminStates.promo_expires_type)
+        text = (
+            f"📝 *Создание промокода (Шаг 4 из 6)*\n\n"
+            f"Код: `{data['promo_code']}`\n"
+            f"💰 Сумма: {data['promo_amount']} RUB\n"
+            f"🔢 Использований: ♾️ Бесконечный\n\n"
+            f"📅 Выберите срок действия:"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="♾️ Бессрочный", callback_data="promo_expires_forever")],
+            [InlineKeyboardButton(text="📅 Конкретная дата", callback_data="promo_expires_date")],
+            [InlineKeyboardButton(text="📆 Количество дней", callback_data="promo_expires_days")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_add_promo")]
+        ])
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+        await call.answer()
+    else:
+        # Ограниченный - спрашиваем количество использований
+        await state.set_state(AdminStates.promo_max_uses)
+        text = (
+            f"📝 *Создание промокода (Шаг 4 из 6)*\n\n"
+            f"Код: `{data['promo_code']}`\n"
+            f"💰 Сумма: {data['promo_amount']} RUB\n\n"
+            f"🔢 Введите максимальное количество использований:\n"
+            f"• Только число\n"
+            f"• Например: 10, 100, 1000"
+        )
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
+        await call.answer()
 
 @dp.message(AdminStates.promo_max_uses)
 async def admin_promo_max_uses_msg(msg: types.Message, state: FSMContext):
-    text = msg.text.strip()
-    max_uses = 1
-    if text:
-        try:
-            max_uses = int(text)
-            if max_uses <= 0: max_uses = 1
-        except ValueError:
-            pass
+    try:
+        max_uses = int(msg.text.strip())
+        if max_uses <= 0:
+            await msg.answer("❌ Количество использований должно быть больше 0. Введите число:", reply_markup=cancel_kb())
+            return
+        if max_uses > 1000000:
+            await msg.answer("❌ Слишком большое число. Максимум 1 000 000:", reply_markup=cancel_kb())
+            return
+    except ValueError:
+        await msg.answer("❌ Введите число (например: 10, 100, 1000):", reply_markup=cancel_kb())
+        return
+    
     await state.update_data(promo_max_uses=max_uses)
-    await state.set_state(AdminStates.promo_expires_days)
-    await msg.answer(f"📋 Макс. использований: {max_uses}\n\n⏰ *Введите срок действия в днях (по умолчанию 30):*", parse_mode="Markdown", reply_markup=cancel_kb())
+    await state.set_state(AdminStates.promo_expires_type)
+    
+    data = await state.get_data()
+    text = (
+        f"📝 *Создание промокода (Шаг 5 из 6)*\n\n"
+        f"Код: `{data['promo_code']}`\n"
+        f"💰 Сумма: {data['promo_amount']} RUB\n"
+        f"🔢 Использований: {max_uses} раз(а)\n\n"
+        f"📅 Выберите срок действия:"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="♾️ Бессрочный", callback_data="promo_expires_forever")],
+        [InlineKeyboardButton(text="📅 Конкретная дата", callback_data="promo_expires_date")],
+        [InlineKeyboardButton(text="📆 Количество дней", callback_data="promo_expires_days")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_add_promo")]
+    ])
+    await msg.answer(text, parse_mode="Markdown", reply_markup=kb)
+
+@dp.callback_query(lambda c: c.data.startswith("promo_expires_"))
+async def admin_promo_expires_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
+    expires_type = call.data.replace("promo_expires_", "")
+    await state.update_data(promo_expires_type=expires_type)
+    
+    data = await state.get_data()
+    
+    if expires_type == "forever":
+        # Бессрочный - сразу создаём
+        await create_promo_final(call, state)
+    elif expires_type == "date":
+        # Конкретная дата
+        await state.set_state(AdminStates.promo_expires_date)
+        text = (
+            f"📝 *Создание промокода (Шаг 6 из 6)*\n\n"
+            f"Код: `{data['promo_code']}`\n"
+            f"💰 Сумма: {data['promo_amount']} RUB\n"
+            f"🔢 Использований: {data.get('promo_max_uses', '♾️ Бесконечный')}\n\n"
+            f"📅 Введите дату окончания в формате:\n"
+            f"`ДД.ММ.ГГГГ`\n\n"
+            f"Например: `31.12.2026`"
+        )
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
+        await call.answer()
+    elif expires_type == "days":
+        # Количество дней
+        await state.set_state(AdminStates.promo_expires_days)
+        text = (
+            f"📝 *Создание промокода (Шаг 6 из 6)*\n\n"
+            f"Код: `{data['promo_code']}`\n"
+            f"💰 Сумма: {data['promo_amount']} RUB\n"
+            f"🔢 Использований: {data.get('promo_max_uses', '♾️ Бесконечный')}\n\n"
+            f"📆 Введите количество дней действия:\n"
+            f"• Только число\n"
+            f"• Например: 30, 60, 365"
+        )
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
+        await call.answer()
+
+@dp.message(AdminStates.promo_expires_date)
+async def admin_promo_expires_date_msg(msg: types.Message, state: FSMContext):
+    date_str = msg.text.strip()
+    
+    # Проверяем формат ДД.ММ.ГГГГ
+    try:
+        exp_date = datetime.strptime(date_str, '%d.%m.%Y')
+        if exp_date < datetime.now():
+            await msg.answer("❌ Дата не может быть в прошлом. Введите будущую дату:", reply_markup=cancel_kb())
+            return
+        await state.update_data(promo_expires_date=exp_date.strftime('%Y-%m-%d %H:%M:%S'))
+    except ValueError:
+        await msg.answer("❌ Неверный формат. Используйте ДД.ММ.ГГГГ (например: 31.12.2026):", reply_markup=cancel_kb())
+        return
+    
+    await create_promo_final(msg, state)
+
+@dp.message(AdminStates.promo_expires_days)
+async def admin_promo_expires_days_msg(msg: types.Message, state: FSMContext):
+    try:
+        days = int(msg.text.strip())
+        if days <= 0:
+            await msg.answer("❌ Количество дней должно быть больше 0. Введите число:", reply_markup=cancel_kb())
+            return
+        if days > 3650:
+            await msg.answer("❌ Максимум 3650 дней (10 лет). Введите меньше:", reply_markup=cancel_kb())
+            return
+    except ValueError:
+        await msg.answer("❌ Введите число (например: 30, 60, 365):", reply_markup=cancel_kb())
+        return
+    
+    await state.update_data(promo_expires_days=days)
+    await create_promo_final(msg, state)
+
+async def create_promo_final(event, state: FSMContext):
+    """Финальное создание промокода"""
+    data = await state.get_data()
+    
+    code = data.get('promo_code')
+    amount = data.get('promo_amount')
+    promo_type = data.get('promo_type', 'unlimited')
+    expires_type = data.get('promo_expires_type')
+    expires_date = data.get('promo_expires_date')
+    expires_days = data.get('promo_expires_days')
+    
+    # Определяем max_uses
+    if promo_type == 'unlimited':
+        max_uses = 999999999  # Практически бесконечный
+    else:
+        max_uses = data.get('promo_max_uses', 1)
+    
+    # Определяем expires_at
+    if expires_type == 'forever':
+        expires_at = None
+    elif expires_type == 'date' and expires_date:
+        expires_at = expires_date
+    elif expires_type == 'days' and expires_days:
+        expires_at = (datetime.now() + timedelta(days=expires_days)).strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        expires_at = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Создаём промокод
+    db.create_promocode_with_expires(code, amount, max_uses, expires_at)
+    
+    # Логируем создание
+    try:
+        user_id = event.from_user.id if hasattr(event, 'from_user') else event.chat.id
+    except:
+        user_id = event.from_user.id
+    
+    db.cursor.execute("""
+        INSERT INTO admin_logs (admin_id, action, target_id, amount, timestamp)
+        VALUES (?, 'create_promo', ?, ?, CURRENT_TIMESTAMP)
+    """, (user_id, code, amount))
+    db.conn.commit()
+    
+    # Формируем текст результата
+    expires_text = "♾️ Бессрочный"
+    if expires_type == 'date' and expires_date:
+        try:
+            expires_text = datetime.strptime(expires_date, '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y')
+        except:
+            expires_text = expires_date
+    elif expires_type == 'days' and expires_days:
+        expires_text = f"{expires_days} дней (до {datetime.now().strftime('%d.%m.%Y')})"
+    
+    uses_text = "♾️ Бесконечный" if promo_type == 'unlimited' else f"{max_uses} раз(а)"
+    
+    text = (
+        f"✅ *Промокод успешно создан!*\n\n"
+        f"📝 Код: `{code}`\n"
+        f"💰 Сумма: {amount} RUB\n"
+        f"🔢 Использований: {uses_text}\n"
+        f"📅 Действует: {expires_text}\n"
+        f"👤 Создал: @{event.from_user.username or event.from_user.id}\n"
+    )
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Создать ещё", callback_data="admin_add_promo")],
+        [InlineKeyboardButton(text="📋 Действующие промокоды", callback_data="admin_active_promos")],
+        [InlineKeyboardButton(text="🔙 Назад в админку", callback_data="admin_panel")]
+    ])
+    
+    # Отправляем финальное сообщение
+    if hasattr(event, 'message'):
+        await event.message.delete()
+        await event.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    else:
+        await event.delete()
+        await event.answer(text, parse_mode="Markdown", reply_markup=kb)
+    
+    await state.clear()
 
 @dp.message(AdminStates.promo_expires_days)
 async def admin_promo_expires_msg(msg: types.Message, state: FSMContext):

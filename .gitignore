@@ -12,4 +12,7 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Other
 cloudflared.msi
+currency_cache.json
