@@ -766,14 +766,24 @@ class Database:
         """, (user_id,))
         row = self.cursor.fetchone()
         if row and row[0] == 1:
+            expires = row[1]
+            # Если есть микросекунды, обрезаем их
+            if expires and expires != "FOREVER" and expires is not None:
+                try:
+                    # Если дата с микросекундами
+                    if '.' in str(expires):
+                        # Оставляем только до секунд
+                        expires = str(expires).split('.')[0]
+                except:
+                    pass
             return {
                 "active": True,
-                "expires": row[1],
+                "expires": expires,
                 "granted_by": row[2],
                 "granted_at": row[3],
                 "duration_days": row[4]
             }
-        return {"active": False}
+        return {"active": False}       
 
     def set_premium(self, user_id: int, days: int, granted_by: int):
         expires = datetime.now() + timedelta(days=days)
@@ -1595,7 +1605,6 @@ async def set_ton_msg(msg: types.Message, state: FSMContext):
     await state.clear()
     await msg.answer("✅ *TON кошелек сохранен!*", parse_mode="Markdown", reply_markup=back_kb())
 
-# ========== ПРОФИЛЬ ==========
 @dp.callback_query(lambda c: c.data == "profile")
 async def profile_cb(call: CallbackQuery):
     user = db.get_user_dict(call.from_user.id)
@@ -1623,13 +1632,24 @@ async def profile_cb(call: CallbackQuery):
     if not balances:
         balances = "• 0 🇷🇺 (RUB)\n"
     
+    # ===== ИСПРАВЛЕНИЕ: парсим дату с микросекундами =====
     if is_premium and premium_info.get("active"):
         expires = premium_info.get("expires", "")
-        if expires and expires != "FOREVER":
-            exp_date = datetime.strptime(expires, '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y')
-            premium_status = f"✅ Активен до {exp_date}"
+        if expires and expires != "FOREVER" and expires is not None:
+            try:
+                # Если дата с микросекундами
+                if '.' in str(expires):
+                    # Парсим с микросекундами
+                    exp_date = datetime.strptime(str(expires), '%Y-%m-%d %H:%M:%S.%f').strftime('%d.%m.%Y')
+                else:
+                    exp_date = datetime.strptime(str(expires), '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y')
+                premium_status = f"✅ Активен до {exp_date}"
+            except Exception as e:
+                # Если не получилось, показываем как есть
+                premium_status = f"✅ Активен до {expires}"
         else:
             premium_status = "✅ Активен (FOREVER)"
+        
         granted_by = premium_info.get("granted_by")
         if granted_by and granted_by != 0:
             premium_status += f"\n👑 Выдал: `{granted_by}`"
