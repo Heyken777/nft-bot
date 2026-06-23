@@ -9,6 +9,28 @@ const userId = tgUser.id || 0;
 const userName = tgUser.username || tgUser.first_name || 'User';
 const authToken = tg.initData || '';
 
+// ========== КОНФИГУРАЦИЯ API ==========
+const API_BASE_URL = 'https://methodology-identifies-number-dash.trycloudflare.com';
+
+// ИЗМЕНИТЕ функцию apiFetch
+async function apiFetch(url, options = {}) {
+    const headers = getAuthHeaders(options.headers || {});
+    const fullUrl = `${API_BASE_URL}${url}`;  // Добавляем базовый URL
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    try {
+        const response = await fetch(fullUrl, { ...options, headers, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (response.status === 401 || response.status === 403) {
+            tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия устарела. Откройте приложение заново из Telegram.' });
+        }
+        return response;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+    }
+}
+
 function getAuthHeaders(extra = {}) {
     return {
         ...extra,

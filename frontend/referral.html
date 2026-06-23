@@ -126,12 +126,30 @@
 
         async function apiFetch(url, options = {}) {
             const headers = getAuthHeaders(options.headers || {});
-            const response = await fetch(url, { ...options, headers });
-            if (response.status === 401 || response.status === 403) {
-                tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия устарела. Откройте приложение заново из Telegram.' });
+            const fullUrl = `${API_BASE_URL}${url}`;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            try {
+                const response = await fetch(fullUrl, { ...options, headers, signal: controller.signal });
+                clearTimeout(timeoutId);
+                
+                // Если ответ не OK, пробуем распарсить ошибку
+                if (!response.ok) {
+                let errorMsg = `HTTP ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    errorMsg = errorData.error || errorData.message || errorMsg;
+                } catch (e) {}
+                throw new Error(errorMsg);
+                }
+                
+                return response;
+            } catch (err) {
+                clearTimeout(timeoutId);
+                console.error('API Error:', err);
+                throw err;
             }
-            return response;
-        }
+        }   
         
         function navigateTo(page) {
             const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html', referral: 'referral.html' };

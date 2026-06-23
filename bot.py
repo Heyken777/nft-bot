@@ -2897,35 +2897,55 @@ def build_deal_payload(deal: dict, viewer_id: int) -> dict:
 
 
 async def handle_api(request):
+    # Проверяем авторизацию
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
         return JSONResponse(content={'error': 'Unauthorized Mini App request'}, status_code=401)
-
-    user_id = int(request.query_params.get('user_id', 0))
+    
+    # Получаем user_id из query параметров
+    user_id_str = request.query_params.get('user_id', '0')
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        return JSONResponse(content={'error': 'Invalid user_id format'}, status_code=400)
+    
+    # Проверяем, что пользователь совпадает
     if auth_user.get('id') != user_id:
         return JSONResponse(content={'error': 'User mismatch'}, status_code=403)
-
+    
+    # Получаем данные пользователя
     user = db.get_user_dict(user_id)
     if not user:
         return JSONResponse(content={'error': 'User not found'}, status_code=404)
-
+    
+    # Собираем балансы
     balances = {}
     for curr in ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']:
         balances[curr] = db.get_balance(user_id, curr)
-
-    referral_code = user.get('referral_code') or 'novix'
+    
+    # Получаем сделки
     deals = db.get_user_deals(user_id)
-    deals_list = [build_deal_payload(db.get_deal(d[0]), user_id) for d in deals[:20]]
-
+    deals_list = []
+    for d in deals[:20]:
+        deal = db.get_deal(d[0])
+        if deal:
+            deals_list.append(build_deal_payload(deal, user_id))
+    
+    # Получаем курсы валют
     try:
         rates = await currency_api.fetch_rates('RUB')
     except Exception:
         rates = currency_api.get_stale_cache('RUB')
-
+    
+    # Получаем реферальную информацию
+    referral_code = user.get('referral_code') or str(user_id)
+    referral_count = db.get_referral_count(user_id)
+    referral_earnings = db.get_referral_earnings(user_id)
+    
     return JSONResponse(content={
         'id': user['user_id'],
-        'username': user['username'],
-        'firstName': user['username'] or 'User',
+        'username': user['username'] or 'User',
+        'firstName': user.get('first_name') or user['username'] or 'User',
         'balances': balances,
         'rates': rates,
         'rates_source': getattr(currency_api, 'last_source', 'unknown'),
@@ -2935,8 +2955,8 @@ async def handle_api(request):
         'ton': user.get('ton') or user.get('ton_wallet') or '',
         'deals': deals_list,
         'referral_code': referral_code,
-        'referral_count': db.get_referral_count(user_id),
-        'referral_earnings': db.get_referral_earnings(user_id),
+        'referral_count': referral_count,
+        'referral_earnings': referral_earnings,
         'is_admin': user_id in ADMIN_IDS,
         'premium_until': db.get_premium_info(user_id).get('expires') if db.is_premium(user_id) else None,
         'ton_escrow_enabled': bool(TON_ESCROW_ADDRESS and TON_API_KEY)
@@ -2944,52 +2964,67 @@ async def handle_api(request):
 
 async def handle_create_deal(request):
     try:
+        # Проверяем авторизацию
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
             return JSONResponse(content={'success': False, 'error': 'Unauthorized Mini App request'}, status_code=401)
-
+        
+        # Получаем данные
         data = await request.json()
-        user_id = int(data.get('user_id') or 0)
+        
+        # Извлекаем user_id (может быть строкой или числом)
+        user_id_raw = data.get('user_id')
+        try:
+            user_id = int(user_id_raw)
+        except (ValueError, TypeError):
+            return JSONResponse(content={'success': False, 'error': 'Invalid user_id'}, status_code=400)
+        
+        # Проверяем, что пользователь совпадает
         if auth_user.get('id') != user_id:
             return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
-
+        
+        # Получаем данные сделки
         item_name = (data.get('item_name') or '').strip()
-        price = float(data.get('price') or 0)
+        try:
+            price = float(data.get('price') or 0)
+        except ValueError:
+            return JSONResponse(content={'success': False, 'error': 'Invalid price'}, status_code=400)
+        
         currency = data.get('currency', 'RUB')
-
+        
+        # Валидация
         allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
         if currency not in allowed:
             currency = 'RUB'
-
+        
         if not item_name or len(item_name) > 200:
-            return JSONResponse(content={'success': False, 'error': 'Некорректное название товара'}, status_code=400)
+            return JSONResponse(content={'success': False, 'error': 'Invalid item name'}, status_code=400)
+        
         if price <= 0:
-            return JSONResponse(content={'success': False, 'error': 'Некорректная сумма'}, status_code=400)
-
+            return JSONResponse(content={'success': False, 'error': 'Invalid price'}, status_code=400)
+        
+        # Проверяем пользователя
         user = db.get_user(user_id)
         if not user:
-            return JSONResponse(content={'error': 'User not found'}, status_code=404)
-
+            return JSONResponse(content={'success': False, 'error': 'User not found'}, status_code=404)
+        
+        # Генерируем ID сделки
+        import random
         deal_id = random.randint(100000, 999999)
         while db.get_deal(deal_id):
             deal_id = random.randint(100000, 999999)
-
+        
+        # Создаём сделку
         commission = db.get_user_commission(user_id, 'deal')
-        payment_method = 'ton' if currency in ('TON', 'USDT') else 'internal'
-        payment_comment = None
-        payment_address = None
-        payment_amount = None
-        if payment_method == 'ton':
-            payment_comment = generate_payment_comment(deal_id, user_id)
-            payment_address = TON_ESCROW_ADDRESS
-            payment_amount = quantize_amount(price, '0.000001')
-
+        db.create_deal(user_id, item_name, price, commission, deal_id, currency)
+        
+        # Генерируем код сделки
         deal_code = secrets.token_hex(3).upper()
         db.cursor.execute("UPDATE deals SET payment_comment = ? WHERE id = ?", (deal_code, deal_id))
         db.conn.commit()
-
+        
         bot_link = f"tg://resolve?domain={BOT_USERNAME}&start=deal_{deal_id}"
-
+        
         return JSONResponse(content={
             'success': True,
             'deal_id': deal_id,
@@ -2999,10 +3034,7 @@ async def handle_create_deal(request):
             'amount': price,
             'currency': currency,
             'commission': commission,
-            'payment_method': payment_method,
-            'payment_comment': payment_comment,
-            'payment_address': payment_address,
-            'payment_amount': payment_amount
+            'payment_method': 'internal'
         })
     except Exception as e:
         logger.exception('create_deal error')
@@ -3012,20 +3044,25 @@ async def handle_save_card(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
-            return JSONResponse(content={'success': False, 'error': 'Unauthorized Mini App request'}, status_code=401)
-
+            return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
+        
         data = await request.json()
-        user_id = int(data.get('user_id') or 0)
-        card = (data.get('card') or '').replace(' ', '')
-        currency = data.get('currency', 'RUB')
-
+        
+        user_id_raw = data.get('user_id')
+        try:
+            user_id = int(user_id_raw)
+        except (ValueError, TypeError):
+            return JSONResponse(content={'success': False, 'error': 'Invalid user_id'}, status_code=400)
+        
         if auth_user.get('id') != user_id:
             return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
+        
+        card = (data.get('card') or '').replace(' ', '')
         if not card or not card.isdigit() or len(card) not in (16, 19):
             return JSONResponse(content={'success': False, 'error': 'Invalid card format'}, status_code=400)
-
-        db.set_card(user_id, card, currency)
-        return JSONResponse(content={'success': True})
+        
+        db.set_card(user_id, card)
+        return JSONResponse(content={'success': True, 'message': 'Card saved'})
     except Exception as e:
         return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
@@ -3033,19 +3070,25 @@ async def handle_save_ton(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
-            return JSONResponse(content={'success': False, 'error': 'Unauthorized Mini App request'}, status_code=401)
-
+            return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
+        
         data = await request.json()
-        user_id = int(data.get('user_id') or 0)
-        ton = (data.get('ton') or '').strip()
-
+        
+        user_id_raw = data.get('user_id')
+        try:
+            user_id = int(user_id_raw)
+        except (ValueError, TypeError):
+            return JSONResponse(content={'success': False, 'error': 'Invalid user_id'}, status_code=400)
+        
         if auth_user.get('id') != user_id:
             return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
+        
+        ton = (data.get('ton') or '').strip()
         if not ton or (not ton.startswith('UQ') and not ton.startswith('EQ')):
             return JSONResponse(content={'success': False, 'error': 'Invalid TON wallet format'}, status_code=400)
-
+        
         db.set_ton(user_id, ton)
-        return JSONResponse(content={'success': True})
+        return JSONResponse(content={'success': True, 'message': 'TON wallet saved'})
     except Exception as e:
         return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
@@ -3790,7 +3833,12 @@ fastapi_app = FastAPI(title="Novix Gift Bot API", lifespan=lifespan)
 
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://heyken777.github.io",  # Ваш фронтенд на GitHub Pages
+        "https://methodology-identifies-number-dash.trycloudflare.com",  # Ваш туннель
+        "http://localhost:8000",  # Локальная разработка
+        "http://127.0.0.1:8000"  # Локальная разработка
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
