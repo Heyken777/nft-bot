@@ -8,7 +8,26 @@ import os
 
 logger = logging.getLogger(__name__)
 
+PREMIUM_RATES = {
+    "RUB": 1,
+    "USD": 73,
+    "EUR": 83,
+    "TON": 120,
+    "USDT": 73,
+    "STARS": 2,
+    "UAH": 1.6,
+    "KZT": 0.15,
+    "UZS": 0.0061,
+    "BYN": 26,
+}
 
+PREMIUM_PRICES_RUB = {
+    30: 299,
+    45: 419,
+    60: 559,
+    90: 799,
+    365: 2999
+}
 class CurrencyAPI:
     def __init__(self, cache_file="currency_cache.json"):
         self.cache_file = cache_file
@@ -31,6 +50,7 @@ class CurrencyAPI:
 
     def _default_rates(self) -> Dict:
         return {
+            'RYB': 1,
             'USD': 73.0,
             'EUR': 83.0,
             'BYN': 26.0,

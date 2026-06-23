@@ -752,12 +752,18 @@ class Database:
             if row[1] is None:
                 return True
             try:
-                expires = datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S')
+                # Поддерживаем оба формата даты
+                expires_str = str(row[1])
+                if '.' in expires_str:
+                    expires = datetime.strptime(expires_str, '%Y-%m-%d %H:%M:%S.%f')
+                else:
+                    expires = datetime.strptime(expires_str, '%Y-%m-%d %H:%M:%S')
                 if datetime.now() < expires:
                     return True
-            except:
-                return True
-        return False
+            except Exception as e:
+                logger.warning(f"is_premium parse error for {uid}: {e}")
+                return True  # Если не можем распарсить, считаем активным
+        return False    
 
     def get_premium_info(self, user_id: int) -> dict:
         self.cursor.execute("""
@@ -1357,11 +1363,31 @@ async def withdraw_cb(call: CallbackQuery):
     is_premium = db.is_premium(user_id)
     commission = db.get_user_commission(user_id, "withdraw")
     
-    total_balance = 0
-    for code in CURRENCIES.keys():
-        total_balance += db.get_balance(user_id, code)
+    # Получаем курсы валют
+    try:
+        rates = await currency_api.fetch_rates('RUB')
+    except Exception:
+        rates = {'USD': 73, 'EUR': 83, 'TON': 120, 'USDT': 73, 'STARS': 2, 
+                 'UAH': 1.6, 'KZT': 0.15, 'UZS': 0.0061, 'BYN': 26}
     
-    if total_balance <= 0:
+    # === ИСПРАВЛЕНИЕ: пересчитываем все валюты в рубли ===
+    total_balance_rub = 0
+    balance_details = []
+    
+    for code in CURRENCIES.keys():
+        bal = db.get_balance(user_id, code)
+        if bal > 0:
+            # Конвертируем в рубли
+            if code == 'RUB':
+                rub_value = bal
+            else:
+                rate = rates.get(code, 0)
+                rub_value = bal * rate if rate > 0 else 0
+            
+            total_balance_rub += rub_value
+            balance_details.append(f"• {fmt_num(bal)} {CURRENCIES[code]['symbol']} ({code}) ≈ {fmt_num(rub_value)} RUB")
+    
+    if total_balance_rub <= 0:
         text = "❌ *Недостаточно средств для вывода.*\n\nПополните баланс или дождитесь поступления средств по сделкам."
         if img_exists("ВЫВЕСТИ СРЕДСТВА.jpg"):
             await call.message.edit_media(
@@ -1376,9 +1402,13 @@ async def withdraw_cb(call: CallbackQuery):
     commission_text = "0%" if commission == 0 else f"{int(commission*100)}%"
     premium_text = "\n✨ *Premium*: комиссия 0%" if commission == 0 else ""
     
+    # Собираем детали баланса
+    balance_text = "\n".join(balance_details) if balance_details else "• 0 RUB"
+    
     text = (
         f"💸 *Вывод средств*\n\n"
-        f"💰 Ваш общий баланс: *{fmt_num(total_balance)} RUB*\n"
+        f"💰 Ваш общий баланс: *{fmt_num(total_balance_rub)} RUB*\n"
+        f"📊 Детализация:\n{balance_text}\n\n"
         f"💼 Комиссия: *{commission_text}*{premium_text}\n\n"
         f"Для вывода средств напишите менеджеру:\n{MANAGER_USERNAME}\n\n"
         f"Укажите ID: `{user_id}`, сумму и реквизиты."
@@ -1697,32 +1727,21 @@ async def premium_currency_cb(call: CallbackQuery, state: FSMContext):
     currency = call.data.replace("premium_cur_", "")
     await state.update_data(currency=currency)
     
-    rates = {
-        "RUB": 1,
-        "USD": 92.5,
-        "EUR": 100,
-        "TON": 500,
-        "USDT": 92,
-        "STARS": 15
-    }
-    
-    price_rub = {
-        30: 299,
-        45: 419,
-        60: 559,
-        90: 799,
-        365: 2999
-    }
+    # Используем единые курсы
+    rates = PREMIUM_RATES
+    price_rub = PREMIUM_PRICES_RUB
     
     text = f"⭐ *Premium подписка*\n\n💰 Валюта оплаты: {currency}\n\nВыберите длительность:"
     kb = []
     
     for days, rub_price in price_rub.items():
-        converted = int(rub_price / rates.get(currency, 1))
-        if days == 365:
-            kb.append([InlineKeyboardButton(text=f"👑 {days} дней (365 дней) - {converted} {currency}", callback_data=f"premium_buy_{days}_{currency}")])
-        else:
-            kb.append([InlineKeyboardButton(text=f"📅 {days} дней - {converted} {currency}", callback_data=f"premium_buy_{days}_{currency}")])
+        rate = rates.get(currency, 1)
+        converted = int(rub_price / rate) if rate > 0 else rub_price
+        label = "👑 FOREVER" if days == 365 else f"📅 {days} дней"
+        kb.append([InlineKeyboardButton(
+            text=f"{label} - {converted} {currency}",
+            callback_data=f"premium_buy_{days}_{currency}"
+        )])
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="buy_premium")])
     kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")])
@@ -1741,39 +1760,42 @@ async def premium_buy_cb(call: CallbackQuery, state: FSMContext):
     days = int(parts[2])
     currency = parts[3]
     
-    rates = {
-        "RUB": 1,
-        "USD": 92.5,
-        "EUR": 100,
-        "TON": 500,
-        "USDT": 92,
-        "STARS": 15
-    }
+    # Используем единые курсы и цены
+    rates = PREMIUM_RATES
+    price_rub = PREMIUM_PRICES_RUB
     
-    price_rub = {
-        30: 299,
-        45: 419,
-        60: 559,
-        90: 799,
-        365: 2999
-    }
-    
-    price = int(price_rub[days] / rates.get(currency, 1))
-    user_balance = db.get_balance(call.from_user.id, currency)
-    
-    if user_balance < price:
-        await call.answer(f"❌ Недостаточно средств! Нужно {price} {currency}", show_alert=True)
+    rate = rates.get(currency, 1)
+    if rate <= 0:
+        await call.answer(f"❌ Неизвестная валюта: {currency}", show_alert=True)
         return
     
+    price = int(price_rub[days] / rate)
+    user_balance = db.get_balance(call.from_user.id, currency)
+    
+    # Проверяем, что валюта существует
+    if currency not in rates:
+        await call.answer(f"❌ Валюта {currency} не поддерживается", show_alert=True)
+        return
+    
+    if user_balance < price:
+        await call.answer(
+            f"❌ Недостаточно средств!\n"
+            f"Нужно: {price} {currency}\n"
+            f"У вас: {fmt_num(user_balance)} {currency}",
+            show_alert=True
+        )
+        return
+    
+    # Списываем средства
     db.update_balance(call.from_user.id, currency, -price)
     db.set_premium(call.from_user.id, days, 0)
     
     await call.message.delete()
     await call.message.answer(
         f"✅ *Premium подписка активирована!*\n\n"
-        f"📅 Длительность: {days} дней\n"
+        f"📅 Длительность: {days if days != 365 else 'FOREVER'}\n"
         f"💰 Оплачено: {price} {currency}\n"
-        f"✨ Комиссия при получении средств: *0%*\n"
+        f"✨ Комиссия при сделках: *0%*\n"
         f"✨ Комиссия при выводе: *0%*",
         parse_mode="Markdown",
         reply_markup=main_kb(call.from_user.id in ADMIN_IDS)
@@ -2002,6 +2024,15 @@ async def pay_cb(call: CallbackQuery):
         f"Покупатель внёс средства. Передайте товар.",
         reply_markup=deal_kb(did, "seller", "paid")
     )
+
+async def get_premium_rates() -> dict:
+    """Получает актуальные курсы для Premium"""
+    try:
+        rates = await currency_api.fetch_rates('RUB')
+        # Оставляем только нужные валюты
+        return {k: rates.get(k, PREMIUM_RATES.get(k, 1)) for k in PREMIUM_RATES.keys()}
+    except Exception:
+        return PREMIUM_RATES
 
 # ========== ПЕРЕДАЧА ТОВАРА ==========
 @dp.callback_query(lambda c: c.data.startswith("sent_"))
