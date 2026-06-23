@@ -1487,7 +1487,9 @@ async def ref_create_link_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="📋 Копировать", callback_data=f"copy_ref_{code}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]
     ])
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    # Используем delete + answer вместо edit_text
+    await call.message.delete()
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "ref_qr")
@@ -1503,7 +1505,9 @@ async def ref_qr_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_ref_{code}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]
     ])
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    # Используем delete + answer вместо edit_text
+    await call.message.delete()
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "ref_withdraw")
@@ -1518,6 +1522,7 @@ async def ref_withdraw_cb(call: CallbackQuery):
     db.update_balance(uid, "RUB", earnings)
     db.add_notification(uid, f"💳 Бонусы {earnings} RUB выведены на RUB баланс")
     await call.answer(f"✅ {earnings} RUB выведены на ваш RUB баланс!", show_alert=True)
+    # Возвращаемся к главному меню рефералов
     await referral_cb(call)
 
 @dp.callback_query(lambda c: c.data == "ref_list")
@@ -1534,7 +1539,9 @@ async def ref_list_cb(call: CallbackQuery):
         text += "Пока нет приглашённых друзей\n"
     text += f"\nВсего: {len(referrals)}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]])
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    # Используем delete + answer вместо edit_text
+    await call.message.delete()
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "ref_analytics")
@@ -1554,7 +1561,9 @@ async def ref_analytics_cb(call: CallbackQuery):
             f"💰 Заработано: {earnings} RUB\n"
             f"📈 Конверсия: {round(active/ref_count*100, 1) if ref_count > 0 else 0}%")
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]])
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    # Используем delete + answer вместо edit_text
+    await call.message.delete()
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("copy_ref_"))
