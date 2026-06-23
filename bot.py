@@ -36,6 +36,28 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 WEBAPP_URL = "https://heyken777.github.io/nft-bot/frontend"
 
+# ========== КОНФИГУРАЦИЯ PREMIUM ==========
+PREMIUM_RATES = {
+    "RUB": 1,
+    "USD": 73,
+    "EUR": 83,
+    "TON": 120,
+    "USDT": 73,
+    "STARS": 2,
+    "UAH": 1.6,
+    "KZT": 0.15,
+    "UZS": 0.0061,
+    "BYN": 26,
+}
+
+PREMIUM_PRICES_RUB = {
+    30: 299,
+    45: 419,
+    60: 559,
+    90: 799,
+    365: 2999
+}
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
