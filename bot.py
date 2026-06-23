@@ -7,7 +7,6 @@ import hashlib
 import hmac
 from decimal import Decimal, ROUND_DOWN
 from urllib.parse import parse_qsl
-from aiohttp import web
 import aiohttp
 import json
 import re
@@ -17,6 +16,12 @@ from typing import Optional, Tuple, List, Dict
 from bot_config import *
 from currency_api import currency_api
 from aiohttp import ClientTimeout
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, StateFilter
@@ -28,8 +33,6 @@ from aiogram.types import (
     CallbackQuery, FSInputFile, InputMediaPhoto
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
-WEBAPP_URL = "https://heyken777.github.io/nft-bot"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -2185,16 +2188,16 @@ async def claim_achievement(msg: types.Message):
 async def handle_achievements(request):
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
-        return web.json_response({'error': 'Unauthorized Mini App request'}, status=401)
+        return JSONResponse(content={'error': 'Unauthorized Mini App request'}, status_code=401)
 
-    user_id = int(request.query.get('user_id', 0))
+    user_id = int(request.query_params.get('user_id', 0))
     if auth_user.get('id') != user_id:
-        return web.json_response({'error': 'User mismatch'}, status=403)
+        return JSONResponse(content={'error': 'User mismatch'}, status_code=403)
 
     achievements = db.get_user_achievements(user_id)
     stats = db.get_achievement_stats(user_id)
     
-    return web.json_response({
+    return JSONResponse(content={
         'stats': stats,
         'achievements': [{
             'id': a[0],
@@ -2211,23 +2214,23 @@ async def handle_claim_achievement(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
-            return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+            return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
 
         data = await request.json()
         user_id = int(data.get('user_id', 0))
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         achievement_id = data.get('achievement_id')
         if not achievement_id:
-            return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Missing params'}, status_code=400)
         
         reward = db.claim_achievement_reward(user_id, achievement_id)
         if reward > 0:
-            return web.json_response({'success': True, 'reward': reward})
-        return web.json_response({'success': False, 'error': 'Already claimed or not available'})
+            return JSONResponse(content={'success': True, 'reward': reward})
+        return JSONResponse(content={'success': False, 'error': 'Already claimed or not available'})
     except Exception as e:
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 # ========== АДМИН-ПАНЕЛЬ ==========
 @dp.callback_query(lambda c: c.data == "admin_panel")
@@ -2894,15 +2897,15 @@ def build_deal_payload(deal: dict, viewer_id: int) -> dict:
 async def handle_api(request):
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
-        return web.json_response({'error': 'Unauthorized Mini App request'}, status=401)
+        return JSONResponse(content={'error': 'Unauthorized Mini App request'}, status_code=401)
 
-    user_id = int(request.query.get('user_id', 0))
+    user_id = int(request.query_params.get('user_id', 0))
     if auth_user.get('id') != user_id:
-        return web.json_response({'error': 'User mismatch'}, status=403)
+        return JSONResponse(content={'error': 'User mismatch'}, status_code=403)
 
     user = db.get_user_dict(user_id)
     if not user:
-        return web.json_response({'error': 'User not found'}, status=404)
+        return JSONResponse(content={'error': 'User not found'}, status_code=404)
 
     balances = {}
     for curr in ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']:
@@ -2917,7 +2920,7 @@ async def handle_api(request):
     except Exception:
         rates = currency_api.get_stale_cache('RUB')
 
-    return web.json_response({
+    return JSONResponse(content={
         'id': user['user_id'],
         'username': user['username'],
         'firstName': user['username'] or 'User',
@@ -2941,12 +2944,12 @@ async def handle_create_deal(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
-            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+            return JSONResponse(content={'success': False, 'error': 'Unauthorized Mini App request'}, status_code=401)
 
         data = await request.json()
         user_id = int(data.get('user_id') or 0)
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         item_name = (data.get('item_name') or '').strip()
         price = float(data.get('price') or 0)
@@ -2957,13 +2960,13 @@ async def handle_create_deal(request):
             currency = 'RUB'
 
         if not item_name or len(item_name) > 200:
-            return web.json_response({'success': False, 'error': 'Некорректное название товара'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Некорректное название товара'}, status_code=400)
         if price <= 0:
-            return web.json_response({'success': False, 'error': 'Некорректная сумма'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Некорректная сумма'}, status_code=400)
 
         user = db.get_user(user_id)
         if not user:
-            return web.json_response({'error': 'User not found'}, status=404)
+            return JSONResponse(content={'error': 'User not found'}, status_code=404)
 
         deal_id = random.randint(100000, 999999)
         while db.get_deal(deal_id):
@@ -2985,7 +2988,7 @@ async def handle_create_deal(request):
 
         bot_link = f"tg://resolve?domain={BOT_USERNAME}&start=deal_{deal_id}"
 
-        return web.json_response({
+        return JSONResponse(content={
             'success': True,
             'deal_id': deal_id,
             'deal_code': deal_code,
@@ -3001,13 +3004,13 @@ async def handle_create_deal(request):
         })
     except Exception as e:
         logger.exception('create_deal error')
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 async def handle_save_card(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
-            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+            return JSONResponse(content={'success': False, 'error': 'Unauthorized Mini App request'}, status_code=401)
 
         data = await request.json()
         user_id = int(data.get('user_id') or 0)
@@ -3015,51 +3018,51 @@ async def handle_save_card(request):
         currency = data.get('currency', 'RUB')
 
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
         if not card or not card.isdigit() or len(card) not in (16, 19):
-            return web.json_response({'success': False, 'error': 'Invalid card format'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Invalid card format'}, status_code=400)
 
         db.set_card(user_id, card, currency)
-        return web.json_response({'success': True})
+        return JSONResponse(content={'success': True})
     except Exception as e:
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 async def handle_save_ton(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
-            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+            return JSONResponse(content={'success': False, 'error': 'Unauthorized Mini App request'}, status_code=401)
 
         data = await request.json()
         user_id = int(data.get('user_id') or 0)
         ton = (data.get('ton') or '').strip()
 
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
         if not ton or (not ton.startswith('UQ') and not ton.startswith('EQ')):
-            return web.json_response({'success': False, 'error': 'Invalid TON wallet format'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Invalid TON wallet format'}, status_code=400)
 
         db.set_ton(user_id, ton)
-        return web.json_response({'success': True})
+        return JSONResponse(content={'success': True})
     except Exception as e:
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 async def handle_currency_rates(request):
     try:
         rates = await currency_api.fetch_rates("RUB")
-        return web.json_response({
+        return JSONResponse(content={
             'success': True,
             'rates': rates,
             'source': getattr(currency_api, 'last_source', 'unknown'),
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
-        return web.json_response({
+        return JSONResponse(content={
             'success': False,
             'error': str(e),
             'rates': currency_api.get_stale_cache('RUB'),
             'source': getattr(currency_api, 'last_source', 'unknown')
-        }, status=500)
+        }, status_code=500)
 
 PREMIUM_PRICES = {30: 299, 45: 419, 60: 559, 90: 799, 365: 2999}
 
@@ -3067,33 +3070,33 @@ async def handle_activate_ref_code(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
-            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+            return JSONResponse(content={'success': False, 'error': 'Unauthorized Mini App request'}, status_code=401)
 
         data = await request.json()
         user_id = int(data.get('user_id') or 0)
         code = data.get('code', '').strip().upper()
 
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
         if not user_id or not code:
-            return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Missing params'}, status_code=400)
 
         referrer_id = db.get_user_by_referral_code(code)
         if not referrer_id:
             success, result = db.use_promocode(code, user_id)
             if success:
-                return web.json_response({
+                return JSONResponse(content={
                     'success': True,
                     'bonus': result,
                     'message': f'✅ Промокод активирован! Получено {result} RUB'
                 })
-            return web.json_response({'success': False, 'error': result or '❌ Код не найден'})
+            return JSONResponse(content={'success': False, 'error': result or '❌ Код не найден'})
         if referrer_id == user_id:
-            return web.json_response({'success': False, 'error': '❌ Нельзя активировать свой собственный код'})
+            return JSONResponse(content={'success': False, 'error': '❌ Нельзя активировать свой собственный код'})
 
         user = db.get_user_dict(user_id)
         if user and user.get('referred_by') is not None:
-            return web.json_response({'success': False, 'error': '❌ Вы уже активировали реферальный код'})
+            return JSONResponse(content={'success': False, 'error': '❌ Вы уже активировали реферальный код'})
 
         db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
         db.update_balance(referrer_id, "RUB", 50)
@@ -3102,40 +3105,40 @@ async def handle_activate_ref_code(request):
         db.add_notification(user_id, "🎉 Добро пожаловать! +50 RUB за активацию реферального кода")
         db.conn.commit()
 
-        return web.json_response({
+        return JSONResponse(content={
             'success': True,
             'bonus': 50,
             'message': '✅ Реферальный код активирован! Вы получили 50 RUB'
         })
     except Exception as e:
         logger.error(f"activate_ref_code error: {e}")
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 async def handle_buy_premium(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
-            return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+            return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
 
         data = await request.json()
         user_id = int(data.get('user_id', 0))
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         days = int(data.get('days', 30))
         
         if not user_id:
-            return web.json_response({'success': False, 'error': 'Missing user_id'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Missing user_id'}, status_code=400)
         
         user = db.get_user(user_id)
         if not user:
-            return web.json_response({'success': False, 'error': 'User not found'}, status=404)
+            return JSONResponse(content={'success': False, 'error': 'User not found'}, status_code=404)
         
         if db.is_premium(user_id):
-            return web.json_response({'success': False, 'error': 'Premium already active'})
+            return JSONResponse(content={'success': False, 'error': 'Premium already active'})
         
         if days not in PREMIUM_PRICES:
-            return web.json_response({'success': False, 'error': 'Invalid duration'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Invalid duration'}, status_code=400)
         
         price_rub = PREMIUM_PRICES[days]
         
@@ -3156,7 +3159,7 @@ async def handle_buy_premium(request):
                         total_rub += amount * rate
             
             if total_rub < price_rub:
-                return web.json_response({
+                return JSONResponse(content={
                     'success': False,
                     'error': 'Недостаточно средств. Пополните баланс через поддержку.',
                     'total_rub': round(total_rub, 2),
@@ -3196,7 +3199,7 @@ async def handle_buy_premium(request):
                         remaining -= rub_value
             
             if remaining > 0:
-                return web.json_response({'success': False, 'error': 'Transaction failed'}, status=500)
+                return JSONResponse(content={'success': False, 'error': 'Transaction failed'}, status_code=500)
             
             db.set_premium(user_id, days, 0)
         
@@ -3214,7 +3217,7 @@ async def handle_buy_premium(request):
         except:
             pass
         
-        return web.json_response({
+        return JSONResponse(content={
             'success': True,
             'days': days,
             'price_rub': price_rub,
@@ -3222,7 +3225,7 @@ async def handle_buy_premium(request):
         })
     except Exception as e:
         logger.error(f"buy_premium error: {e}")
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 
 async def get_user_balances_text(user_id: int) -> str:
@@ -3387,7 +3390,7 @@ async def get_admin_or_deny(request) -> Optional[Dict]:
 async def handle_admin_disputes(request):
     admin = await get_admin_or_deny(request)
     if not admin:
-        return web.json_response({'error': 'Unauthorized'}, status=401)
+        return JSONResponse(content={'error': 'Unauthorized'}, status_code=401)
     disputes = db.get_disputes()
     result = []
     for d in disputes:
@@ -3399,13 +3402,13 @@ async def handle_admin_disputes(request):
             'status': d[4],
             'created_at': str(d[5])
         })
-    return web.json_response({'disputes': result})
+    return JSONResponse(content={'disputes': result})
 
 
 async def handle_admin_resolve_dispute(request):
     admin = await get_admin_or_deny(request)
     if not admin:
-        return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+        return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
 
     try:
         data = await request.json()
@@ -3413,13 +3416,13 @@ async def handle_admin_resolve_dispute(request):
         decision = data.get('decision', '')
 
         if not dispute_id or decision not in ('seller', 'buyer'):
-            return web.json_response({'success': False, 'error': 'Invalid params'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Invalid params'}, status_code=400)
 
         async with deal_lock:
             result = db.resolve_dispute_with_decision(dispute_id, decision)
 
         if not result:
-            return web.json_response({'success': False, 'error': 'Dispute already resolved or invalid'})
+            return JSONResponse(content={'success': False, 'error': 'Dispute already resolved or invalid'})
 
         if result['decision'] == 'seller':
             asyncio.create_task(notify_user(
@@ -3442,14 +3445,14 @@ async def handle_admin_resolve_dispute(request):
                 f"⚖️ *Спор по сделке #{result['deal_id']} закрыт.*\n\nРешение: возврат покупателю."
             ))
 
-        return web.json_response({
+        return JSONResponse(content={
             'success': True,
             'deal_id': result['deal_id'],
             'decision': decision,
             'status': result['status']
         })
     except Exception as e:
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 
 # ========== API: ОПЛАТА/ПОДТВЕРЖДЕНИЕ СДЕЛОК (Mini App) ==========
@@ -3457,28 +3460,28 @@ async def handle_admin_resolve_dispute(request):
 async def handle_pay_deal(request):
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
-        return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+        return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
 
     try:
         data = await request.json()
         user_id = int(data.get('user_id', 0))
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         did = int(data.get('deal_id', 0))
         if not did:
-            return web.json_response({'success': False, 'error': 'Missing deal_id'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Missing deal_id'}, status_code=400)
 
         async with deal_lock:
             deal = db.get_deal(did)
             if not deal or deal.get("status") not in ("awaiting", "payment_pending"):
-                return web.json_response({'success': False, 'error': 'Deal not available for payment'})
+                return JSONResponse(content={'success': False, 'error': 'Deal not available for payment'})
 
             if deal["seller"] == user_id:
-                return web.json_response({'success': False, 'error': 'Cannot pay own deal'})
+                return JSONResponse(content={'success': False, 'error': 'Cannot pay own deal'})
 
             if deal.get("buyer") and deal["buyer"] != user_id:
-                return web.json_response({'success': False, 'error': 'Deal locked to another buyer'})
+                return JSONResponse(content={'success': False, 'error': 'Deal locked to another buyer'})
 
             currency = deal["currency"]
             amount = float(deal["amount"])
@@ -3488,14 +3491,14 @@ async def handle_pay_deal(request):
                 payment_comment = deal.get("payment_comment") or generate_payment_comment(did, user_id)
                 payment_address = deal.get("payment_address") or TON_ESCROW_ADDRESS
                 if not payment_address:
-                    return web.json_response({'success': False, 'error': 'TON escrow not configured'})
+                    return JSONResponse(content={'success': False, 'error': 'TON escrow not configured'})
 
                 payment_amount = quantize_amount(deal.get("payment_amount") or amount, "0.000001")
                 started = db.start_external_payment(did, user_id, payment_comment, payment_address, payment_amount)
                 if not started:
-                    return web.json_response({'success': False, 'error': 'Could not initiate on-chain payment'})
+                    return JSONResponse(content={'success': False, 'error': 'Could not initiate on-chain payment'})
 
-                return web.json_response({
+                return JSONResponse(content={
                     'success': True,
                     'method': 'ton',
                     'payment_address': payment_address,
@@ -3507,7 +3510,7 @@ async def handle_pay_deal(request):
 
             if not db.update_balance(user_id, currency, -amount):
                 balance = db.get_balance(user_id, currency)
-                return web.json_response({'success': False, 'error': f'Insufficient funds. Balance: {balance} {currency}'})
+                return JSONResponse(content={'success': False, 'error': f'Insufficient funds. Balance: {balance} {currency}'})
 
             if not deal.get("buyer"):
                 db.set_buyer(did, user_id)
@@ -3518,30 +3521,30 @@ async def handle_pay_deal(request):
             f"💰 *Сделка #{did} оплачена!*\n\n🎁 {escape_md(deal['item'])}\n💰 {fmt_num(amount)} {currency}\n\nПокупатель внёс средства. Передайте товар."
         ))
 
-        return web.json_response({'success': True, 'method': 'internal', 'deal_id': did})
+        return JSONResponse(content={'success': True, 'method': 'internal', 'deal_id': did})
     except Exception as e:
         logger.exception(f"pay_deal error: {e}")
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 
 async def handle_mark_sent(request):
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
-        return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+        return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
 
     try:
         data = await request.json()
         user_id = int(data.get('user_id', 0))
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         did = int(data.get('deal_id', 0))
         async with deal_lock:
             deal = db.get_deal(did)
             if not deal or deal.get("status") != "paid":
-                return web.json_response({'success': False, 'error': 'Deal not paid'})
+                return JSONResponse(content={'success': False, 'error': 'Deal not paid'})
             if deal["seller"] != user_id:
-                return web.json_response({'success': False, 'error': 'Not the seller'})
+                return JSONResponse(content={'success': False, 'error': 'Not the seller'})
 
             db.upd_deal_status(did, "item_sent")
 
@@ -3550,29 +3553,29 @@ async def handle_mark_sent(request):
             f"📦 *Товар передан!*\n\nСделка #{did}\n✅ Подтвердите получение"
         ))
 
-        return web.json_response({'success': True, 'deal_id': did})
+        return JSONResponse(content={'success': True, 'deal_id': did})
     except Exception as e:
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 
 async def handle_confirm_receipt(request):
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
-        return web.json_response({'success': False, 'error': 'Unauthorized'}, status=401)
+        return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
 
     try:
         data = await request.json()
         user_id = int(data.get('user_id', 0))
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         did = int(data.get('deal_id', 0))
         async with deal_lock:
             deal = db.get_deal(did)
             if not deal or deal.get("status") != "item_sent":
-                return web.json_response({'success': False, 'error': 'Item not sent yet'})
+                return JSONResponse(content={'success': False, 'error': 'Item not sent yet'})
             if deal["buyer"] != user_id:
-                return web.json_response({'success': False, 'error': 'Not the buyer'})
+                return JSONResponse(content={'success': False, 'error': 'Not the buyer'})
 
             seller_id = deal["seller"]
             amount = float(deal["amount"])
@@ -3601,9 +3604,9 @@ async def handle_confirm_receipt(request):
                 f"👥 *Реферальный бонус*\n\nПо сделке #{did} начислено {referral_bonus['reward']} RUB (10% от сервисной комиссии)."
             ))
 
-        return web.json_response({'success': True, 'deal_id': did, 'seller_amount': seller_amount, 'currency': currency})
+        return JSONResponse(content={'success': True, 'deal_id': did, 'seller_amount': seller_amount, 'currency': currency})
     except Exception as e:
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 # ========== API: GET_PROFILE (для нового фронтенда) ==========
 
@@ -3611,15 +3614,15 @@ async def handle_get_profile(request):
     """GET /api/get_profile?tg_id={id} — alias для /api/user, но с tg_id."""
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
-        return web.json_response({'error': 'Unauthorized Mini App request'}, status=401)
+        return JSONResponse(content={'error': 'Unauthorized Mini App request'}, status_code=401)
 
-    user_id = int(request.query.get('tg_id', 0) or request.query.get('user_id', 0))
+    user_id = int(request.query_params.get('tg_id', 0) or request.query_params.get('user_id', 0))
     if auth_user.get('id') != user_id:
-        return web.json_response({'error': 'User mismatch'}, status=403)
+        return JSONResponse(content={'error': 'User mismatch'}, status_code=403)
 
     user = db.get_user_dict(user_id)
     if not user:
-        return web.json_response({'error': 'User not found'}, status=404)
+        return JSONResponse(content={'error': 'User not found'}, status_code=404)
 
     balances = {}
     for curr in ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']:
@@ -3634,7 +3637,7 @@ async def handle_get_profile(request):
     except Exception:
         rates = currency_api.get_stale_cache('RUB')
 
-    return web.json_response({
+    return JSONResponse(content={
         'id': user['user_id'],
         'username': user['username'],
         'firstName': user['username'] or 'User',
@@ -3661,16 +3664,16 @@ async def handle_get_deals(request):
     """GET /api/get_deals?tg_id={id} — реальные сделки из БД, без хардкода."""
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
-        return web.json_response({'error': 'Unauthorized Mini App request'}, status=401)
+        return JSONResponse(content={'error': 'Unauthorized Mini App request'}, status_code=401)
 
-    user_id = int(request.query.get('tg_id', 0) or request.query.get('user_id', 0))
+    user_id = int(request.query_params.get('tg_id', 0) or request.query_params.get('user_id', 0))
     if auth_user.get('id') != user_id:
-        return web.json_response({'error': 'User mismatch'}, status=403)
+        return JSONResponse(content={'error': 'User mismatch'}, status_code=403)
 
     deals = db.get_user_deals(user_id)
     deals_list = [build_deal_payload(db.get_deal(d[0]), user_id) for d in deals]
 
-    return web.json_response({'success': True, 'deals': deals_list})
+    return JSONResponse(content={'success': True, 'deals': deals_list})
 
 
 # ========== API: SAVE_BILLING (карта + TON одним запросом) ==========
@@ -3679,30 +3682,30 @@ async def handle_save_billing(request):
     """POST /api/save_billing — сохраняет карту и/или TON кошелёк."""
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
-        return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+        return JSONResponse(content={'success': False, 'error': 'Unauthorized Mini App request'}, status_code=401)
 
     try:
         data = await request.json()
         user_id = int(data.get('tg_id', 0) or data.get('user_id', 0))
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         card_number = data.get('card_number', '').replace(' ', '')
         ton_wallet = (data.get('ton_wallet') or '').strip()
 
         if card_number:
             if not card_number.isdigit() or len(card_number) not in (16, 19):
-                return web.json_response({'success': False, 'error': 'Invalid card format'}, status=400)
+                return JSONResponse(content={'success': False, 'error': 'Invalid card format'}, status_code=400)
             db.set_card(user_id, card_number)
 
         if ton_wallet:
             if not ton_wallet.startswith('UQ') and not ton_wallet.startswith('EQ'):
-                return web.json_response({'success': False, 'error': 'Invalid TON wallet format'}, status=400)
+                return JSONResponse(content={'success': False, 'error': 'Invalid TON wallet format'}, status_code=400)
             db.set_ton(user_id, ton_wallet)
 
-        return web.json_response({'success': True})
+        return JSONResponse(content={'success': True})
     except Exception as e:
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 
 # ========== API: ACTIVATE_PROMO (промокоды/реф-коды) ==========
@@ -3712,31 +3715,31 @@ async def handle_activate_promo(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
         if not auth_user:
-            return web.json_response({'success': False, 'error': 'Unauthorized Mini App request'}, status=401)
+            return JSONResponse(content={'success': False, 'error': 'Unauthorized Mini App request'}, status_code=401)
 
         data = await request.json()
         user_id = int(data.get('tg_id', 0) or data.get('user_id', 0))
         promo_code = data.get('promo_code', '').strip().upper()
 
         if auth_user.get('id') != user_id:
-            return web.json_response({'success': False, 'error': 'User mismatch'}, status=403)
+            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
         if not user_id or not promo_code:
-            return web.json_response({'success': False, 'error': 'Missing params'}, status=400)
+            return JSONResponse(content={'success': False, 'error': 'Missing params'}, status_code=400)
 
         referrer_id = db.get_user_by_referral_code(promo_code)
         if referrer_id:
             if referrer_id == user_id:
-                return web.json_response({'success': False, 'error': 'Нельзя активировать свой собственный код'})
+                return JSONResponse(content={'success': False, 'error': 'Нельзя активировать свой собственный код'})
             user = db.get_user_dict(user_id)
             if user and user.get('referred_by') is not None:
-                return web.json_response({'success': False, 'error': 'Вы уже активировали реферальный код'})
+                return JSONResponse(content={'success': False, 'error': 'Вы уже активировали реферальный код'})
             db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
             db.update_balance(referrer_id, "RUB", 50)
             db.update_balance(user_id, "RUB", 50)
             db.add_notification(referrer_id, "🎉 Пользователь активировал ваш реферальный код! +50 RUB")
             db.add_notification(user_id, "🎉 Добро пожаловать! +50 RUB за активацию реферального кода")
             db.conn.commit()
-            return web.json_response({
+            return JSONResponse(content={
                 'success': True,
                 'bonus': 50,
                 'message': '✅ Реферальный код активирован! Вы получили 50 RUB'
@@ -3744,131 +3747,74 @@ async def handle_activate_promo(request):
 
         success, result = db.use_promocode(promo_code, user_id)
         if success:
-            return web.json_response({
+            return JSONResponse(content={
                 'success': True,
                 'bonus': result,
                 'message': f'✅ Промокод активирован! Получено {result} RUB'
             })
-        return web.json_response({'success': False, 'error': result or '❌ Код не найден'})
+        return JSONResponse(content={'success': False, 'error': result or '❌ Код не найден'})
     except Exception as e:
         logger.error(f"activate_promo error: {e}")
-        return web.json_response({'success': False, 'error': str(e)}, status=500)
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 
-# ========== CORS MIDDLEWARE ==========
-@web.middleware
-async def cors_middleware(request: web.Request, handler):
-    origin = request.headers.get("Origin", "")
-    allowed_origins = [
-        WEBAPP_URL.rstrip("/"),
-        "https://heyken777.github.io",
-        "https://telegram.org",
-        "https://t.me",
-    ]
-    if origin.rstrip("/") in allowed_origins or "localhost" in origin or "127.0.0.1" in origin or "github.io" in origin:
-        if request.method == "OPTIONS":
-            return web.Response(
-                headers={
-                    "Access-Control-Allow-Origin": origin,
-                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data",
-                    "Access-Control-Max-Age": "86400",
-                }
-            )
-        try:
-            resp = await handler(request)
-            resp.headers["Access-Control-Allow-Origin"] = origin
-            resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Telegram-Init-Data"
-            return resp
-        except web.HTTPException as ex:
-            ex.headers["Access-Control-Allow-Origin"] = origin
-            raise
-    return await handler(request)
+# ========== FASTAPI APP ==========
 
-
-# ========== ЗАПУСК ВЕБ-СЕРВЕРА ==========
-async def start_api():
-    app = web.Application(middlewares=[cors_middleware])
-    app.router.add_get('/api/user', handle_api)
-    app.router.add_get('/api/get_profile', handle_get_profile)
-    app.router.add_get('/api/get_deals', handle_get_deals)
-    app.router.add_post('/api/create_deal', handle_create_deal)
-    app.router.add_post('/api/save_card', handle_save_card)
-    app.router.add_post('/api/save_ton', handle_save_ton)
-    app.router.add_post('/api/save_billing', handle_save_billing)
-    app.router.add_get('/api/currency/rates', handle_currency_rates)
-    app.router.add_get('/api/achievements', handle_achievements)
-    app.router.add_post('/api/claim_achievement', handle_claim_achievement)
-    app.router.add_post('/api/buy_premium', handle_buy_premium)
-    app.router.add_post('/api/activate_ref_code', handle_activate_ref_code)
-    app.router.add_post('/api/activate_promo', handle_activate_promo)
-    app.router.add_get('/api/admin/disputes', handle_admin_disputes)
-    app.router.add_post('/api/admin/resolve_dispute', handle_admin_resolve_dispute)
-    app.router.add_post('/api/pay_deal', handle_pay_deal)
-    app.router.add_post('/api/mark_sent', handle_mark_sent)
-    app.router.add_post('/api/confirm_receipt', handle_confirm_receipt)
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, 'localhost', 8080)
-    await site.start()
-    logger.info("✅ API сервер запущен на порту 8080")
-
-# ========== ГЛАВНАЯ ФУНКЦИЯ ==========
-async def main():
-    logger.info("🚀 Запуск Novix Gift Bot...")
-    
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     if not os.path.exists(IMAGES_PATH):
         os.makedirs(IMAGES_PATH)
-        logger.info(f"📁 Создана папка {IMAGES_PATH}")
-    
-    # Пробуем подключиться с повторными попытками
-    max_retries = 5
-    retry_delay = 5
-    
-    for attempt in range(max_retries):
-        try:
-            # Устанавливаем таймаут для подключения
-            timeout = ClientTimeout(total=30, connect=10, sock_connect=10)
-            
-            await bot.delete_webhook(drop_pending_updates=True)
-            logger.info("✅ Бот запущен")
-            break
-        except Exception as e:
-            logger.error(f"Попытка {attempt + 1}/{max_retries} не удалась: {e}")
-            if attempt < max_retries - 1:
-                logger.info(f"⏳ Повторная попытка через {retry_delay} секунд...")
-                await asyncio.sleep(retry_delay)
-            else:
-                logger.error("❌ Не удалось подключиться к Telegram API после всех попыток")
-                logger.info("💡 Проверьте:")
-                logger.info("  1. Интернет-соединение")
-                logger.info("  2. VPN (если используете)")
-                logger.info("  3. Правильность токена в .env")
-                return
-    
-    # Запускаем API сервер в фоне
-    try:
-        asyncio.create_task(start_api())
-    except Exception as e:
-        logger.error(f"Ошибка запуска API: {e}")
-    
-    # Запускаем TON блокчейн монитор
-    try:
-        asyncio.create_task(poll_ton_payments())
-        logger.info("✅ TON/USDT блокчейн монитор запущен")
-    except Exception as e:
-        logger.error(f"Ошибка запуска TON монитора: {e}")
-    
-    # Запускаем бота
-    try:
-        await dp.start_polling(bot)
-    except Exception as e:
-        logger.error(f"Ошибка при работе бота: {e}")
-    finally:
-        # Закрываем сессию бота корректно
-        await bot.session.close()
-        logger.info("👋 Бот завершил работу")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    await bot.delete_webhook(drop_pending_updates=True)
+
+    polling_task = asyncio.create_task(dp.start_polling(bot))
+    ton_task = asyncio.create_task(poll_ton_payments())
+
+    yield
+
+    polling_task.cancel()
+    ton_task.cancel()
+    try:
+        await polling_task
+    except:
+        pass
+    try:
+        await ton_task
+    except:
+        pass
+    await bot.session.close()
+
+fastapi_app = FastAPI(title="Novix Gift Bot API", lifespan=lifespan)
+
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+fastapi_app.add_api_route("/api/user", handle_api, methods=["GET"])
+fastapi_app.add_api_route("/api/get_profile", handle_get_profile, methods=["GET"])
+fastapi_app.add_api_route("/api/get_deals", handle_get_deals, methods=["GET"])
+fastapi_app.add_api_route("/api/create_deal", handle_create_deal, methods=["POST"])
+fastapi_app.add_api_route("/api/save_card", handle_save_card, methods=["POST"])
+fastapi_app.add_api_route("/api/save_ton", handle_save_ton, methods=["POST"])
+fastapi_app.add_api_route("/api/save_billing", handle_save_billing, methods=["POST"])
+fastapi_app.add_api_route("/api/currency/rates", handle_currency_rates, methods=["GET"])
+fastapi_app.add_api_route("/api/achievements", handle_achievements, methods=["GET"])
+fastapi_app.add_api_route("/api/claim_achievement", handle_claim_achievement, methods=["POST"])
+fastapi_app.add_api_route("/api/buy_premium", handle_buy_premium, methods=["POST"])
+fastapi_app.add_api_route("/api/activate_ref_code", handle_activate_ref_code, methods=["POST"])
+fastapi_app.add_api_route("/api/activate_promo", handle_activate_promo, methods=["POST"])
+fastapi_app.add_api_route("/api/admin/disputes", handle_admin_disputes, methods=["GET"])
+fastapi_app.add_api_route("/api/admin/resolve_dispute", handle_admin_resolve_dispute, methods=["POST"])
+fastapi_app.add_api_route("/api/pay_deal", handle_pay_deal, methods=["POST"])
+fastapi_app.add_api_route("/api/mark_sent", handle_mark_sent, methods=["POST"])
+fastapi_app.add_api_route("/api/confirm_receipt", handle_confirm_receipt, methods=["POST"])
+
+frontend_dir = os.path.join(os.path.dirname(__file__), "frontend")
+if os.path.isdir(frontend_dir):
+    fastapi_app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+else:
+    logger.warning("Папка frontend/ не найдена — статические файлы не будут раздаваться")

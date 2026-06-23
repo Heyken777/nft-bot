@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Создать сделку - Novix Gift</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            background: var(--tg-theme-bg-color, #0a0a12);
+            color: var(--tg-theme-text-color, #fff);
+        }
+        .glass {
+            background: rgba(10, 10, 18, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .currency-option {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 10px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: var(--tg-theme-text-color, #fff);
+            min-width: 80px;
+            text-align: center;
+        }
+        .currency-option:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--tg-theme-hint-color, rgba(255,255,255,0.3));
+        }
+        .currency-option.selected {
+            background: var(--tg-theme-button-color, #7B3FF2) !important;
+            border-color: var(--tg-theme-button-color, #7B3FF2) !important;
+            color: var(--tg-theme-button-text-color, #fff) !important;
+            box-shadow: 0 0 15px rgba(123, 63, 242, 0.4);
+        }
+        #selectedCurrencyBadge {
+            background: var(--tg-theme-button-color, #7B3FF2);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: 2px solid rgba(255,255,255,0.15);
+            border-radius: 14px;
+            padding: 14px 20px;
+            font-weight: 700;
+            font-size: 18px;
+            min-width: 90px;
+            text-align: center;
+            box-shadow: 0 0 12px rgba(123, 63, 242, 0.3);
+        }
+        .btn-primary {
+            background: var(--tg-theme-button-color, #00f2fe);
+            color: var(--tg-theme-button-text-color, #000);
+            border: none;
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #fff;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="max-w-md mx-auto min-h-screen flex flex-col">
+        
+        <div class="glass px-5 pt-6 pb-3 border-b border-white/10">
+            <div class="flex items-center gap-3">
+                <button onclick="window.history.back()" class="text-[#00f2fe] text-xl">←</button>
+                <h1 class="text-xl font-bold" style="text-shadow:0 0 10px #00f2fe,0 0 20px #00f2fe66">➕ Создать сделку</h1>
+            </div>
+        </div>
+        
+        <div class="flex-1 px-5 py-5 space-y-5 overflow-y-auto">
+            
+            <!-- Шаг 1: Выбор валюты -->
+            <div id="stepCurrency" class="space-y-3">
+                <div class="text-sm" style="color:var(--tg-theme-hint-color,#9ca3af)">Шаг 1 из 3</div>
+                <div class="font-semibold">🌍 Выберите валюту сделки</div>
+                <div class="flex flex-wrap gap-2" id="currenciesSelect"></div>
+                <button class="w-full btn-primary py-3 rounded-xl font-semibold mt-3" id="nextStep1">Далее →</button>
+            </div>
+            
+            <!-- Шаг 2: Название товара -->
+            <div id="stepName" style="display: none;" class="space-y-3">
+                <div class="text-sm" style="color:var(--tg-theme-hint-color,#9ca3af)">Шаг 2 из 3</div>
+                <div class="font-semibold">📦 Введите название товара</div>
+                <input type="text" id="itemName" class="w-full glass rounded-xl p-3 border border-white/10" placeholder="Например: Legendary Sword NFT">
+                <button class="w-full btn-primary py-3 rounded-xl font-semibold mt-3" id="nextStep2">Далее →</button>
+            </div>
+            
+            <!-- Шаг 3: Цена -->
+            <div id="stepPrice" style="display: none;" class="space-y-3">
+                <div class="text-sm" style="color:var(--tg-theme-hint-color,#9ca3af)">Шаг 3 из 3</div>
+                <div class="font-semibold">💰 Введите цену</div>
+                <div class="flex items-center gap-2">
+                    <input type="number" id="itemPrice" class="flex-1 glass rounded-xl p-3 border border-white/10" placeholder="0">
+                    <div id="selectedCurrencyBadge">RUB</div>
+                </div>
+                <button class="w-full btn-success py-3 rounded-xl font-semibold" id="createDealBtn">✅ Создать сделку</button>
+            </div>
+            
+            <!-- Результат -->
+            <div id="resultContainer" style="display: none;" class="text-center space-y-4">
+                <div class="text-5xl">✅</div>
+                <div class="text-xl font-bold" style="text-shadow:0 0 10px #00f2fe,0 0 20px #00f2fe66">Сделка создана!</div>
+                <div class="glass rounded-2xl p-4 text-left space-y-2">
+                    <div class="flex justify-between"><span style="color:var(--tg-theme-hint-color,#9ca3af)">🧾 ID:</span><span id="dealId" class="font-mono">-</span></div>
+                    <div class="flex justify-between"><span style="color:var(--tg-theme-hint-color,#9ca3af)">🔑 Код сделки:</span><span id="dealCode" class="font-mono text-amber-400 font-bold">-</span></div>
+                    <div class="flex justify-between"><span style="color:var(--tg-theme-hint-color,#9ca3af)">📦 Товар:</span><span id="dealItem">-</span></div>
+                    <div class="flex justify-between"><span style="color:var(--tg-theme-hint-color,#9ca3af)">💰 Цена:</span><span id="dealPrice">-</span></div>
+                    <div class="flex justify-between"><span style="color:var(--tg-theme-hint-color,#9ca3af)">💼 Комиссия:</span><span id="dealCommission">-</span></div>
+                </div>
+                <div class="glass rounded-2xl p-4">
+                    <div class="text-xs" style="color:var(--tg-theme-hint-color,#9ca3af)">🔗 Ссылка для покупателя (бот)</div>
+                    <div class="text-xs break-all font-mono" id="dealLink">-</div>
+                    <button class="mt-3 bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-sm w-full" id="copyLinkBtn">📋 Копировать ссылку</button>
+                    <button class="mt-2 bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-sm w-full" id="shareDealBtn">📤 Поделиться в Telegram</button>
+                </div>
+                <button class="w-full glass py-3 rounded-xl" id="newDealBtn">➕ Создать новую</button>
+            </div>
+            
+        </div>
+        
+        <!-- Нижняя навигация -->
+        <div class="glass border-t border-white/10 py-2 px-4 fixed bottom-0 max-w-md w-full z-20">
+            <div class="flex justify-around items-center">
+                <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="window.location.href='index.html'">
+                    <svg class="w-5 h-5 text-gray-400 nav-icon" id="nav-home-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
+                    <span class="text-[9px] text-gray-400 nav-text" id="nav-home-text">Главная</span>
+                </div>
+                <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="window.location.href='deals.html'">
+                    <svg class="w-5 h-5 text-gray-400 nav-icon" id="nav-deals-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25"/></svg>
+                    <span class="text-[9px] text-gray-400 nav-text" id="nav-deals-text">Сделки</span>
+                </div>
+                <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="window.location.href='referral.html'">
+                    <svg class="w-5 h-5 text-gray-400 nav-icon" id="nav-referral-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <span class="text-[9px] text-gray-400 nav-text" id="nav-referral-text">Рефералы</span>
+                </div>
+                <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="window.location.href='profile.html'">
+                    <svg class="w-5 h-5 text-gray-400 nav-icon" id="nav-profile-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
+                    <span class="text-[9px] text-gray-400 nav-text" id="nav-profile-text">Профиль</span>
+                </div>
+                <div class="flex flex-col items-center gap-1 cursor-pointer" onclick="window.location.href='premium.html'">
+                    <svg class="w-5 h-5 text-gray-400 nav-icon" id="nav-premium-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.562.562 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/></svg>
+                    <span class="text-[9px] text-gray-400 nav-text" id="nav-premium-text">Premium</span>
+                </div>
+            </div>
+        </div>
+        <script>
+        (function() {
+            const page = window.location.pathname.split('/').pop() || 'index.html';
+            const map = { 'index.html':'home', 'deals.html':'deals', 'referral.html':'referral', 'profile.html':'profile', 'premium.html':'premium' };
+            const active = map[page];
+            if (active) {
+                const icon = document.getElementById('nav-'+active+'-icon');
+                const text = document.getElementById('nav-'+active+'-text');
+                if (icon) { icon.classList.remove('text-gray-400'); icon.classList.add('text-[#00f2fe]'); }
+                if (text) { text.classList.remove('text-gray-400'); text.classList.add('text-[#00f2fe]'); }
+            }
+        })();
+        </script>
+        
+    </div>
+    
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+        
+        const authToken = tg.initData || '';
+        const userId = tg.initDataUnsafe?.user?.id || 0;
+        
+        function getAuthHeaders(extra = {}) {
+            return { ...extra, 'Authorization': `tma ${authToken}`, 'X-Telegram-Init-Data': authToken };
+        }
+        
+        async function apiFetch(url, options = {}) {
+            const headers = getAuthHeaders(options.headers || {});
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            try {
+                const response = await fetch(url, { ...options, headers, signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (response.status === 401 || response.status === 403) {
+                    tg.showPopup({ title: 'Ошибка авторизации', message: 'Сессия устарела. Откройте приложение заново из Telegram.' });
+                }
+                return response;
+            } catch (err) {
+                clearTimeout(timeoutId);
+                throw err;
+            }
+        }
+        
+        let selectedCurrency = 'RUB';
+        
+        function navigateTo(page) {
+            const pages = { home: 'index.html', deals: 'deals.html', profile: 'profile.html', premium: 'premium.html', referral: 'referral.html' };
+            window.location.href = pages[page] || 'index.html';
+        }
+        
+        const currencyData = [
+            { code: 'RUB', label: '🇷🇺 RUB' },
+            { code: 'USD', label: '🇺🇸 USD' },
+            { code: 'EUR', label: '🇪🇺 EUR' },
+            { code: 'UAH', label: '🇺🇦 UAH' },
+            { code: 'KZT', label: '🇰🇿 KZT' },
+            { code: 'UZS', label: '🇺🇿 UZS' },
+            { code: 'BYN', label: '🇧🇾 BYN' },
+            { code: 'TON', label: '💎 TON' },
+            { code: 'USDT', label: '💵 USDT' },
+            { code: 'STARS', label: '⭐️ STARS' },
+        ];
+        
+        const container = document.getElementById('currenciesSelect');
+        container.innerHTML = currencyData.map(c =>
+            `<button class="currency-option ${c.code === selectedCurrency ? 'selected' : ''}" data-currency="${c.code}">${c.label}</button>`
+        ).join('');
+        
+        container.querySelectorAll('.currency-option').forEach(btn => {
+            btn.onclick = () => {
+                container.querySelectorAll('.currency-option').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedCurrency = btn.dataset.currency;
+                document.getElementById('selectedCurrencyBadge').innerText = selectedCurrency;
+            };
+        });
+        
+        document.getElementById('nextStep1').onclick = () => {
+            document.getElementById('stepCurrency').style.display = 'none';
+            document.getElementById('stepName').style.display = 'block';
+        };
+        
+        document.getElementById('nextStep2').onclick = () => {
+            const itemName = document.getElementById('itemName').value.trim();
+            if (!itemName) {
+                tg.showPopup({title: 'Ошибка', message: 'Введите название товара'});
+                return;
+            }
+            document.getElementById('stepName').style.display = 'none';
+            document.getElementById('stepPrice').style.display = 'block';
+        };
+        
+        document.getElementById('createDealBtn').onclick = async () => {
+            const itemName = document.getElementById('itemName').value.trim();
+            const price = parseFloat(document.getElementById('itemPrice').value);
+            if (!itemName) {
+                tg.showPopup({title: 'Ошибка', message: 'Введите название товара'});
+                return;
+            }
+            if (!price || price <= 0) {
+                tg.showPopup({title: 'Ошибка', message: 'Введите корректную цену'});
+                return;
+            }
+            try {
+                const response = await apiFetch('/api/create_deal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, item_name: itemName, price: price, currency: selectedCurrency })
+                });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    document.getElementById('dealId').innerText = result.deal_id;
+                    document.getElementById('dealCode').innerText = result.deal_code || '—';
+                    document.getElementById('dealItem').innerText = itemName;
+                    document.getElementById('dealPrice').innerText = `${result.amount} ${result.currency}`;
+                    document.getElementById('dealCommission').innerText = `${(result.commission || 0.02) * 100}%`;
+                    const link = result.bot_link || `https://t.me/NovixGift_Bot?start=deal_${result.deal_id}`;
+                    document.getElementById('dealLink').innerText = link;
+                    document.getElementById('stepPrice').style.display = 'none';
+                    document.getElementById('resultContainer').style.display = 'block';
+                } else {
+                    tg.showPopup({title: 'Ошибка', message: result.error || 'Не удалось создать сделку'});
+                }
+            } catch (error) {
+                tg.showPopup({title: 'Ошибка', message: '❌ Ошибка соединения с сервером. Проверьте подключение.'});
+            }
+        };
+        
+        document.getElementById('shareDealBtn').onclick = () => {
+            const link = document.getElementById('dealLink').innerText;
+            if (link && link !== '-') tg.openTelegramLink(link);
+        };
+        document.getElementById('newDealBtn').onclick = () => location.reload();
+    </script>
+    <script src="animations.js"></script>
+</body>
+</html>
