@@ -5,6 +5,7 @@ import random
 import secrets
 import hashlib
 import hmac
+import io
 from decimal import Decimal, ROUND_DOWN
 from urllib.parse import parse_qsl
 import aiohttp
@@ -16,6 +17,7 @@ from typing import Optional, Tuple, List, Dict
 from bot_config import *
 from currency_api import currency_api
 from aiohttp import ClientTimeout
+import qrcode
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -247,12 +249,14 @@ def card_currency_kb():
     ])
 
 def premium_currency_kb():
-    currencies = ["RUB", "USD", "EUR", "TON", "USDT", "STARS"]
+    currencies = ["RUB", "USD", "EUR", "TON", "USDT", "STARS", "BYN", "UAH", "KZT", "UZS"]
     kb = []
     row = []
     for curr in currencies:
-        row.append(InlineKeyboardButton(text=CURRENCIES[curr]["symbol"], callback_data=f"premium_cur_{curr}"))
-        if len(row) == 3:
+        info = CURRENCIES[curr]
+        label = f"{info['symbol']} {info['name']}"
+        row.append(InlineKeyboardButton(text=label, callback_data=f"premium_cur_{curr}"))
+        if len(row) == 2:
             kb.append(row)
             row = []
     if row:
@@ -955,23 +959,57 @@ class Database:
         }
 
     def use_promocode(self, code: str, user_id: int):
-        promo = self.get_promocode(code)
-        if not promo: return False, 'Промокод не найден'
-        if not promo['active']: return False, 'Промокод неактивен'
-        if promo['used_count'] >= promo['max_uses']: return False, 'Промокод уже использован максимальное количество раз'
-        if promo['expires_at']:
-            try:
-                expires = datetime.strptime(promo['expires_at'], '%Y-%m-%d %H:%M:%S')
-                if datetime.now() > expires: return False, 'Срок действия промокода истёк'
-            except: pass
-        self.cursor.execute("SELECT id FROM promocode_uses WHERE promo_code = ? AND user_id = ?", (code.upper(), user_id))
-        if self.cursor.fetchone(): return False, 'Вы уже активировали этот промокод'
-        self.update_balance(user_id, 'RUB', promo['amount'])
-        self.cursor.execute("UPDATE promocodes SET used_count = used_count + 1 WHERE code = ?", (code.upper(),))
-        self.cursor.execute("INSERT INTO promocode_uses (promo_code, user_id) VALUES (?, ?)", (code.upper(), user_id))
-        self.add_notification(user_id, f"🎉 Промокод {code} активирован! Получено {promo['amount']} RUB")
-        self.conn.commit()
-        return True, promo['amount']
+        # Атомарная транзакция — исключаем race conditions
+        self.cursor.execute("BEGIN IMMEDIATE")
+        try:
+            promo = self.get_promocode(code)
+            if not promo:
+                self.conn.rollback()
+                return False, 'Промокод не найден'
+            if not promo['active']:
+                self.conn.rollback()
+                return False, 'Промокод неактивен'
+            if promo['used_count'] >= promo['max_uses']:
+                self.conn.rollback()
+                return False, 'Промокод уже использован максимальное количество раз'
+            if promo['expires_at']:
+                try:
+                    expires = datetime.strptime(promo['expires_at'], '%Y-%m-%d %H:%M:%S')
+                    if datetime.now() > expires:
+                        self.conn.rollback()
+                        return False, 'Срок действия промокода истёк'
+                except:
+                    pass
+            
+            self.cursor.execute("SELECT id FROM promocode_uses WHERE promo_code = ? AND user_id = ?", (code.upper(), user_id))
+            if self.cursor.fetchone():
+                self.conn.rollback()
+                return False, 'Вы уже активировали этот промокод'
+            
+            # Обновляем баланс
+            col_name = "balance_RUB"
+            self.cursor.execute(f"SELECT {col_name} FROM users WHERE user_id = ?", (user_id,))
+            current = self.cursor.fetchone()
+            if current is None:
+                self.conn.rollback()
+                return False, 'Пользователь не найден'
+            new_balance = (current[0] or 0) + promo['amount']
+            self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (new_balance, user_id))
+            
+            # Увеличиваем счётчик использований
+            self.cursor.execute("UPDATE promocodes SET used_count = used_count + 1 WHERE code = ?", (code.upper(),))
+            # Записываем факт использования
+            self.cursor.execute("INSERT INTO promocode_uses (promo_code, user_id) VALUES (?, ?)", (code.upper(), user_id))
+            # Уведомление
+            self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)",
+                                (user_id, "Уведомление", f"🎉 Промокод {code} активирован! Получено {promo['amount']} RUB"))
+            
+            self.conn.commit()
+            return True, promo['amount']
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"use_promocode error: {e}")
+            return False, 'Ошибка при активации промокода. Попробуйте позже.'
 
     def get_all_promocodes(self):
         self.cursor.execute("SELECT * FROM promocodes ORDER BY code")
@@ -1349,7 +1387,9 @@ async def start_cmd(msg: types.Message, state: FSMContext):
 
 # ========== КОЛБЭКИ ОСНОВНЫХ КНОПОК ==========
 @dp.callback_query(lambda c: c.data == "menu")
-async def menu_cb(call: CallbackQuery):
+async def menu_cb(call: CallbackQuery, state: FSMContext = None):
+    if state:
+        await state.clear()
     uid = call.from_user.id
     is_admin = uid in ADMIN_IDS
     text = f"🎁 *{BOT_NAME}*\n\n✨ *Главное меню*"
@@ -1505,21 +1545,50 @@ async def ref_create_link_cb(call: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "ref_qr")
 async def ref_qr_cb(call: CallbackQuery):
+    # Сразу отвечаем на callback, чтобы Telegram не выдавал таймаут
+    await call.answer("🔄 Генерация QR-кода...", show_alert=False)
+    
     uid = call.from_user.id
     user = db.get_user_dict(uid)
     code = user.get('referral_code') or uid
     link = f"https://t.me/NovixGift_Bot?start=ref_{code}"
-    text = (f"📱 *QR-код приглашения*\n\n"
-            f"Ссылка: `{link}`\n\n"
-            f"QR-код будет сгенерирован в следующем обновлении")
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_ref_{code}")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]
-    ])
-    # Используем delete + answer вместо edit_text
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
-    await call.answer()
+    
+    # Отправляем промежуточное сообщение
+    await call.message.answer("⏳ *Генерация QR-кода, пожалуйста, подождите...*", parse_mode="Markdown")
+    
+    # Генерируем реальный QR-код
+    try:
+        qr = qrcode.QRCode(box_size=10, border=2)
+        qr.add_data(link)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        
+        photo = types.BufferedInputFile(buf.read(), filename="qrcode.png")
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_ref_{code}")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]
+        ])
+        
+        await call.message.answer_photo(
+            photo=photo,
+            caption=f"📱 *Ваш QR-код приглашения*\n\nСсылка: `{link}`",
+            parse_mode="Markdown",
+            reply_markup=kb
+        )
+    except Exception as e:
+        logger.error(f"QR generation error: {e}")
+        text = (f"📱 *QR-код приглашения*\n\n"
+                f"Ссылка: `{link}`")
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_ref_{code}")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]
+        ])
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
 
 @dp.callback_query(lambda c: c.data == "ref_withdraw")
 async def ref_withdraw_cb(call: CallbackQuery):
@@ -1597,12 +1666,41 @@ async def activate_promo_cmd(msg: types.Message):
         await msg.answer(f"❌ {result}")
 
 @dp.callback_query(lambda c: c.data == "activate_promo")
-async def activate_promo_cb(call: CallbackQuery):
+async def activate_promo_cb(call: CallbackQuery, state: FSMContext):
+    await state.set_state(PromoActivateState.code)
+    await call.message.delete()
     await call.message.answer(
-        "🎫 *Активация промокода*\n\nВведите код промокода:\n\nНапример: `/promo NOVIX2026`",
-        parse_mode="Markdown"
+        "🎫 *Активация промокода*\n\n"
+        "Введите код промокода:\n\n"
+        "Например: `NOVIX2026`",
+        parse_mode="Markdown",
+        reply_markup=cancel_kb()
     )
     await call.answer()
+
+
+@dp.message(PromoActivateState.code)
+async def activate_promo_code_msg(msg: types.Message, state: FSMContext):
+    code = msg.text.strip().upper()
+    
+    # Атомарная активация промокода
+    async with db_batch_lock:
+        success, result = db.use_promocode(code, msg.from_user.id)
+    
+    await state.clear()
+    
+    if success:
+        await msg.answer(
+            f"✅ *Промокод активирован!*\n\n💰 Начислено: {result} RUB",
+            parse_mode="Markdown",
+            reply_markup=back_kb()
+        )
+    else:
+        await msg.answer(
+            f"❌ {result}",
+            parse_mode="Markdown",
+            reply_markup=back_kb()
+        )
 
 # ========== КАРТА ==========
 @dp.callback_query(lambda c: c.data == "set_card")
@@ -1805,7 +1903,6 @@ async def premium_buy_cb(call: CallbackQuery, state: FSMContext):
     days = int(parts[2])
     currency = parts[3]
     
-    # Используем единые курсы и цены
     rates = PREMIUM_RATES
     price_rub = PREMIUM_PRICES_RUB
     
@@ -1814,37 +1911,173 @@ async def premium_buy_cb(call: CallbackQuery, state: FSMContext):
         await call.answer(f"❌ Неизвестная валюта: {currency}", show_alert=True)
         return
     
-    price = int(price_rub[days] / rate)
-    user_balance = db.get_balance(call.from_user.id, currency)
-    
-    # Проверяем, что валюта существует
     if currency not in rates:
         await call.answer(f"❌ Валюта {currency} не поддерживается", show_alert=True)
         return
     
-    if user_balance < price:
+    uid = call.from_user.id
+    price_in_currency = int(price_rub[days] / rate)
+    user_balance = db.get_balance(uid, currency)
+    
+    days_label = "FOREVER" if days == 365 else f"{days} дней"
+    
+    # Если достаточно средств в выбранной валюте — оплачиваем напрямую
+    if user_balance >= price_in_currency:
+        async with db_batch_lock:
+            if db.update_balance(uid, currency, -price_in_currency):
+                db.set_premium(uid, days, 0)
+        
+        await call.message.delete()
+        await call.message.answer(
+            f"✅ *Premium подписка активирована!*\n\n"
+            f"📅 Длительность: {days_label}\n"
+            f"💰 Оплачено: {price_in_currency} {currency}\n"
+            f"✨ Комиссия при сделках и выводе: *0%*",
+            parse_mode="Markdown",
+            reply_markup=main_kb(uid in ADMIN_IDS)
+        )
+        await state.clear()
+        await call.answer()
+        return
+    
+    # Недостаточно средств в выбранной валюте — предлагаем "Общий счёт"
+    price_rub_value = price_rub[days]
+    
+    # Собираем все балансы пользователя
+    all_balances = {}
+    total_rub = 0
+    for curr in rates.keys():
+        bal = db.get_balance(uid, curr)
+        all_balances[curr] = bal
+        if bal > 0:
+            curr_rate = rates.get(curr, 0)
+            if curr_rate > 0:
+                total_rub += bal * curr_rate if curr != "RUB" else bal
+    
+    if total_rub < price_rub_value:
         await call.answer(
-            f"❌ Недостаточно средств!\n"
-            f"Нужно: {price} {currency}\n"
-            f"У вас: {fmt_num(user_balance)} {currency}",
+            f"❌ Недостаточно средств!\n\n"
+            f"💰 Нужно: {price_in_currency} {currency} (~{price_rub_value} RUB)\n"
+            f"💼 Ваш общий баланс: ~{fmt_num(total_rub)} RUB\n\n"
+            f"Пополните баланс и попробуйте снова.",
             show_alert=True
         )
         return
     
-    # Списываем средства
-    db.update_balance(call.from_user.id, currency, -price)
-    db.set_premium(call.from_user.id, days, 0)
+    # Составляем детализацию общего счета
+    deduction_plan = {}
+    remaining_rub = price_rub_value
+    
+    deduction_order = ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]
+    for curr in deduction_order:
+        if remaining_rub <= 0:
+            break
+        bal = all_balances.get(curr, 0)
+        if bal <= 0:
+            continue
+        if curr == "RUB":
+            deduct = min(bal, remaining_rub)
+            deduction_plan[curr] = deduct
+            remaining_rub -= deduct
+        else:
+            curr_rate = rates.get(curr, 0)
+            if curr_rate <= 0:
+                continue
+            needed_in_curr = remaining_rub / curr_rate
+            if bal >= needed_in_curr:
+                deduction_plan[curr] = round(needed_in_curr, 6)
+                remaining_rub = 0
+            else:
+                deduction_plan[curr] = bal
+                remaining_rub -= bal * curr_rate
+    
+    if remaining_rub > 0:
+        await call.answer("❌ Не удалось составить план списания. Попробуйте другую валюту.", show_alert=True)
+        return
+    
+    # Строим текст детализации
+    plan_parts = []
+    for curr, amount in deduction_plan.items():
+        plan_parts.append(f"{fmt_num(amount)} {CURRENCIES.get(curr, {}).get('symbol', curr)} ({curr})")
+    plan_str = " + ".join(plan_parts)
+    
+    await state.update_data(
+        premium_days=days,
+        premium_price_rub=price_rub_value,
+        deduction_plan=deduction_plan
+    )
+    
+    text = (
+        f"⭐ *Premium подписка*\n\n"
+        f"Вы выбрали оплату в *{currency}*.\n"
+        f"На вашем балансе недостаточно {currency}, "
+        f"но мы можем списать средства с ваших совокупных активов.\n\n"
+        f"💳 *Списать:* {plan_str}\n"
+        f"💰 *Эквивалент:* {price_rub_value} RUB\n"
+        f"📅 *Длительность:* {days_label}\n\n"
+        f"Подтверждаете списание?"
+    )
+    
+    # Добавляем название дня в callback_data
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, оплатить с общего счета", callback_data=f"premium_confirm_cross_{days}")],
+        [InlineKeyboardButton(text="❌ Нет, отмена", callback_data="cancel")]
+    ])
+    
+    await call.message.delete()
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
+
+
+@dp.callback_query(lambda c: c.data.startswith("premium_confirm_cross_"))
+async def premium_confirm_cross_cb(call: CallbackQuery, state: FSMContext):
+    uid = call.from_user.id
+    data = await state.get_data()
+    
+    days = data.get("premium_days")
+    price_rub_value = data.get("premium_price_rub")
+    deduction_plan = data.get("deduction_plan")
+    
+    if not all([days, price_rub_value, deduction_plan]):
+        await call.answer("❌ Сессия истекла. Начните заново.", show_alert=True)
+        await state.clear()
+        return
+    
+    # Атомарное списание с общего счета
+    async with db_batch_lock:
+        success = True
+        deducted_summary = {}
+        for curr, amount in deduction_plan.items():
+            if not db.update_balance(uid, curr, -amount):
+                success = False
+                break
+            deducted_summary[curr] = amount
+        
+        if not success:
+            # Откатываем уже списанное
+            for curr, amount in deducted_summary.items():
+                db.update_balance(uid, curr, amount)
+            await call.answer("❌ Ошибка при списании средств. Транзакция отменена.", show_alert=True)
+            await state.clear()
+            return
+        
+        db.set_premium(uid, days, 0)
+    
+    days_label = "FOREVER" if days == 365 else f"{days} дней"
+    plan_parts = []
+    for curr, amount in deduction_plan.items():
+        plan_parts.append(f"{fmt_num(amount)} {curr}")
     
     await call.message.delete()
     await call.message.answer(
         f"✅ *Premium подписка активирована!*\n\n"
-        f"📅 Длительность: {days if days != 365 else 'FOREVER'}\n"
-        f"💰 Оплачено: {price} {currency}\n"
-        f"✨ Комиссия при сделках: *0%*\n"
-        f"✨ Комиссия при выводе: *0%*",
+        f"📅 Длительность: {days_label}\n"
+        f"💰 Списано с общего счета: {' + '.join(plan_parts)} (эквивалент {price_rub_value} RUB)\n"
+        f"✨ Комиссия при сделках и выводе: *0%*",
         parse_mode="Markdown",
-        reply_markup=main_kb(call.from_user.id in ADMIN_IDS)
+        reply_markup=main_kb(uid in ADMIN_IDS)
     )
+    
     await state.clear()
     await call.answer()
 
@@ -1974,19 +2207,97 @@ async def deal_price_msg(msg: types.Message, state: FSMContext):
 # ========== МОИ СДЕЛКИ ==========
 @dp.callback_query(lambda c: c.data == "my_deals")
 async def my_deals_cb(call: CallbackQuery):
-    deals = db.get_user_deals(call.from_user.id)
+    uid = call.from_user.id
+    deals = db.get_user_deals(uid)
     await call.message.delete()
+    
     if not deals:
         await call.message.answer("📭 У вас пока нет сделок", reply_markup=back_kb())
+        await call.answer()
+        return
+    
+    text = "📋 *Мои сделки*\n\nВыберите сделку для просмотра деталей:"
+    kb = []
+    
+    for d in deals[:20]:
+        deal_id = d[0]
+        item_name = d[3][:25] if len(str(d[3])) > 25 else d[3]
+        # Определяем роль текущего пользователя
+        is_seller = (d[1] == uid)
+        role_emoji = "🟢" if is_seller else "🔵"
+        text_label = f"{role_emoji} №{deal_id} — {escape_md(str(item_name))}"
+        kb.append([InlineKeyboardButton(text=text_label, callback_data=f"deal_detail_{deal_id}")])
+    
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu")])
+    
+    await call.message.answer(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await call.answer()
+
+
+@dp.callback_query(lambda c: c.data.startswith("deal_detail_"))
+async def deal_detail_cb(call: CallbackQuery):
+    deal_id = int(call.data.replace("deal_detail_", ""))
+    deal = db.get_deal(deal_id)
+    
+    if not deal:
+        await call.answer("❌ Сделка не найдена", show_alert=True)
+        return
+    
+    uid = call.from_user.id
+    
+    # Получаем информацию об участниках
+    seller_info = db.get_user_dict(deal['seller'])
+    seller_name = f"@{seller_info['username']}" if seller_info and seller_info.get('username') else f"ID {deal['seller']}"
+    
+    buyer_id = deal.get('buyer')
+    if buyer_id:
+        buyer_info = db.get_user_dict(buyer_id)
+        buyer_name = f"@{buyer_info['username']}" if buyer_info and buyer_info.get('username') else f"ID {buyer_id}"
     else:
-        text = "📋 *Мои сделки*\n\n"
-        for d in deals[:10]:
-            role = "🟢 Продажа" if d[1] == call.from_user.id else "🔵 Покупка"
-            status = d[7] if len(d) > 7 else "awaiting"
-            currency = d[6] if len(d) > 6 else "RUB"
-            emoji = {"awaiting": "⏳", "paid": "💰", "item_sent": "📦", "completed": "✅", "cancelled": "❌"}.get(status, "❓")
-            text += f"{emoji} *#{d[0]}* | {role}\n   🎁 {escape_md(d[3][:20])}\n   💰 {fmt_num(d[4])} {currency}\n   📍 {status}\n\n"
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
+        buyer_name = "❌ Не назначен"
+    
+    role = "Продавец" if deal['seller'] == uid else "Покупатель" if buyer_id == uid else "Наблюдатель"
+    
+    status_emojis = {
+        "awaiting": "⏳ Ожидает оплаты",
+        "payment_pending": "💳 Ожидание on-chain платежа",
+        "paid": "💰 Оплачено",
+        "item_sent": "📦 Товар отправлен",
+        "completed": "✅ Завершена",
+        "cancelled": "❌ Отменена",
+        "disputed": "⚖️ Спор"
+    }
+    status_text = status_emojis.get(deal.get('status', ''), deal.get('status', 'Неизвестно'))
+    
+    created = deal.get('created', 'Неизвестно')
+    completed = deal.get('completed', '')
+    
+    payment_method = deal.get('payment_method', 'internal')
+    method_text = "💳 Внутренний баланс" if payment_method == 'internal' else "🔗 Блокчейн (TON/USDT)"
+    
+    text = (
+        f"📦 *Сделка №{deal_id}*\n\n"
+        f"👤 *Роль:* {role}\n"
+        f"🆔 Продавец: {escape_md(str(seller_name))} (`{deal['seller']}`)\n"
+        f"🆔 Покупатель: {escape_md(str(buyer_name))}\n\n"
+        f"🎁 *Товар:* {escape_md(str(deal['item']))}\n"
+        f"💰 *Сумма:* {fmt_num(float(deal['amount']))} {deal.get('currency', 'RUB')}\n"
+        f"💼 *Комиссия:* {int(float(deal.get('commission', 0)) * 100)}%\n"
+        f"💳 *Способ оплаты:* {method_text}\n\n"
+        f"📌 *Статус:* {status_text}\n"
+        f"📅 *Создана:* {created[:16] if created != 'Неизвестно' else created}\n"
+    )
+    if completed:
+        text += f"✅ *Завершена:* {completed[:16]}\n"
+    
+    # Информация об on-chain платеже
+    if deal.get('payment_comment'):
+        text += f"🔗 Комментарий: `{deal['payment_comment']}`\n"
+    if deal.get('paid_tx_hash'):
+        text += f"📝 Tx Hash: `{deal['paid_tx_hash'][:16]}...`\n"
+    
+    # Кнопки в зависимости от роли и статуса
+    await edit_or_new(call, text, deal_kb(deal_id, "buyer" if buyer_id == uid else "seller", deal.get('status', 'awaiting')))
     await call.answer()
 
 # ========== ОПЛАТА СДЕЛКИ ==========
@@ -2430,6 +2741,9 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
         text = f"📊 *Статистика*\n\n👥 Пользователей: {s['users']}\n💰 Балансы: {fmt_num(s['balance'])} RUB\n✅ Завершённых сделок: {s['completed']}\n🔄 Активных сделок: {s['active']}\n⚠️ Споров: {s['disputes']}"
         await call.message.delete()
         await call.message.answer(text, parse_mode="Markdown", reply_markup=admin_kb())
+    elif action == "promocodes":
+        await admin_promocodes_cb(call)
+        return
     elif action == "close":
         await menu_cb(call)
         return
@@ -2731,16 +3045,18 @@ async def admin_promocodes_cb(call: CallbackQuery):
     if call.from_user.id not in ADMIN_IDS:
         return await call.answer("⛔ Доступ запрещен", show_alert=True)
     
-    text = "🎫 *Управление промокодами*\n\nЗдесь вы можете создавать и управлять промокодами для ваших пользователей."
+    text = (
+        "🎫 *Управление промокодами*\n\n"
+        "Здесь вы можете создавать, просматривать и удалять промокоды."
+    )
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
-        [InlineKeyboardButton(text="📋 Действующие промокоды", callback_data="admin_active_promos")],
-        [InlineKeyboardButton(text="📋 Использованные промокоды", callback_data="admin_used_promos")],
+        [InlineKeyboardButton(text="➕ Сгенерировать промокод", callback_data="admin_add_promo")],
+        [InlineKeyboardButton(text="📋 Список активных промокодов", callback_data="admin_active_promos")],
+        [InlineKeyboardButton(text="❌ Удалить промокод", callback_data="admin_delete_promo_list")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ])
     
-    # Используем edit_or_new без картинки
     await edit_or_new(call, text, kb)
     await call.answer()
 
@@ -2867,7 +3183,7 @@ async def admin_promo_stats_cb(call: CallbackQuery):
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 Деактивировать", callback_data=f"admin_toggle_promo_{code}")],
-        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"admin_delete_promo_{code}")],
+        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"admin_delconf_{code}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_active_promos")]
     ])
     
@@ -3284,12 +3600,74 @@ async def admin_toggle_promo_cb(call: CallbackQuery):
     await call.answer("🔄 Статус промокода изменён!", show_alert=True)
     await admin_active_promos_cb(call)
 
-@dp.callback_query(lambda c: c.data.startswith("admin_delete_promo_"))
-async def admin_delete_promo_cb(call: CallbackQuery):
+@dp.callback_query(lambda c: c.data == "admin_delete_promo_list")
+async def admin_delete_promo_list_cb(call: CallbackQuery):
     if call.from_user.id not in ADMIN_IDS:
         return await call.answer("⛔ Доступ запрещен", show_alert=True)
     
-    code = call.data.replace("admin_delete_promo_", "")
+    db.cursor.execute("""
+        SELECT code, amount, max_uses, used_count, expires_at, active 
+        FROM promocodes 
+        WHERE active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))
+        ORDER BY code
+    """)
+    promos = db.cursor.fetchall()
+    
+    if not promos:
+        text = "📭 *Нет действующих промокодов для удаления*"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
+        ])
+        await edit_or_new(call, text, kb)
+        await call.answer()
+        return
+    
+    text = "❌ *Выберите промокод для удаления*\n\n"
+    kb = []
+    
+    for promo in promos:
+        code, amount, max_uses, used_count, expires_at, active = promo
+        text += f"• `{code}` — {amount} RUB ({used_count}/{max_uses})\n"
+        kb.append([InlineKeyboardButton(
+            text=f"🗑️ {code}",
+            callback_data=f"admin_delconf_{code}"
+        )])
+    
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
+    
+    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb))
+    await call.answer()
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_delconf_"))
+async def admin_delete_promo_confirm_cb(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
+    code = call.data.replace("admin_delconf_", "")
+    
+    # Подтверждение удаления
+    text = (
+        f"⚠️ *Подтверждение удаления*\n\n"
+        f"Вы уверены, что хотите удалить промокод `{code}`?\n\n"
+        f"Это действие нельзя отменить."
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"admin_del_exec_{code}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_delete_promo_list")]
+    ])
+    
+    await edit_or_new(call, text, kb)
+    await call.answer()
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_del_exec_"))
+async def admin_delete_promo_exec_cb(call: CallbackQuery):
+    if call.from_user.id not in ADMIN_IDS:
+        return await call.answer("⛔ Доступ запрещен", show_alert=True)
+    
+    code = call.data.replace("admin_del_exec_", "")
     
     # Логируем
     db.cursor.execute("""
@@ -3299,8 +3677,8 @@ async def admin_delete_promo_cb(call: CallbackQuery):
     db.conn.commit()
     
     db.delete_promocode(code)
-    await call.answer("✅ Промокод удалён!", show_alert=True)
-    await admin_active_promos_cb(call)
+    await call.answer(f"✅ Промокод {code} удалён!", show_alert=True)
+    await admin_delete_promo_list_cb(call)
 
 @dp.callback_query(lambda c: c.data.startswith("admin_credit_user_"))
 async def admin_credit_user_from_info(call: CallbackQuery, state: FSMContext):
