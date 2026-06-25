@@ -1,7 +1,7 @@
 # 🎁 Novix Gift — безопасные сделки с NFT и цифровыми товарами
 
 [![Telegram Bot](https://img.shields.io/badge/Telegram-@NovixGift_Bot-blue?logo=telegram)](https://t.me/NovixGift_Bot)
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Mini%20App-green?logo=github)]([https://heyken777.github.io/nft-bot](https://heyken777.github.io/nft-bot/frontend))
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Mini%20App-green?logo=github)]([https://heyken777.github.io/nft-bot/frontend](https://heyken777.github.io/nft-bot/frontend))
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Novix Gift** — это Telegram-бот и Mini-приложение для проведения безопасных сделок между продавцами и покупателями с использованием эскроу-сервиса.
