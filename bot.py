@@ -279,7 +279,7 @@ def currency_kb():
         [InlineKeyboardButton(text="🔙 Назад", callback_data="menu")]
     ])
 
-def admin_currency_kb(action: str, user_id: int):
+def admin_currency_kb(action: str, user_id: int, back_to_user: bool = False):
     currencies = ["RUB", "BYN", "UAH", "KZT", "UZS", "EUR", "USD", "TON", "USDT", "STARS"]
     kb = []
     row = []
@@ -290,10 +290,22 @@ def admin_currency_kb(action: str, user_id: int):
             row = []
     if row:
         kb.append(row)
-    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")])
+    back_callback = f"admin_back_user_{user_id}" if back_to_user else "admin_panel"
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
-def premium_days_kb(user_id: int):
+def admin_back_kb(uid: int = None):
+    """Клавиатура Отмены: если uid передан — возвращает в карточку пользователя, иначе в админ-панель"""
+    if uid:
+        back_data = f"admin_back_user_{uid}"
+    else:
+        back_data = "admin_panel"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data=back_data)]
+    ])
+
+def premium_days_kb(user_id: int, back_to_user: bool = False):
+    back_callback = f"admin_back_user_{user_id}" if back_to_user else "admin_panel"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📅 30 дней (299 RUB)", callback_data=f"premium_days_30_{user_id}"),
         InlineKeyboardButton(text="📅 45 дней (419 RUB)", callback_data=f"premium_days_45_{user_id}")],
@@ -301,7 +313,7 @@ def premium_days_kb(user_id: int):
         InlineKeyboardButton(text="📅 90 дней (799 RUB)", callback_data=f"premium_days_90_{user_id}")],
         [InlineKeyboardButton(text="👑 FOREVER (1999 RUB)", callback_data=f"premium_days_forever_{user_id}")],
         [InlineKeyboardButton(text="❌ Забрать Premium", callback_data=f"premium_remove_{user_id}")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
+        [InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)]
     ])
 
 def admin_kb():
@@ -2467,10 +2479,10 @@ async def deal_price_msg(msg: types.Message, state: FSMContext):
 async def my_deals_cb(call: CallbackQuery):
     uid = call.from_user.id
     deals = db.get_user_deals(uid)
-    await call.message.delete()
     
     if not deals:
-        await call.message.answer("📭 У вас пока нет сделок", reply_markup=back_kb())
+        text = "📭 У вас пока нет сделок"
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=back_kb())
         await call.answer()
         return
     
@@ -2480,7 +2492,6 @@ async def my_deals_cb(call: CallbackQuery):
     for d in deals[:20]:
         deal_id = d[0]
         item_name = d[3][:25] if len(str(d[3])) > 25 else d[3]
-        # Определяем роль текущего пользователя
         is_seller = (d[1] == uid)
         role_emoji = "🟢" if is_seller else "🔵"
         text_label = f"{role_emoji} №{deal_id} — {escape_md(str(item_name))}"
@@ -2488,7 +2499,14 @@ async def my_deals_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu")])
     
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    photo_path = img_path("ЛИЧНЫЙ КАБИНЕТ.jpg")
+    if img_exists("ЛИЧНЫЙ КАБИНЕТ.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(photo_path), caption=text, parse_mode="Markdown"),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
     await call.answer()
 
 
@@ -2528,25 +2546,54 @@ async def deal_detail_cb(call: CallbackQuery):
     status_text = status_emojis.get(deal.get('status', ''), deal.get('status', 'Неизвестно'))
     
     created = deal.get('created', 'Неизвестно')
-    completed = deal.get('completed', '')
+    completed_ts = deal.get('completed', '')
     
     payment_method = deal.get('payment_method', 'internal')
     method_text = "💳 Внутренний баланс" if payment_method == 'internal' else "🔗 Блокчейн (TON/USDT)"
     
+    currency = deal.get('currency', 'RUB')
+    amount = float(deal['amount'])
+    commission_rate = float(deal.get('commission', 0))
+    
+    # Конвертация в RUB если валюта не RUB
+    rub_conversion = ""
+    if currency != "RUB":
+        try:
+            rates = await currency_api.fetch_rates('RUB')
+        except Exception:
+            rates = {'USD': 73, 'EUR': 83, 'TON': 120, 'USDT': 73, 'STARS': 2,
+                     'UAH': 1.6, 'KZT': 0.15, 'UZS': 0.0061, 'BYN': 26}
+        rate = rates.get(currency, 0)
+        if rate > 0:
+            rub_value = quantize_amount(amount * rate)
+            rub_conversion = f"\n💵 ~{fmt_num(rub_value)} RUB"
+    
+    # Расчет чистой прибыли продавца
+    seller_profit_line = ""
+    if deal['seller'] == uid:
+        if db.is_premium(uid):
+            net_amount = amount
+            comm_note = "0% (Premium)"
+        else:
+            net_amount = quantize_amount(amount * (1 - commission_rate))
+            comm_note = f"{int(commission_rate * 100)}%"
+        seller_profit_line = f"\n💰 *Ваш чистый заработок:* {fmt_num(net_amount)} {currency} (комиссия {comm_note})"
+    
     text = (
-        f"📦 *Сделка №{deal_id}*\n\n"
+        f"📄 *Сделка №{deal_id}*\n\n"
         f"👤 *Роль:* {role}\n"
         f"🆔 Продавец: {escape_md(str(seller_name))} (`{deal['seller']}`)\n"
         f"🆔 Покупатель: {escape_md(str(buyer_name))}\n\n"
         f"🎁 *Товар:* {escape_md(str(deal['item']))}\n"
-        f"💰 *Сумма:* {fmt_num(float(deal['amount']))} {deal.get('currency', 'RUB')}\n"
-        f"💼 *Комиссия:* {int(float(deal.get('commission', 0)) * 100)}%\n"
-        f"💳 *Способ оплаты:* {method_text}\n\n"
+        f"💰 *Сумма:* {fmt_num(amount)} {currency}{rub_conversion}\n"
+        f"💼 *Комиссия:* {int(commission_rate * 100)}%\n"
+        f"💳 *Способ оплаты:* {method_text}\n"
+        f"{seller_profit_line}\n"
         f"📌 *Статус:* {status_text}\n"
         f"📅 *Создана:* {created[:16] if created != 'Неизвестно' else created}\n"
     )
-    if completed:
-        text += f"✅ *Завершена:* {completed[:16]}\n"
+    if completed_ts:
+        text += f"✅ *Завершена:* {completed_ts[:16]}\n"
     
     # Информация об on-chain платеже
     if deal.get('payment_comment'):
@@ -2554,8 +2601,13 @@ async def deal_detail_cb(call: CallbackQuery):
     if deal.get('paid_tx_hash'):
         text += f"📝 Tx Hash: `{deal['paid_tx_hash'][:16]}...`\n"
     
-    # Кнопки в зависимости от роли и статуса
-    await edit_or_new(call, text, deal_kb(deal_id, "buyer" if buyer_id == uid else "seller", deal.get('status', 'awaiting')))
+    # Кнопки в зависимости от роли и статуса + кнопка "Назад" к списку сделок
+    deal_kb_markup = deal_kb(deal_id, "buyer" if buyer_id == uid else "seller", deal.get('status', 'awaiting'))
+    deal_kb_markup.inline_keyboard.insert(0, [
+        InlineKeyboardButton(text="⬅️ Назад к списку", callback_data="my_deals")
+    ])
+    
+    await edit_or_new(call, text, deal_kb_markup)
     await call.answer()
 
 # ========== ОПЛАТА СДЕЛКИ ==========
@@ -3262,11 +3314,10 @@ async def admin_credit_amount(msg: types.Message, state: FSMContext):
         uid = data.get('user_id', data.get('uid', data.get('target_user_id', 0)))
         currency = data.get('currency', 'RUB')
         db.update_balance(uid, currency, amount)
-        # Начисляем 10% реферальных отчислений с пополнения
         db.credit_referral_deposit_commission(uid, currency, amount)
-        await msg.answer(f"✅ Зачислено {fmt_num(amount)} {currency} пользователю {uid}")
-        await state.clear()
         await bot.send_message(uid, f"💰 Вам зачислено {fmt_num(amount)} {currency}!")
+        await state.clear()
+        await msg.answer(f"✅ Зачислено {fmt_num(amount)} {currency} пользователю `{uid}`", parse_mode="Markdown")
         await send_admin_menu(msg)
     except ValueError:
         await msg.answer("❌ Введите число", reply_markup=cancel_kb())
@@ -4169,7 +4220,7 @@ async def admin_credit_user_from_info(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text(
         f"💰 *Зачисление средств пользователю {uid}*\n\nВыберите валюту для зачисления:",
         parse_mode="Markdown",
-        reply_markup=admin_currency_kb("credit_amount", uid)
+        reply_markup=admin_currency_kb("credit_amount", uid, back_to_user=True)
     )
     await call.answer()
 
@@ -4183,7 +4234,7 @@ async def admin_debit_user_from_info(call: CallbackQuery, state: FSMContext):
         f"{await get_user_balances_text(uid)}\n\n"
         f"Выберите валюту для списания:",
         parse_mode="Markdown",
-        reply_markup=admin_currency_kb("debit_amount", uid)
+        reply_markup=admin_currency_kb("debit_amount", uid, back_to_user=True)
     )
     await call.answer()
 
@@ -4198,7 +4249,7 @@ async def admin_premium_user_from_info(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text(
         f"👑 *Premium подписка для пользователя {user_id}*\n\nВыберите длительность:",
         parse_mode="Markdown",
-        reply_markup=premium_days_kb(user_id)
+        reply_markup=premium_days_kb(user_id, back_to_user=True)
     )
     await call.answer()
 
@@ -4215,16 +4266,31 @@ async def credit_amount_currency_cb(call: CallbackQuery, state: FSMContext):
     await state.update_data(user_id=user_id, currency=currency)
     await state.set_state(AdminCreditState.amount)
     
-    await call.message.delete()
-    await call.message.answer(
+    # Определяем, откуда пришли: если есть target_user_id — возвращаемся в карточку
+    data = await state.get_data()
+    back_uid = data.get('target_user_id', user_id)
+    back_kb = admin_back_kb(back_uid)
+    
+    await call.message.edit_text(
         f"💰 *Зачисление средств*\n\n"
         f"👤 Пользователь: `{user_id}`\n"
         f"💱 Валюта: {currency}\n\n"
         f"💵 *Введите сумму для зачисления:*",
         parse_mode="Markdown",
-        reply_markup=cancel_kb()
+        reply_markup=back_kb
     )
     await call.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("admin_back_user_"))
+async def admin_back_to_user_cb(call: CallbackQuery, state: FSMContext):
+    """Возвращает админа в карточку пользователя из подменю зачисления/списания/premium"""
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    uid = int(call.data.replace("admin_back_user_", ""))
+    await state.update_data(target_user_id=uid)
+    # Перенаправляем в карточку пользователя
+    await user_info_cb(call, state)
 
 @dp.callback_query(lambda c: c.data.startswith("debit_amount_"))
 async def debit_amount_currency_cb(call: CallbackQuery, state: FSMContext):
@@ -4239,15 +4305,19 @@ async def debit_amount_currency_cb(call: CallbackQuery, state: FSMContext):
     await state.update_data(user_id=user_id, currency=currency)
     await state.set_state(AdminDebitState.amount)
     
-    await call.message.delete()
-    await call.message.answer(
+    # Определяем, откуда пришли
+    data = await state.get_data()
+    back_uid = data.get('target_user_id', user_id)
+    back_kb = admin_back_kb(back_uid)
+    
+    await call.message.edit_text(
         f"💸 *Списание средств*\n\n"
         f"👤 Пользователь: `{user_id}`\n"
         f"💱 Валюта: {currency}\n"
         f"💰 Текущий баланс: {db.get_balance(user_id, currency)} {currency}\n\n"
         f"💵 *Введите сумму для списания:*",
         parse_mode="Markdown",
-        reply_markup=cancel_kb()
+        reply_markup=back_kb
     )
     await call.answer()
 
