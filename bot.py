@@ -305,7 +305,7 @@ def admin_back_kb(uid: int = None):
     ])
 
 def premium_days_kb(user_id: int, back_to_user: bool = False):
-    back_callback = f"admin_back_user_{user_id}" if back_to_user else "admin_panel"
+    back_callback = "premium_back_user" if back_to_user else "admin_panel"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📅 30 дней (299 RUB)", callback_data=f"premium_days_30_{user_id}"),
         InlineKeyboardButton(text="📅 45 дней (419 RUB)", callback_data=f"premium_days_45_{user_id}")],
@@ -1607,7 +1607,10 @@ async def send_admin_menu(msg: types.Message):
 @dp.callback_query(lambda c: c.data == "cancel")
 async def cancel_cb(call: CallbackQuery, state: FSMContext):
     await state.clear()
-    await menu_cb(call)
+    if call.from_user.id in ADMIN_IDS:
+        await admin_panel_cb(call)
+    else:
+        await menu_cb(call)
 
 @dp.callback_query(lambda c: c.data == "deposit")
 async def deposit_cb(call: CallbackQuery):
@@ -1920,6 +1923,7 @@ async def activate_promo_cmd(msg: types.Message):
 
 @dp.callback_query(lambda c: c.data == "activate_promo")
 async def activate_promo_cb(call: CallbackQuery, state: FSMContext):
+    await call.answer()
     await state.set_state(PromoActivateState.code)
     text = "🎫 *Активация промокода*\n\nВведите код промокода:\n\nНапример: `NOVIX2026`"
     if img_exists("PROMOCODE.jpg"):
@@ -1929,7 +1933,6 @@ async def activate_promo_cb(call: CallbackQuery, state: FSMContext):
         )
     else:
         await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
-    await call.answer()
 
 
 @dp.message(PromoActivateState.code)
@@ -1976,28 +1979,27 @@ async def activate_promo_code_msg(msg: types.Message, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "set_card")
 async def set_card_cb(call: CallbackQuery, state: FSMContext):
     text = "💳 *Моя карта для вывода*\n\nВыберите валюту карты (RUB / BYN / UAH / KZT / EUR):"
-    await call.message.delete()
     if img_exists("КАРТА ДЛЯ ВЫВОДА.jpg"):
-        await call.message.answer_photo(
-            photo=FSInputFile(img_path("КАРТА ДЛЯ ВЫВОДА.jpg")),
-            caption=text,
-            parse_mode="Markdown",
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("КАРТА ДЛЯ ВЫВОДА.jpg")), caption=text, parse_mode="Markdown"),
             reply_markup=card_currency_kb()
         )
     else:
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=card_currency_kb())
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=card_currency_kb())
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("card_cur_"))
 async def set_card_currency_cb(call: CallbackQuery, state: FSMContext):
     currency = call.data.replace("card_cur_", "")
     await state.update_data(card_currency=currency)
-    await call.message.delete()
-    await call.message.answer(
-        f"💳 *Введите номер карты*\n\nВалюта карты: {currency}\n\nПример: 4276 1600 1234 5678",
-        parse_mode="Markdown",
-        reply_markup=cancel_kb()
-    )
+    text = f"💳 *Введите номер карты*\n\nВалюта карты: {currency}\n\nПример: 4276 1600 1234 5678"
+    if img_exists("КАРТА ДЛЯ ВЫВОДА.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("КАРТА ДЛЯ ВЫВОДА.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=cancel_kb()
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
     await state.set_state(CardState.waiting)
     await call.answer()
 
@@ -2021,17 +2023,14 @@ async def set_card_msg(msg: types.Message, state: FSMContext):
 # ========== TON КОШЕЛЕК ==========
 @dp.callback_query(lambda c: c.data == "set_ton")
 async def set_ton_cb(call: CallbackQuery, state: FSMContext):
-    await call.message.delete()
     text = "💎 *Введите адрес TON-кошелька*\n\nПример: `UQCD39VS5jcptHL8vMjEXrzGaRcCVYtoq7BGPk2vwUCGzE`"
     if img_exists("TON.jpg"):
-        await call.message.answer_photo(
-            photo=FSInputFile(img_path("TON.jpg")),
-            caption=text,
-            parse_mode="Markdown",
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("TON.jpg")), caption=text, parse_mode="Markdown"),
             reply_markup=cancel_kb()
         )
     else:
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
     await state.set_state(TonState.waiting)
     await call.answer()
 
@@ -2377,17 +2376,14 @@ async def premium_confirm_cross_cb(call: CallbackQuery, state: FSMContext):
 # ========== СОЗДАНИЕ СДЕЛКИ ==========
 @dp.callback_query(lambda c: c.data == "create_deal")
 async def create_deal_cb(call: CallbackQuery, state: FSMContext):
-    await call.message.delete()
     text = "🌍 *Выберите валюту для сделки:*\n\nRUB, USD, EUR, UAH, KZT, UZS, BYN, TON, USDT, Stars"
     if img_exists("СОЗДАНИЕ СДЕЛКИ.jpg"):
-        await call.message.answer_photo(
-            photo=FSInputFile(img_path("СОЗДАНИЕ СДЕЛКИ.jpg")),
-            caption=text,
-            parse_mode="Markdown",
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("СОЗДАНИЕ СДЕЛКИ.jpg")), caption=text, parse_mode="Markdown"),
             reply_markup=currency_kb()
         )
     else:
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=currency_kb())
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=currency_kb())
     await state.set_state(CreateDealState.currency)
     await call.answer()
 
@@ -2401,17 +2397,13 @@ async def deal_currency_cb(call: CallbackQuery, state: FSMContext):
     await state.set_state(CreateDealState.name)
     
     text = f"💱 *Валюта выбрана: {currency}*\n\n📦 *Введите название товара:*"
-    await call.message.delete()
-    
     if img_exists("СОЗДАНИЕ СДЕЛКИ.jpg"):
-        await call.message.answer_photo(
-            photo=FSInputFile(img_path("СОЗДАНИЕ СДЕЛКИ.jpg")),
-            caption=text,
-            parse_mode="Markdown",
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("СОЗДАНИЕ СДЕЛКИ.jpg")), caption=text, parse_mode="Markdown"),
             reply_markup=cancel_kb()
         )
     else:
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
     await call.answer()
 
 @dp.message(CreateDealState.name)
@@ -2810,12 +2802,15 @@ async def dispute_cb(call: CallbackQuery, state: FSMContext):
         return
     
     await state.update_data(deal_id=did)
-    await call.message.delete()
-    await call.message.answer(
-        "⚠️ *Причина спора*\n\nНапишите причину (макс 500 символов):",
-        parse_mode="Markdown",
-        reply_markup=cancel_kb()
-    )
+    text = "⚠️ *Причина спора*\n\nНапишите причину (макс 500 символов):"
+    photo_path = img_path("СДЕЛКА УСПЕШНО СОЗДАНА.jpg")
+    if img_exists("СДЕЛКА УСПЕШНО СОЗДАНА.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(photo_path), caption=text, parse_mode="Markdown"),
+            reply_markup=cancel_kb()
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
     await state.set_state("waiting_dispute")
     await call.answer()
 
@@ -3513,6 +3508,19 @@ async def premium_remove_cb(call: CallbackQuery):
     
     await call.answer()
 
+@dp.callback_query(lambda c: c.data == "premium_back_user")
+async def premium_back_user_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    data = await state.get_data()
+    uid = data.get("target_user_id")
+    if not uid:
+        await call.answer("❌ Сессия истекла", show_alert=True)
+        await admin_panel_cb(call)
+        return
+    await user_info_cb(call, state)
+
 @dp.callback_query(lambda c: c.data == "admin_promocodes")
 async def admin_promocodes_cb(call: CallbackQuery):
     if call.from_user.id not in ADMIN_IDS:
@@ -3924,7 +3932,6 @@ async def admin_promo_type_cb(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     
     if promo_type == "unlimited":
-        # Если бесконечный, сразу переходим к сроку
         await state.set_state(AdminStates.promo_expires_type)
         text = (
             f"📝 *Создание промокода (Шаг 4 из 6)*\n\n"
@@ -3939,11 +3946,15 @@ async def admin_promo_type_cb(call: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="📆 Количество дней", callback_data="promo_expires_days")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_add_promo")]
         ])
-        await call.message.delete()
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+        if img_exists("PROMOCODE.jpg"):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                reply_markup=kb
+            )
+        else:
+            await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
         await call.answer()
     else:
-        # Ограниченный - спрашиваем количество использований
         await state.set_state(AdminStates.promo_max_uses)
         text = (
             f"📝 *Создание промокода (Шаг 4 из 6)*\n\n"
@@ -3953,8 +3964,13 @@ async def admin_promo_type_cb(call: CallbackQuery, state: FSMContext):
             f"• Только число\n"
             f"• Например: 10, 100, 1000"
         )
-        await call.message.delete()
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
+        if img_exists("PROMOCODE.jpg"):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                reply_markup=cancel_kb()
+            )
+        else:
+            await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
         await call.answer()
 
 @dp.message(AdminStates.promo_max_uses)
@@ -4001,10 +4017,8 @@ async def admin_promo_expires_cb(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     
     if expires_type == "forever":
-        # Бессрочный - сразу создаём
         await create_promo_final(call, state)
     elif expires_type == "date":
-        # Конкретная дата
         await state.set_state(AdminStates.promo_expires_date)
         text = (
             f"📝 *Создание промокода (Шаг 6 из 6)*\n\n"
@@ -4015,11 +4029,15 @@ async def admin_promo_expires_cb(call: CallbackQuery, state: FSMContext):
             f"`ДД.ММ.ГГГГ`\n\n"
             f"Например: `31.12.2026`"
         )
-        await call.message.delete()
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
+        if img_exists("PROMOCODE.jpg"):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                reply_markup=cancel_kb()
+            )
+        else:
+            await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
         await call.answer()
     elif expires_type == "days":
-        # Количество дней
         await state.set_state(AdminStates.promo_expires_days)
         text = (
             f"📝 *Создание промокода (Шаг 6 из 6)*\n\n"
@@ -4030,8 +4048,13 @@ async def admin_promo_expires_cb(call: CallbackQuery, state: FSMContext):
             f"• Только число\n"
             f"• Например: 30, 60, 365"
         )
-        await call.message.delete()
-        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
+        if img_exists("PROMOCODE.jpg"):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                reply_markup=cancel_kb()
+            )
+        else:
+            await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
         await call.answer()
 
 @dp.message(AdminStates.promo_expires_date)
@@ -4143,8 +4166,13 @@ async def create_promo_final(event, state: FSMContext):
     
     # Отправляем финальное сообщение
     if hasattr(event, 'message'):
-        await event.message.delete()
-        await event.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+        if img_exists("PROMOCODE.jpg"):
+            await event.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                reply_markup=kb
+            )
+        else:
+            await event.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     else:
         await event.delete()
         await event.answer(text, parse_mode="Markdown", reply_markup=kb)
@@ -4365,9 +4393,11 @@ async def admin_back_to_user_cb(call: CallbackQuery, state: FSMContext):
     if call.from_user.id not in ADMIN_IDS:
         await call.answer("⛔ Доступ запрещен", show_alert=True)
         return
-    uid = int(call.data.replace("admin_back_user_", ""))
+    data = await state.get_data()
+    uid = data.get('target_user_id') or data.get('uid') or data.get('user_id')
+    if not uid:
+        uid = int(call.data.replace("admin_back_user_", ""))
     await state.update_data(target_user_id=uid)
-    # Перенаправляем в карточку пользователя
     await user_info_cb(call, state)
 
 @dp.callback_query(lambda c: c.data.startswith("debit_amount_"))
