@@ -1921,14 +1921,14 @@ async def activate_promo_cmd(msg: types.Message):
 @dp.callback_query(lambda c: c.data == "activate_promo")
 async def activate_promo_cb(call: CallbackQuery, state: FSMContext):
     await state.set_state(PromoActivateState.code)
-    await call.message.delete()
-    await call.message.answer(
-        "🎫 *Активация промокода*\n\n"
-        "Введите код промокода:\n\n"
-        "Например: `NOVIX2026`",
-        parse_mode="Markdown",
-        reply_markup=cancel_kb()
-    )
+    text = "🎫 *Активация промокода*\n\nВведите код промокода:\n\nНапример: `NOVIX2026`"
+    if img_exists("PROMOCODE.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=cancel_kb()
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
     await call.answer()
 
 
@@ -2127,8 +2127,13 @@ async def profile_cb(call: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "buy_premium")
 async def buy_premium_cb(call: CallbackQuery, state: FSMContext):
     text = "⭐ *Premium подписка*\n\nВыберите валюту для оплаты:"
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=premium_currency_kb())
+    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=premium_currency_kb()
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=premium_currency_kb())
     await state.set_state(BuyPremiumState.currency)
     await call.answer()
 
@@ -2159,8 +2164,13 @@ async def premium_currency_cb(call: CallbackQuery, state: FSMContext):
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="buy_premium")])
     kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")])
     
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
     await state.set_state(BuyPremiumState.days)
     await call.answer()
 
@@ -2197,15 +2207,19 @@ async def premium_buy_cb(call: CallbackQuery, state: FSMContext):
             if db.update_balance(uid, currency, -price_in_currency):
                 db.set_premium(uid, days, 0)
         
-        await call.message.delete()
-        await call.message.answer(
+        text_success = (
             f"✅ *Premium подписка активирована!*\n\n"
             f"📅 Длительность: {days_label}\n"
             f"💰 Оплачено: {price_in_currency} {currency}\n"
-            f"✨ Комиссия при сделках и выводе: *0%*",
-            parse_mode="Markdown",
-            reply_markup=main_kb(uid in ADMIN_IDS)
+            f"✨ Комиссия при сделках и выводе: *0%*"
         )
+        if img_exists("PREMIUM ПОДПИСКА.jpg"):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text_success, parse_mode="Markdown"),
+                reply_markup=main_kb(uid in ADMIN_IDS)
+            )
+        else:
+            await call.message.edit_text(text_success, parse_mode="Markdown", reply_markup=main_kb(uid in ADMIN_IDS))
         await state.clear()
         await call.answer()
         return
@@ -2294,8 +2308,13 @@ async def premium_buy_cb(call: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="❌ Нет, отмена", callback_data="cancel")]
     ])
     
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=kb
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 
@@ -2338,15 +2357,19 @@ async def premium_confirm_cross_cb(call: CallbackQuery, state: FSMContext):
     for curr, amount in deduction_plan.items():
         plan_parts.append(f"{fmt_num(amount)} {curr}")
     
-    await call.message.delete()
-    await call.message.answer(
+    text_success = (
         f"✅ *Premium подписка активирована!*\n\n"
         f"📅 Длительность: {days_label}\n"
         f"💰 Списано с общего счета: {' + '.join(plan_parts)} (эквивалент {price_rub_value} RUB)\n"
-        f"✨ Комиссия при сделках и выводе: *0%*",
-        parse_mode="Markdown",
-        reply_markup=main_kb(uid in ADMIN_IDS)
+        f"✨ Комиссия при сделках и выводе: *0%*"
     )
+    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text_success, parse_mode="Markdown"),
+            reply_markup=main_kb(uid in ADMIN_IDS)
+        )
+    else:
+        await call.message.edit_text(text_success, parse_mode="Markdown", reply_markup=main_kb(uid in ADMIN_IDS))
     
     await state.clear()
     await call.answer()
@@ -2499,8 +2522,8 @@ async def my_deals_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu")])
     
-    photo_path = img_path("ЛИЧНЫЙ КАБИНЕТ.jpg")
-    if img_exists("ЛИЧНЫЙ КАБИНЕТ.jpg"):
+    if img_exists("МОИ СДЕЛКИ.jpg"):
+        photo_path = img_path("МОИ СДЕЛКИ.jpg")
         await call.message.edit_media(
             InputMediaPhoto(media=FSInputFile(photo_path), caption=text, parse_mode="Markdown"),
             reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
@@ -2607,7 +2630,7 @@ async def deal_detail_cb(call: CallbackQuery):
         InlineKeyboardButton(text="⬅️ Назад к списку", callback_data="my_deals")
     ])
     
-    await edit_or_new(call, text, deal_kb_markup)
+    await edit_or_new(call, text, deal_kb_markup, "МОИ СДЕЛКИ.jpg")
     await call.answer()
 
 # ========== ОПЛАТА СДЕЛКИ ==========
@@ -2958,16 +2981,14 @@ async def admin_panel_cb(call: CallbackQuery):
         await call.answer("⛔ Доступ запрещен", show_alert=True)
         return
     
-    await call.message.delete()
+    text = "⚙️ *Админ-панель*"
     if img_exists("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg"):
-        await call.message.answer_photo(
-            photo=FSInputFile(img_path("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg")),
-            caption="⚙️ *Админ-панель*",
-            parse_mode="Markdown",
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg")), caption=text, parse_mode="Markdown"),
             reply_markup=admin_kb()
         )
     else:
-        await call.message.answer("⚙️ *Админ-панель*", parse_mode="Markdown", reply_markup=admin_kb())
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=admin_kb())
     await call.answer()
 
 user_page = {}
@@ -2985,13 +3006,31 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
     action = call.data[6:]
 
     if action == "credit":
-        await call.message.edit_text("💰 *Введите ID пользователя для зачисления:*", parse_mode="Markdown", reply_markup=cancel_kb())
+        if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption="💰 *Введите ID пользователя для зачисления:*", parse_mode="Markdown"),
+                reply_markup=cancel_kb()
+            )
+        else:
+            await call.message.edit_text("💰 *Введите ID пользователя для зачисления:*", parse_mode="Markdown", reply_markup=cancel_kb())
         await state.set_state(AdminCreditState.uid)
     elif action == "debit":
-        await call.message.edit_text("💸 *Введите ID пользователя для списания:*", parse_mode="Markdown", reply_markup=cancel_kb())
+        if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption="💸 *Введите ID пользователя для списания:*", parse_mode="Markdown"),
+                reply_markup=cancel_kb()
+            )
+        else:
+            await call.message.edit_text("💸 *Введите ID пользователя для списания:*", parse_mode="Markdown", reply_markup=cancel_kb())
         await state.set_state(AdminDebitState.uid)
     elif action == "premium":
-        await call.message.edit_text("👑 *Введите ID пользователя для выдачи Premium:*", parse_mode="Markdown", reply_markup=cancel_kb())
+        if img_exists("PREMIUM ПОДПИСКА.jpg"):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption="👑 *Введите ID пользователя для выдачи Premium:*", parse_mode="Markdown"),
+                reply_markup=cancel_kb()
+            )
+        else:
+            await call.message.edit_text("👑 *Введите ID пользователя для выдачи Premium:*", parse_mode="Markdown", reply_markup=cancel_kb())
         await state.set_state(AdminPremiumState.user_id)
     elif action == "premium_users":
         users = db.get_premium_users()
@@ -3004,8 +3043,8 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
                 if expires != "FOREVER":
                     expires = expires[:10]
                 text += f"🆔 {u[0]} | @{escape_md(u[1] or '?')} | до {expires}\n"
-        photo_path = img_path("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg")
-        if img_exists("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg"):
+        if img_exists("PREMIUM ПОДПИСКА.jpg"):
+            photo_path = img_path("PREMIUM ПОДПИСКА.jpg")
             await call.message.edit_media(
                 InputMediaPhoto(media=FSInputFile(photo_path), caption=text, parse_mode="Markdown"),
                 reply_markup=admin_kb()
@@ -3029,10 +3068,9 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
         mailing_cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_panel")]
         ])
-        photo_path = img_path("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg")
-        if img_exists("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg"):
+        if img_exists("РАССЫЛКА.jpg"):
             await call.message.edit_media(
-                InputMediaPhoto(media=FSInputFile(photo_path), caption=text, parse_mode="Markdown"),
+                InputMediaPhoto(media=FSInputFile(img_path("РАССЫЛКА.jpg")), caption=text, parse_mode="Markdown"),
                 reply_markup=mailing_cancel_kb
             )
         else:
@@ -3154,8 +3192,13 @@ async def show_users_page(call: CallbackQuery, page: int):
     kb.append([InlineKeyboardButton(text="🔍 Посмотреть пользователя", callback_data="users_select")])
     kb.append([InlineKeyboardButton(text="🔙 Назад в админку", callback_data="admin_panel")])
 
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
 @dp.callback_query(lambda c: c.data.startswith("users_page_"))
 async def users_page_cb(call: CallbackQuery):
@@ -3175,8 +3218,14 @@ async def users_select_cb(call: CallbackQuery):
         kb.append([InlineKeyboardButton(text=f"{u[0]} | @{u[1] or 'без имени'}", callback_data=f"user_info_{u[0]}")])
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")])
 
-    await call.message.delete()
-    await call.message.answer("👥 *Выберите пользователя:*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    text = "👥 *Выберите пользователя:*"
+    if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("user_info_"))
@@ -3278,8 +3327,13 @@ async def user_info_cb(call: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="users_select")]
     ])
     
-    await call.message.delete()
-    await call.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=kb
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 # ========== АДМИН-ВВОД ==========
@@ -3402,16 +3456,20 @@ async def premium_days_cb(call: CallbackQuery):
     
     db.set_premium(user_id, days, call.from_user.id)
     
-    await call.message.delete()
-    await call.message.answer(
+    text_success = (
         f"✅ *Premium подписка выдана!*\n\n"
         f"👤 Пользователь: `{user_id}`\n"
         f"📅 Длительность: {days_text}\n"
         f"👑 Выдал: @{call.from_user.username or call.from_user.id}\n"
-        f"📆 Дата выдачи: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        parse_mode="Markdown",
-        reply_markup=admin_kb()
+        f"📆 Дата выдачи: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     )
+    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text_success, parse_mode="Markdown"),
+            reply_markup=admin_kb()
+        )
+    else:
+        await call.message.edit_text(text_success, parse_mode="Markdown", reply_markup=admin_kb())
     
     await bot.send_message(
         user_id,
@@ -3435,13 +3493,17 @@ async def premium_remove_cb(call: CallbackQuery):
     user_id = int(call.data.split("_")[2])
     db.remove_premium(user_id)
     
-    await call.message.delete()
-    await call.message.answer(
+    text_success = (
         f"✅ *Premium подписка отозвана!*\n\n"
-        f"👤 Пользователь: `{user_id}`",
-        parse_mode="Markdown",
-        reply_markup=admin_kb()
+        f"👤 Пользователь: `{user_id}`"
     )
+    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text_success, parse_mode="Markdown"),
+            reply_markup=admin_kb()
+        )
+    else:
+        await call.message.edit_text(text_success, parse_mode="Markdown", reply_markup=admin_kb())
     
     await bot.send_message(
         user_id,
@@ -3468,9 +3530,9 @@ async def admin_promocodes_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="📜 История всех промокодов", callback_data="admin_promo_history")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ])
-    
-    await edit_or_new(call, text, kb)
+    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
     await call.answer()
+
 
 @dp.callback_query(lambda c: c.data == "admin_active_promos")
 async def admin_active_promos_cb(call: CallbackQuery):
@@ -3491,7 +3553,7 @@ async def admin_active_promos_cb(call: CallbackQuery):
             [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await edit_or_new(call, text, kb)
+        await edit_or_new(call, text, kb, "PROMOCODE.jpg")
         await call.answer()
         return
     
@@ -3530,7 +3592,7 @@ async def admin_active_promos_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
     
-    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb))
+    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb), "PROMOCODE.jpg")
     await call.answer()
 
 
@@ -3599,7 +3661,7 @@ async def admin_promo_stats_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_active_promos")]
     ])
     
-    await edit_or_new(call, text, kb)
+    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
     await call.answer()
 
 
@@ -3621,7 +3683,7 @@ async def admin_used_promos_cb(call: CallbackQuery):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await edit_or_new(call, text, kb)
+        await edit_or_new(call, text, kb, "PROMOCODE.jpg")
         await call.answer()
         return
     
@@ -3646,7 +3708,7 @@ async def admin_used_promos_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
     ])
     
-    await edit_or_new(call, text, kb)
+    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_promo_history")
@@ -3665,7 +3727,7 @@ async def admin_promo_history_cb(call: CallbackQuery):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await edit_or_new(call, text, kb)
+        await edit_or_new(call, text, kb, "PROMOCODE.jpg")
         await call.answer()
         return
     
@@ -3688,7 +3750,7 @@ async def admin_promo_history_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
     
-    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb))
+    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb), "PROMOCODE.jpg")
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("admin_promo_history_detail_"))
@@ -3770,7 +3832,7 @@ async def admin_promo_history_detail_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promo_history")]
     ])
     
-    await edit_or_new(call, text, kb)
+    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_add_promo")
@@ -4159,7 +4221,7 @@ async def admin_delete_promo_list_cb(call: CallbackQuery):
             [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await edit_or_new(call, text, kb)
+        await edit_or_new(call, text, kb, "PROMOCODE.jpg")
         await call.answer()
         return
     
@@ -4176,7 +4238,7 @@ async def admin_delete_promo_list_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
     
-    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb))
+    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb), "PROMOCODE.jpg")
     await call.answer()
 
 
@@ -4198,7 +4260,7 @@ async def admin_delete_promo_confirm_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_delete_promo_list")]
     ])
     
-    await edit_or_new(call, text, kb)
+    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
     await call.answer()
 
 
@@ -4217,25 +4279,33 @@ async def admin_delete_promo_exec_cb(call: CallbackQuery):
 async def admin_credit_user_from_info(call: CallbackQuery, state: FSMContext):
     uid = int(call.data.split("_")[3])
     await state.update_data(uid=uid, target_user_id=uid)
-    await call.message.edit_text(
-        f"💰 *Зачисление средств пользователю {uid}*\n\nВыберите валюту для зачисления:",
-        parse_mode="Markdown",
-        reply_markup=admin_currency_kb("credit_amount", uid, back_to_user=True)
-    )
+    text = f"💰 *Зачисление средств пользователю {uid}*\n\nВыберите валюту для зачисления:"
+    if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=admin_currency_kb("credit_amount", uid, back_to_user=True)
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=admin_currency_kb("credit_amount", uid, back_to_user=True))
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("admin_debit_user_"))
 async def admin_debit_user_from_info(call: CallbackQuery, state: FSMContext):
     uid = int(call.data.split("_")[3])
     await state.update_data(uid=uid, target_user_id=uid)
-    await call.message.edit_text(
+    text = (
         f"💸 *Списание средств у пользователя {uid}*\n\n"
         f"Балансы пользователя:\n"
         f"{await get_user_balances_text(uid)}\n\n"
-        f"Выберите валюту для списания:",
-        parse_mode="Markdown",
-        reply_markup=admin_currency_kb("debit_amount", uid, back_to_user=True)
+        f"Выберите валюту для списания:"
     )
+    if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=admin_currency_kb("debit_amount", uid, back_to_user=True)
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=admin_currency_kb("debit_amount", uid, back_to_user=True))
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("admin_premium_user_"))
@@ -4246,11 +4316,14 @@ async def admin_premium_user_from_info(call: CallbackQuery, state: FSMContext):
     
     user_id = int(call.data.split("_")[3])
     await state.update_data(target_user_id=user_id)
-    await call.message.edit_text(
-        f"👑 *Premium подписка для пользователя {user_id}*\n\nВыберите длительность:",
-        parse_mode="Markdown",
-        reply_markup=premium_days_kb(user_id, back_to_user=True)
-    )
+    text = f"👑 *Premium подписка для пользователя {user_id}*\n\nВыберите длительность:"
+    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=premium_days_kb(user_id, back_to_user=True)
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=premium_days_kb(user_id, back_to_user=True))
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("credit_amount_"))
@@ -4271,14 +4344,19 @@ async def credit_amount_currency_cb(call: CallbackQuery, state: FSMContext):
     back_uid = data.get('target_user_id', user_id)
     back_kb = admin_back_kb(back_uid)
     
-    await call.message.edit_text(
+    text = (
         f"💰 *Зачисление средств*\n\n"
         f"👤 Пользователь: `{user_id}`\n"
         f"💱 Валюта: {currency}\n\n"
-        f"💵 *Введите сумму для зачисления:*",
-        parse_mode="Markdown",
-        reply_markup=back_kb
+        f"💵 *Введите сумму для зачисления:*"
     )
+    if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=back_kb
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=back_kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("admin_back_user_"))
@@ -4310,15 +4388,20 @@ async def debit_amount_currency_cb(call: CallbackQuery, state: FSMContext):
     back_uid = data.get('target_user_id', user_id)
     back_kb = admin_back_kb(back_uid)
     
-    await call.message.edit_text(
+    text = (
         f"💸 *Списание средств*\n\n"
         f"👤 Пользователь: `{user_id}`\n"
         f"💱 Валюта: {currency}\n"
         f"💰 Текущий баланс: {db.get_balance(user_id, currency)} {currency}\n\n"
-        f"💵 *Введите сумму для списания:*",
-        parse_mode="Markdown",
-        reply_markup=back_kb
+        f"💵 *Введите сумму для списания:*"
     )
+    if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=back_kb
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=back_kb)
     await call.answer()
 
 @dp.message(StateFilter(AdminMailingState.title))
