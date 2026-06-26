@@ -197,6 +197,9 @@ def back_kb():
 def cancel_kb():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]])
 
+def admin_cancel_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data="admin_panel")]])
+
 def deal_kb(deal_id: int, role: str, status: str):
     kb = []
     if role == "buyer" and status == "awaiting":
@@ -1607,10 +1610,7 @@ async def send_admin_menu(msg: types.Message):
 @dp.callback_query(lambda c: c.data == "cancel")
 async def cancel_cb(call: CallbackQuery, state: FSMContext):
     await state.clear()
-    if call.from_user.id in ADMIN_IDS:
-        await admin_panel_cb(call)
-    else:
-        await menu_cb(call)
+    await menu_cb(call)
 
 @dp.callback_query(lambda c: c.data == "deposit")
 async def deposit_cb(call: CallbackQuery):
@@ -1932,7 +1932,8 @@ async def activate_promo_cb(call: CallbackQuery, state: FSMContext):
             reply_markup=cancel_kb()
         )
     else:
-        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=cancel_kb())
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="Markdown", reply_markup=cancel_kb())
 
 
 @dp.message(PromoActivateState.code)
@@ -3004,28 +3005,28 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
         if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
             await call.message.edit_media(
                 InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption="💰 *Введите ID пользователя для зачисления:*", parse_mode="Markdown"),
-                reply_markup=cancel_kb()
+                reply_markup=admin_cancel_kb()
             )
         else:
-            await call.message.edit_text("💰 *Введите ID пользователя для зачисления:*", parse_mode="Markdown", reply_markup=cancel_kb())
+            await call.message.edit_text("💰 *Введите ID пользователя для зачисления:*", parse_mode="Markdown", reply_markup=admin_cancel_kb())
         await state.set_state(AdminCreditState.uid)
     elif action == "debit":
         if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
             await call.message.edit_media(
                 InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption="💸 *Введите ID пользователя для списания:*", parse_mode="Markdown"),
-                reply_markup=cancel_kb()
+                reply_markup=admin_cancel_kb()
             )
         else:
-            await call.message.edit_text("💸 *Введите ID пользователя для списания:*", parse_mode="Markdown", reply_markup=cancel_kb())
+            await call.message.edit_text("💸 *Введите ID пользователя для списания:*", parse_mode="Markdown", reply_markup=admin_cancel_kb())
         await state.set_state(AdminDebitState.uid)
     elif action == "premium":
         if img_exists("PREMIUM ПОДПИСКА.jpg"):
             await call.message.edit_media(
                 InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption="👑 *Введите ID пользователя для выдачи Premium:*", parse_mode="Markdown"),
-                reply_markup=cancel_kb()
+                reply_markup=admin_cancel_kb()
             )
         else:
-            await call.message.edit_text("👑 *Введите ID пользователя для выдачи Premium:*", parse_mode="Markdown", reply_markup=cancel_kb())
+            await call.message.edit_text("👑 *Введите ID пользователя для выдачи Premium:*", parse_mode="Markdown", reply_markup=admin_cancel_kb())
         await state.set_state(AdminPremiumState.user_id)
     elif action == "premium_users":
         users = db.get_premium_users()
@@ -3338,7 +3339,7 @@ async def admin_credit_uid(msg: types.Message, state: FSMContext):
         user_id = int(msg.text)
         user = db.get_user(user_id)
         if not user:
-            await msg.answer("❌ Пользователь не найден", reply_markup=cancel_kb())
+            await msg.answer("❌ Пользователь не найден", reply_markup=admin_cancel_kb())
             return
         await state.update_data(user_id=user_id)
         
@@ -3350,14 +3351,14 @@ async def admin_credit_uid(msg: types.Message, state: FSMContext):
         )
         # Не очищаем state — пользователь должен выбрать валюту
     except ValueError:
-        await msg.answer("❌ Введите ID числом", reply_markup=cancel_kb())
+        await msg.answer("❌ Введите ID числом", reply_markup=admin_cancel_kb())
 
 @dp.message(StateFilter(AdminCreditState.amount))
 async def admin_credit_amount(msg: types.Message, state: FSMContext):
     try:
         amount = int(msg.text)
         if amount <= 0:
-            await msg.answer("❌ Сумма должна быть больше 0", reply_markup=cancel_kb())
+            await msg.answer("❌ Сумма должна быть больше 0", reply_markup=admin_cancel_kb())
             return
         data = await state.get_data()
         uid = data.get('user_id', data.get('uid', data.get('target_user_id', 0)))
@@ -3369,7 +3370,7 @@ async def admin_credit_amount(msg: types.Message, state: FSMContext):
         await msg.answer(f"✅ Зачислено {fmt_num(amount)} {currency} пользователю `{uid}`", parse_mode="Markdown")
         await send_admin_menu(msg)
     except ValueError:
-        await msg.answer("❌ Введите число", reply_markup=cancel_kb())
+        await msg.answer("❌ Введите число", reply_markup=admin_cancel_kb())
 
 @dp.message(StateFilter(AdminDebitState.uid))
 async def admin_debit_uid(msg: types.Message, state: FSMContext):
@@ -3377,7 +3378,7 @@ async def admin_debit_uid(msg: types.Message, state: FSMContext):
         user_id = int(msg.text)
         user = db.get_user(user_id)
         if not user:
-            await msg.answer("❌ Пользователь не найден", reply_markup=cancel_kb())
+            await msg.answer("❌ Пользователь не найден", reply_markup=admin_cancel_kb())
             return
         await state.update_data(user_id=user_id)
         
@@ -3391,21 +3392,21 @@ async def admin_debit_uid(msg: types.Message, state: FSMContext):
         )
         # Не очищаем state — пользователь должен выбрать валюту
     except ValueError:
-        await msg.answer("❌ Введите ID числом", reply_markup=cancel_kb())
+        await msg.answer("❌ Введите ID числом", reply_markup=admin_cancel_kb())
 
 @dp.message(StateFilter(AdminDebitState.amount))
 async def admin_debit_amount(msg: types.Message, state: FSMContext):
     try:
         amount = int(msg.text)
         if amount <= 0:
-            await msg.answer("❌ Сумма должна быть больше 0", reply_markup=cancel_kb())
+            await msg.answer("❌ Сумма должна быть больше 0", reply_markup=admin_cancel_kb())
             return
         data = await state.get_data()
         uid = data.get('user_id', data.get('uid', data.get('target_user_id', 0)))
         currency = data.get('currency', 'RUB')
         current_balance = db.get_balance(uid, currency)
         if amount > current_balance:
-            await msg.answer(f"❌ Недостаточно средств. Баланс: {fmt_num(current_balance)} {currency}", reply_markup=cancel_kb())
+            await msg.answer(f"❌ Недостаточно средств. Баланс: {fmt_num(current_balance)} {currency}", reply_markup=admin_cancel_kb())
             return
         db.update_balance(uid, currency, -amount)
         await msg.answer(f"✅ Списано {fmt_num(amount)} {currency} у {uid}")
@@ -3413,14 +3414,14 @@ async def admin_debit_amount(msg: types.Message, state: FSMContext):
         await bot.send_message(uid, f"💸 С вашего баланса списано {fmt_num(amount)} {currency}")
         await send_admin_menu(msg)
     except ValueError:
-        await msg.answer("❌ Введите число", reply_markup=cancel_kb())
+        await msg.answer("❌ Введите число", reply_markup=admin_cancel_kb())
 
 @dp.message(StateFilter(AdminPremiumState.user_id))
 async def admin_premium_user_id(msg: types.Message, state: FSMContext):
     try:
         user_id = int(msg.text)
         if not db.get_user(user_id):
-            await msg.answer("❌ Пользователь не найден", reply_markup=cancel_kb())
+            await msg.answer("❌ Пользователь не найден", reply_markup=admin_cancel_kb())
             return
         await state.update_data(user_id=user_id)
         
@@ -3430,7 +3431,7 @@ async def admin_premium_user_id(msg: types.Message, state: FSMContext):
             reply_markup=premium_days_kb(user_id)
         )
     except ValueError:
-        await msg.answer("❌ Введите ID числом", reply_markup=cancel_kb())
+        await msg.answer("❌ Введите ID числом", reply_markup=admin_cancel_kb())
 
 @dp.callback_query(lambda c: c.data.startswith("premium_days_"))
 async def premium_days_cb(call: CallbackQuery):
@@ -3519,6 +3520,7 @@ async def premium_back_user_cb(call: CallbackQuery, state: FSMContext):
         await call.answer("❌ Сессия истекла", show_alert=True)
         await admin_panel_cb(call)
         return
+    call.data = f"user_info_{uid}"
     await user_info_cb(call, state)
 
 @dp.callback_query(lambda c: c.data == "admin_promocodes")
