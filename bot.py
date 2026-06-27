@@ -1926,9 +1926,9 @@ async def activate_promo_cb(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await state.set_state(PromoActivateState.code)
     text = "🎫 *Активация промокода*\n\nВведите код промокода:\n\nНапример: `NOVIX2026`"
-    if img_exists("PROMOCODE.jpg"):
+    if img_exists("ПРОМОКОДЫ.jpg"):
         await call.message.edit_media(
-            InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+            InputMediaPhoto(media=FSInputFile(img_path("ПРОМОКОДЫ.jpg")), caption=text, parse_mode="Markdown"),
             reply_markup=cancel_kb()
         )
     else:
@@ -3540,7 +3540,7 @@ async def admin_promocodes_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="📜 История всех промокодов", callback_data="admin_promo_history")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ])
-    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
+    await edit_or_new(call, text, kb, "ПРОМОКОДЫ.jpg")
     await call.answer()
 
 
@@ -3563,7 +3563,7 @@ async def admin_active_promos_cb(call: CallbackQuery):
             [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await edit_or_new(call, text, kb, "PROMOCODE.jpg")
+        await edit_or_new(call, text, kb, "ПРОМОКОДЫ.jpg")
         await call.answer()
         return
     
@@ -3602,7 +3602,7 @@ async def admin_active_promos_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
     
-    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb), "PROMOCODE.jpg")
+    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb), "ПРОМОКОДЫ.jpg")
     await call.answer()
 
 
@@ -3671,7 +3671,7 @@ async def admin_promo_stats_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_active_promos")]
     ])
     
-    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
+    await edit_or_new(call, text, kb, "ПРОМОКОДЫ.jpg")
     await call.answer()
 
 
@@ -3693,7 +3693,7 @@ async def admin_used_promos_cb(call: CallbackQuery):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await edit_or_new(call, text, kb, "PROMOCODE.jpg")
+        await edit_or_new(call, text, kb, "ПРОМОКОДЫ.jpg")
         await call.answer()
         return
     
@@ -3718,7 +3718,7 @@ async def admin_used_promos_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
     ])
     
-    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
+    await edit_or_new(call, text, kb, "ПРОМОКОДЫ.jpg")
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_promo_history")
@@ -3737,7 +3737,7 @@ async def admin_promo_history_cb(call: CallbackQuery):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await edit_or_new(call, text, kb, "PROMOCODE.jpg")
+        await edit_or_new(call, text, kb, "ПРОМОКОДЫ.jpg")
         await call.answer()
         return
     
@@ -3760,7 +3760,7 @@ async def admin_promo_history_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
     
-    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb), "PROMOCODE.jpg")
+    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb), "ПРОМОКОДЫ.jpg")
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("admin_promo_history_detail_"))
@@ -3842,7 +3842,7 @@ async def admin_promo_history_detail_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promo_history")]
     ])
     
-    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
+    await edit_or_new(call, text, kb, "ПРОМОКОДЫ.jpg")
     await call.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_add_promo")
@@ -3948,9 +3948,9 @@ async def admin_promo_type_cb(call: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="📆 Количество дней", callback_data="promo_expires_days")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_add_promo")]
         ])
-        if img_exists("PROMOCODE.jpg"):
+        if img_exists("ПРОМОКОДЫ.jpg"):
             await call.message.edit_media(
-                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                InputMediaPhoto(media=FSInputFile(img_path("ПРОМОКОДЫ.jpg")), caption=text, parse_mode="Markdown"),
                 reply_markup=kb
             )
         else:
@@ -3966,9 +3966,9 @@ async def admin_promo_type_cb(call: CallbackQuery, state: FSMContext):
             f"• Только число\n"
             f"• Например: 10, 100, 1000"
         )
-        if img_exists("PROMOCODE.jpg"):
+        if img_exists("ПРОМОКОДЫ.jpg"):
             await call.message.edit_media(
-                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                InputMediaPhoto(media=FSInputFile(img_path("ПРОМОКОДЫ.jpg")), caption=text, parse_mode="Markdown"),
                 reply_markup=cancel_kb()
             )
         else:
@@ -4031,9 +4031,9 @@ async def admin_promo_expires_cb(call: CallbackQuery, state: FSMContext):
             f"`ДД.ММ.ГГГГ`\n\n"
             f"Например: `31.12.2026`"
         )
-        if img_exists("PROMOCODE.jpg"):
+        if img_exists("ПРОМОКОДЫ.jpg"):
             await call.message.edit_media(
-                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                InputMediaPhoto(media=FSInputFile(img_path("ПРОМОКОДЫ.jpg")), caption=text, parse_mode="Markdown"),
                 reply_markup=cancel_kb()
             )
         else:
@@ -4050,9 +4050,9 @@ async def admin_promo_expires_cb(call: CallbackQuery, state: FSMContext):
             f"• Только число\n"
             f"• Например: 30, 60, 365"
         )
-        if img_exists("PROMOCODE.jpg"):
+        if img_exists("ПРОМОКОДЫ.jpg"):
             await call.message.edit_media(
-                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                InputMediaPhoto(media=FSInputFile(img_path("ПРОМОКОДЫ.jpg")), caption=text, parse_mode="Markdown"),
                 reply_markup=cancel_kb()
             )
         else:
@@ -4168,9 +4168,9 @@ async def create_promo_final(event, state: FSMContext):
     
     # Отправляем финальное сообщение
     if hasattr(event, 'message'):
-        if img_exists("PROMOCODE.jpg"):
+        if img_exists("ПРОМОКОДЫ.jpg"):
             await event.message.edit_media(
-                InputMediaPhoto(media=FSInputFile(img_path("PROMOCODE.jpg")), caption=text, parse_mode="Markdown"),
+                InputMediaPhoto(media=FSInputFile(img_path("ПРОМОКОДЫ.jpg")), caption=text, parse_mode="Markdown"),
                 reply_markup=kb
             )
         else:
@@ -4251,7 +4251,7 @@ async def admin_delete_promo_list_cb(call: CallbackQuery):
             [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_add_promo")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")]
         ])
-        await edit_or_new(call, text, kb, "PROMOCODE.jpg")
+        await edit_or_new(call, text, kb, "ПРОМОКОДЫ.jpg")
         await call.answer()
         return
     
@@ -4268,7 +4268,7 @@ async def admin_delete_promo_list_cb(call: CallbackQuery):
     
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promocodes")])
     
-    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb), "PROMOCODE.jpg")
+    await edit_or_new(call, text, InlineKeyboardMarkup(inline_keyboard=kb), "ПРОМОКОДЫ.jpg")
     await call.answer()
 
 
@@ -4290,7 +4290,7 @@ async def admin_delete_promo_confirm_cb(call: CallbackQuery):
         [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_delete_promo_list")]
     ])
     
-    await edit_or_new(call, text, kb, "PROMOCODE.jpg")
+    await edit_or_new(call, text, kb, "ПРОМОКОДЫ.jpg")
     await call.answer()
 
 
