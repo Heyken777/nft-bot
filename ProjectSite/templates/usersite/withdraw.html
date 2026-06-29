@@ -1,0 +1,108 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Вывод средств{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/dashboard/">Главная</a>
+    <span class="separator">/</span>
+    <span class="current">Вывод</span>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card">
+            <h3>💸 Заявка на вывод</h3>
+            <p class="text-muted small mt-2">Доступно: <strong>{{ balances.balance_RUB|floatformat:2 }} ₽</strong></p>
+            <div class="form-group mt-3">
+                <label class="form-label">Сумма (₽)</label>
+                <input type="number" id="wdAmount" class="form-control" placeholder="Минимум 10 ₽" min="10" step="1">
+            </div>
+            <div class="form-group mt-3">
+                <label class="form-label">Тип кошелька</label>
+                <select id="wdWalletType" class="form-control">
+                    <option value="card">💳 Банковская карта</option>
+                    <option value="ton">📱 TON кошелёк</option>
+                    <option value="usdt">💎 USDT (TRC20)</option>
+                </select>
+            </div>
+            <div class="form-group mt-3">
+                <label class="form-label">Реквизиты</label>
+                <input type="text" id="wdAddress" class="form-control" placeholder="Номер карты / адрес кошелька">
+            </div>
+            <button class="btn btn-primary w-100 mt-4" onclick="submitWithdraw()">📤 Отправить заявку</button>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card">
+            <h3>📋 Мои заявки</h3>
+            <div class="table-responsive mt-3">
+                <table class="table-custom w-100">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Сумма</th>
+                            <th>Тип</th>
+                            <th>Реквизиты</th>
+                            <th>Статус</th>
+                            <th>Дата</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in requests %}
+                        <tr>
+                            <td>{{ r.id }}</td>
+                            <td>{{ r.amount|floatformat:2 }} ₽</td>
+                            <td>{{ r.wallet_type }}</td>
+                            <td>{{ r.wallet_address|truncatechars:20 }}</td>
+                            <td>
+                                <span class="badge {% if r.status == 'approved' %}badge-success{% elif r.status == 'rejected' %}badge-danger{% else %}badge-warning{% endif %}">
+                                    {{ r.status }}
+                                </span>
+                            </td>
+                            <td>{{ r.created_at|date:"d.m H:i" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="text-muted text-center py-3">Нет заявок</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function submitWithdraw() {
+    const amount = parseFloat(document.getElementById('wdAmount').value);
+    const wallet_type = document.getElementById('wdWalletType').value;
+    const wallet_address = document.getElementById('wdAddress').value.trim();
+    if (!amount || amount < 10) { showToast('Минимальная сумма 10 ₽', 'error'); return; }
+    if (!wallet_address) { showToast('Укажите реквизиты', 'error'); return; }
+    const csrf = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+    const res = await fetch('/usersite/api/withdraw/create/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({amount, wallet_type, wallet_address})
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast('Заявка создана!');
+        setTimeout(() => location.reload(), 1000);
+    } else {
+        showToast(data.error || 'Ошибка', 'error');
+    }
+}
+</script>
+
+<style>
+.card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:24px; }
+.table-custom { width:100%; border-collapse:collapse; }
+.table-custom th { text-align:left; padding:12px 8px; color:var(--text-muted); font-weight:500; font-size:12px; border-bottom:1px solid var(--border); }
+.table-custom td { padding:12px 8px; border-bottom:1px solid var(--border); color:var(--text-secondary); }
+.table-custom tr:last-child td { border-bottom:none; }
+.badge { display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge-success { background:rgba(0,255,100,.15); color:#00ff66; }
+.badge-warning { background:rgba(255,193,7,.15); color:#ffc107; }
+.badge-danger { background:rgba(255,71,87,.15); color:#ff4757; }
+</style>
+{% endblock %}

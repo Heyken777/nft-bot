@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load dict_filters %}
+{% block title %}Заявки на вывод{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <h1 class="gradient-text">💸 ЗАЯВКИ НА ВЫВОД <span class="small text-cyan-300/50">({{ total }})</span></h1>
+    <div class="d-flex gap-2">
+        <select class="form-control" style="width:auto;" onchange="window.location.href=this.value ? '/withdrawals/?status='+this.value : '/withdrawals/'">
+            <option value="">Все статусы</option>
+            <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>⏳ Ожидание</option>
+            <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>✅ Одобрено</option>
+            <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>❌ Отклонено</option>
+        </select>
+    </div>
+</div>
+
+<div class="stat-card">
+    <div class="table-responsive">
+        <table class="table-custom w-100">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Пользователь</th>
+                    <th>Сумма</th>
+                    <th>Тип</th>
+                    <th>Реквизиты</th>
+                    <th>Статус</th>
+                    <th>Дата</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in requests %}
+                <tr>
+                    <td>{{ r.id }}</td>
+                    <td><a href="/users/{{ r.user_id }}/">{{ r.user_id }}</a></td>
+                    <td>{{ r.amount|floatformat:2 }} ₽</td>
+                    <td>{{ r.wallet_type }}</td>
+                    <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;">{{ r.wallet_address }}</td>
+                    <td>
+                        <span style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;
+                        {% if r.status == 'pending' %}background:rgba(255,193,7,.15);color:#ffc107;
+                        {% elif r.status == 'approved' %}background:rgba(0,255,100,.15);color:#00ff66;
+                        {% else %}background:rgba(220,53,69,.15);color:#dc3545;{% endif %}">
+                            {{ r.status }}
+                        </span>
+                    </td>
+                    <td>{{ r.created_at|date:"d.m H:i" }}</td>
+                    <td>
+                        {% if r.status == 'pending' %}
+                        <button class="btn-sm" style="background:rgba(0,255,100,.15);color:#00ff66;" onclick="approve({{ r.id }})">✅</button>
+                        <button class="btn-sm" style="background:rgba(220,53,69,.15);color:#dc3545;" onclick="reject({{ r.id }})">❌</button>
+                        {% else %}
+                        <span class="text-cyan-300/50">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-center text-cyan-300 py-4">✨ Заявок нет ✨</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if total_pages > 1 %}
+<nav class="mt-4 d-flex justify-content-center">
+    <ul class="pagination" style="list-style:none;display:flex;gap:8px;padding:0;">
+        {% if page > 1 %}
+        <li><a class="btn-primary btn-sm" href="?page={{ page|add:-1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}">←</a></li>
+        {% endif %}
+        {% for p in total_pages|get_range %}
+        <li><a class="btn-sm {% if p == page %}btn-primary{% else %}" style="background:rgba(255,255,255,.1);{% endif %}" href="?page={{ p }}{% if status_filter %}&status={{ status_filter }}{% endif %}">{{ p }}</a></li>
+        {% endfor %}
+        {% if page < total_pages %}
+        <li><a class="btn-primary btn-sm" href="?page={{ page|add:1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}">→</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<script>
+async function approve(id) {
+    if(!confirm('Подтвердить выплату?')) return;
+    await fetch(`/api/withdrawals/${id}/approve/`, {method:'POST'});
+    location.reload();
+}
+async function reject(id) {
+    if(!confirm('Отклонить заявку?')) return;
+    await fetch(`/api/withdrawals/${id}/reject/`, {method:'POST'});
+    location.reload();
+}
+</script>
+{% endblock %}

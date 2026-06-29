@@ -92,6 +92,20 @@ def telegram_auth_view(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def notifications_mark_read(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE notifications SET is_read=1 WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
 def request_code_api(request):
     data = json.loads(request.body)
     telegram_id = int(data.get('telegram_id', 0))
@@ -119,6 +133,10 @@ def test_login(request):
     return redirect('/usersite/dashboard/')
 
 
+CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'STARS']
+CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': 'сум', 'TON': 'TON', 'USDT': 'USDT', 'STARS': '⭐'}
+EXCHANGE_RATES = {'RUB': 1, 'USD': 90, 'EUR': 98, 'BYN': 29, 'UAH': 2.4, 'KZT': 0.19, 'UZS': 0.0073, 'TON': 280, 'USDT': 90, 'STARS': 0.02}
+
 def dashboard_view(request):
     if not check_auth(request):
         return redirect('/usersite/login/')
@@ -129,6 +147,7 @@ def dashboard_view(request):
 
     cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
     user = cur.fetchone()
+    user_dict = dict(user) if user else {}
 
     cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 5", (user_id, user_id))
     deals = cur.fetchall()
@@ -145,22 +164,44 @@ def dashboard_view(request):
     cur.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (user_id,))
     referrals_count = cur.fetchone()[0]
 
+    # Все балансы
+    balances = []
+    total_rub = 0
+    for c in CURRENCIES:
+        b = float(user_dict.get(f'balance_{c}', 0))
+        sym = CURRENCY_SYMBOLS.get(c, c)
+        rate = EXCHANGE_RATES.get(c, 1)
+        total_rub += b * rate
+        balances.append({'currency': c, 'symbol': sym, 'amount': b, 'rub_value': b * rate})
+
+    # Активные сделки
+    cur.execute("SELECT COUNT(*) FROM deals WHERE (buyer=? OR seller=?) AND status='awaiting'", (user_id, user_id))
+    active_deals = cur.fetchone()[0]
+
+    # Тикеты
+    cur.execute("SELECT COUNT(*) FROM support_tickets WHERE user_id=?", (user_id,))
+    tickets_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM support_tickets WHERE user_id=? AND status='open'", (user_id,))
+    open_tickets = cur.fetchone()[0]
+
+    # Уведомления
     try:
-        cur.execute("SELECT * FROM news WHERE is_published=1 ORDER BY created_at DESC LIMIT 5")
-        news = cur.fetchall()
-    except sqlite3.OperationalError:
-        news = []
+        cur.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (user_id,))
+        notifications = cur.fetchall()
+    except:
+        notifications = []
 
     try:
-        cur.execute("SELECT * FROM promocodes WHERE active=1 AND (expires_at IS NULL OR expires_at > datetime('now')) AND used_count < max_uses ORDER BY created_at DESC LIMIT 3")
-        promocodes = cur.fetchall()
+        cur.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0", (user_id,))
+        unread_notifications = cur.fetchone()[0]
     except:
-        promocodes = []
+        unread_notifications = 0
 
     conn.close()
 
-    is_premium = user and user['is_premium']
-    premium_until = user and user['premium_until']
+    is_premium = user_dict.get('is_premium', 0)
+    premium_until = user_dict.get('premium_until', None)
     premium_active = False
     if is_premium and premium_until:
         try:
@@ -170,21 +211,24 @@ def dashboard_view(request):
     elif is_premium:
         premium_active = True
 
+    bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
+
     return render(request, 'usersite/dashboard.html', {
-        'user': dict(user) if user else None,
+        'user': user_dict,
         'deals': [dict(d) for d in deals],
+        'balances': balances,
+        'total_rub': total_rub,
         'purchases': purchases,
         'sales': sales,
         'total_earned': total_earned,
         'referrals_count': referrals_count,
         'premium_active': premium_active,
-        'news': [dict(n) for n in news],
-        'promocodes': [dict(p) for p in promocodes],
-        'subscriptions': [],
-        'subscriptions_count': 0,
-        'has_active_subscription': False,
-        'all_subscriptions_count': 0,
-        'tickets_count': 0,
+        'active_deals': active_deals,
+        'tickets_count': tickets_count,
+        'open_tickets': open_tickets,
+        'notifications': [dict(n) for n in notifications],
+        'unread_notifications': unread_notifications,
+        'bot_username': bot_username,
         'now': datetime.now(),
     })
 
@@ -222,15 +266,14 @@ def profile_view(request):
     elif is_premium:
         premium_active = True
 
+    bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
     return render(request, 'usersite/profile.html', {
         'user': dict(user) if user else None,
         'deals': [dict(d) for d in deals],
         'referrals': [dict(r) for r in referrals],
         'premium_active': premium_active,
         'days_left': days_left,
-        'subscriptions': [],
-        'operations': [],
-        'active_subscription': None,
+        'bot_username': bot_username,
         'now': datetime.now(),
     })
 
@@ -367,3 +410,53 @@ def change_ticket_status(request, ticket_id):
 @csrf_exempt
 def assign_ticket(request, ticket_id):
     return JsonResponse({'success': False, 'error': 'Use admin panel for assignment'})
+
+
+def withdraw_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM withdrawal_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (user_id,))
+    requests = cur.fetchall()
+    cur.execute("SELECT balance_RUB, balance_USD, balance_TON, balance_USDT FROM users WHERE user_id=?", (user_id,))
+    balances = cur.fetchone()
+    conn.close()
+    return render(request, 'usersite/withdraw.html', {
+        'requests': [dict(r) for r in requests],
+        'balances': dict(balances) if balances else {},
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def withdraw_create_api(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    data = json.loads(request.body)
+    user_id = request.session.get('user_id')
+    amount = float(data.get('amount', 0))
+    wallet_type = data.get('wallet_type', 'card')
+    wallet_address = data.get('wallet_address', '')
+
+    if amount <= 0:
+        return JsonResponse({'success': False, 'error': 'Сумма должна быть больше 0'})
+    if not wallet_address:
+        return JsonResponse({'success': False, 'error': 'Укажите реквизиты'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT balance_RUB FROM users WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    if not row or row[0] < amount:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Недостаточно средств'})
+
+    cur.execute(
+        "INSERT INTO withdrawal_requests (user_id, amount, wallet_type, wallet_address, status) VALUES (?, ?, ?, ?, 'pending')",
+        (user_id, amount, wallet_type, wallet_address)
+    )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Заявка создана, ожидайте подтверждения'})

@@ -1,163 +1,206 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block title %}Дашборд{% endblock %}
-
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <h1 class="gradient-text">🚀 КОСМИЧЕСКИЙ ДАШБОРД</h1>
-    <div class="text-cyan-300">
-        <i class="fas fa-user-astronaut me-2"></i> {{ admin_name|default:"Heyken" }}
-    </div>
+    <h1 class="gradient-text">🚀 ДАШБОРД</h1>
+    <div><i class="fas fa-user-astronaut me-2"></i> {{ admin_name|default:"Admin" }}</div>
 </div>
 
 <div class="row g-4 mb-4">
     <div class="col-md-3">
         <div class="stat-card text-center">
             <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-users me-1"></i> ПОЛЬЗОВАТЕЛИ</div>
-            <div class="stat-value">{{ total_users|default:"0" }}</div>
-            <div class="small text-cyan-300/50 mt-2">всего</div>
+            <div class="stat-value">{{ total_users }}</div>
+            <div class="small text-cyan-300/50 mt-2">+{{ new_users_week }} за неделю</div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stat-card text-center">
             <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-crown me-1"></i> PREMIUM</div>
-            <div class="stat-value">{{ active_subs|default:"0" }}</div>
-            <div class="small text-cyan-300/50 mt-2">активных подписок</div>
+            <div class="stat-value">{{ active_subs }}</div>
+            <div class="small text-cyan-300/50 mt-2">{{ conversion }}% от всех</div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stat-card text-center">
             <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-coins me-1"></i> ДОХОД</div>
-            <div class="stat-value">{{ revenue|floatformat:0|default:"0" }} ₽</div>
-            <div class="small text-cyan-300/50 mt-2">от завершённых сделок</div>
+            <div class="stat-value">{{ revenue|floatformat:0 }} ₽</div>
+            <div class="small text-cyan-300/50 mt-2">+{{ revenue_week|floatformat:0 }} ₽ за неделю</div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stat-card text-center">
-            <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-gavel me-1"></i> СПОРЫ</div>
-            <div class="stat-value">{{ tickets_open|default:"0" }}</div>
-            <div class="small text-cyan-300/50 mt-2">ожидают арбитража</div>
+            <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-handshake me-1"></i> СДЕЛКИ</div>
+            <div class="stat-value">{{ active_deals }}</div>
+            <div class="small text-cyan-300/50 mt-2">активных · {{ completed_deals }} завершено</div>
         </div>
     </div>
 </div>
 
 <div class="row g-4 mb-4">
-    <div class="col-md-6">
+    <div class="col-md-8">
         <div class="stat-card">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <div class="text-cyan-300"><i class="fas fa-chart-line me-2"></i> ДИНАМИКА ДОХОДА</div>
-                <div class="small text-cyan-300/50">за последние 7 дней</div>
+                <div class="text-cyan-300"><i class="fas fa-chart-line me-2"></i> ДОХОД ЗА НЕДЕЛЮ</div>
             </div>
-            <canvas id="revenueChart" height="200"></canvas>
+            <canvas id="revenueChart" height="180"></canvas>
         </div>
     </div>
-    <div class="col-md-6">
+    <div class="col-md-4">
         <div class="stat-card">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div class="text-cyan-300"><i class="fas fa-chart-bar me-2"></i> НОВЫЕ ПОЛЬЗОВАТЕЛИ</div>
-                <div class="small text-cyan-300/50">за последние 7 дней</div>
             </div>
-            <canvas id="usersChart" height="200"></canvas>
+            <canvas id="usersChart" height="180"></canvas>
         </div>
     </div>
 </div>
 
 <div class="row g-4">
-    <div class="col-md-4">
-        <div class="stat-card text-center">
-            <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-user-plus me-1"></i> НОВЫХ ЗА НЕДЕЛЮ</div>
-            <div class="stat-value">{{ new_users_week|default:"0" }}</div>
+    <div class="col-md-6">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="text-cyan-300"><i class="fas fa-users me-2"></i> ПОСЛЕДНИЕ ПОЛЬЗОВАТЕЛИ</div>
+                <a href="/users/" class="small text-cyan-300">Все →</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table-custom w-100">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Баланс</th>
+                            <th>Premium</th>
+                            <th>Дата</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in recent_users %}
+                        <tr>
+                            <td><a href="/users/{{ u.user_id }}/">{{ u.user_id }}</a></td>
+                            <td>@{{ u.username|default:"—" }}</td>
+                            <td>{{ u.balance_RUB|floatformat:2 }} ₽</td>
+                            <td>{% if u.is_premium %}⭐{% else %}—{% endif %}</td>
+                            <td>{{ u.created_at|date:"d.m H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="stat-card text-center">
-            <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-handshake me-1"></i> СДЕЛОК ЗА МЕСЯЦ</div>
-            <div class="stat-value">{{ payments_month|default:"0" }}</div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="stat-card text-center">
-            <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-percent me-1"></i> PREMIUM</div>
-            <div class="stat-value">{{ conversion|default:"0" }}%</div>
+    <div class="col-md-6">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="text-cyan-300"><i class="fas fa-handshake me-2"></i> ПОСЛЕДНИЕ СДЕЛКИ</div>
+                <a href="/deals/" class="small text-cyan-300">Все →</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table-custom w-100">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Товар</th>
+                            <th>Сумма</th>
+                            <th>Статус</th>
+                            <th>Дата</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in recent_deals %}
+                        <tr>
+                            <td>{{ d.id }}</td>
+                            <td>{{ d.item|truncatechars:20 }}</td>
+                            <td>{{ d.amount }} {{ d.currency }}</td>
+                            <td><span class="badge-{{ d.status }}">{{ d.status }}</span></td>
+                            <td>{{ d.created|date:"d.m H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
 
+<div class="row g-4 mt-2">
+    <div class="col-md-4">
+        <div class="stat-card text-center">
+            <div><i class="fas fa-hourglass-half me-2"></i> ОЖИДАЮТ ОПЛАТЫ</div>
+            <div class="stat-value">{{ awaiting_deals }}</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card text-center">
+            <div><i class="fas fa-check-circle me-2"></i> ЗАВЕРШЕНО</div>
+            <div class="stat-value">{{ completed_deals }}</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card text-center">
+            <div><i class="fas fa-times-circle me-2"></i> ОТМЕНЕНО</div>
+            <div class="stat-value">{{ cancelled_deals }}</div>
+        </div>
+    </div>
+</div>
+
+{% if pending_disputes %}
+<div class="stat-card mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="text-cyan-300"><i class="fas fa-gavel me-2"></i> АКТИВНЫЕ СПОРЫ ({{ pending_disputes|length }})</div>
+        <a href="/disputes/" class="small text-cyan-300">Все →</a>
+    </div>
+    {% for d in pending_disputes %}
+    <div class="d-flex justify-content-between align-items-center p-2" style="border-bottom:1px solid rgba(255,255,255,.05);">
+        <span>Спор #{{ d.id }} — Сделка #{{ d.deal_id }}</span>
+        <span class="small text-cyan-300/50">{{ d.created_at|date:"d.m H:i" }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 <script>
-    // Проверяем что элементы существуют
-    const revenueCanvas = document.getElementById('revenueChart');
-    const usersCanvas = document.getElementById('usersChart');
-    
-    const revLabels = {{ revenue_labels|safe|default:"[]" }};
-    const revData = {{ revenue_data|safe|default:"[]" }};
-    if (revenueCanvas && revLabels.length) {
-        new Chart(revenueCanvas, {
-            type: 'line',
-            data: {
-                labels: revLabels,
-                datasets: [{
-                    label: 'Доход (₽)',
-                    data: revData,
-                    borderColor: '#00a3ff',
-                    backgroundColor: 'rgba(0, 163, 255, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        labels: { color: '#e8ecf4' }
-                    }
-                },
-                scales: {
-                    y: {
-                        grid: { color: 'rgba(255,255,255,0.1)' },
-                        ticks: { color: '#e8ecf4' }
-                    },
-                    x: {
-                        ticks: { color: '#e8ecf4' }
-                    }
-                }
-            }
-        });
+new Chart(document.getElementById('revenueChart'), {
+    type: 'line',
+    data: {
+        labels: {{ revenue_labels|safe }},
+        datasets: [{
+            label: 'Доход (₽)',
+            data: {{ revenue_data|safe }},
+            borderColor: '#00a3ff',
+            backgroundColor: 'rgba(0,163,255,.1)',
+            tension: .4, fill: true
+        }]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { labels: { color: '#e8ecf4' } } },
+        scales: {
+            y: { grid: { color: 'rgba(255,255,255,.1)' }, ticks: { color: '#e8ecf4' } },
+            x: { ticks: { color: '#e8ecf4' } }
+        }
     }
-    
-    const usrLabels = {{ users_labels|safe|default:"[]" }};
-    const usrData = {{ users_data|safe|default:"[]" }};
-    if (usersCanvas && usrLabels.length) {
-        new Chart(usersCanvas, {
-            type: 'bar',
-            data: {
-                labels: usrLabels,
-                datasets: [{
-                    label: 'Новые пользователи',
-                    data: usrData,
-                    backgroundColor: 'rgba(0, 163, 255, 0.7)',
-                    borderRadius: 8
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        labels: { color: '#e8ecf4' }
-                    }
-                },
-                scales: {
-                    y: {
-                        grid: { color: 'rgba(255,255,255,0.1)' },
-                        ticks: { color: '#e8ecf4' }
-                    },
-                    x: {
-                        ticks: { color: '#e8ecf4' }
-                    }
-                }
-            }
-        });
+});
+new Chart(document.getElementById('usersChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ users_labels|safe }},
+        datasets: [{
+            label: 'Новые',
+            data: {{ users_data|safe }},
+            backgroundColor: 'rgba(0,163,255,.7)',
+            borderRadius: 8
+        }]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { labels: { color: '#e8ecf4' } } },
+        scales: {
+            y: { grid: { color: 'rgba(255,255,255,.1)' }, ticks: { color: '#e8ecf4' } },
+            x: { ticks: { color: '#e8ecf4' } }
+        }
     }
+});
 </script>
 {% endblock %}

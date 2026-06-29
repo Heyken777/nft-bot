@@ -71,7 +71,7 @@ def dashboard_view(request):
     premium_users = cur.fetchone()[0] or 0
     cur.execute("SELECT COUNT(*) FROM deals WHERE status NOT IN ('completed','cancelled')")
     active_deals = cur.fetchone()[0] or 0
-    cur.execute("SELECT COUNT(*) FROM disputes WHERE status='pending'")
+    cur.execute("SELECT COUNT(*) FROM deals WHERE status='disputed'")
     disputes = cur.fetchone()[0] or 0
     cur.execute("SELECT COUNT(*) FROM users WHERE created_at >= date('now', '-7 days')")
     new_users_week = cur.fetchone()[0] or 0
@@ -79,6 +79,56 @@ def dashboard_view(request):
     deals_month = cur.fetchone()[0] or 0
     cur.execute("SELECT COALESCE(SUM(amount), 0) FROM deals WHERE status='completed'")
     revenue = cur.fetchone()[0] or 0
+
+    cur.execute("SELECT COUNT(*) FROM deals WHERE status='completed'")
+    completed_deals = cur.fetchone()[0] or 0
+    cur.execute("SELECT COUNT(*) FROM deals WHERE status='cancelled'")
+    cancelled_deals = cur.fetchone()[0] or 0
+    cur.execute("SELECT COUNT(*) FROM deals WHERE status='awaiting'")
+    awaiting_deals = cur.fetchone()[0] or 0
+    cur.execute("SELECT COALESCE(SUM(amount), 0) FROM deals WHERE status='completed' AND created >= date('now', '-7 days')")
+    revenue_week = cur.fetchone()[0] or 0
+
+    # Данные для графиков за 7 дней
+    revenue_labels = []
+    revenue_data = []
+    users_labels = []
+    users_data = []
+    for i in range(6, -1, -1):
+        day = (datetime.now() - timedelta(days=i)).strftime('%d.%m')
+        cur.execute("SELECT COALESCE(SUM(amount), 0) FROM deals WHERE status='completed' AND date(created) = date('now', ?)", (f'-{i} days',))
+        rev = cur.fetchone()[0] or 0
+        revenue_labels.append(day)
+        revenue_data.append(rev)
+        cur.execute("SELECT COUNT(*) FROM users WHERE date(created_at) = date('now', ?)", (f'-{i} days',))
+        usr = cur.fetchone()[0] or 0
+        users_labels.append(day)
+        users_data.append(usr)
+
+    # Последние пользователи
+    cur.execute("SELECT user_id, username, balance_RUB, created_at, is_premium FROM users ORDER BY created_at DESC LIMIT 5")
+    recent_users = [dict(r) for r in cur.fetchall()]
+
+    # Последние сделки
+    cur.execute("SELECT * FROM deals ORDER BY created DESC LIMIT 5")
+    recent_deals = [dict(d) for d in cur.fetchall()]
+
+    # Активные споры
+    try:
+        cur.execute("SELECT * FROM disputes WHERE status='pending' ORDER BY created_at DESC LIMIT 5")
+        pending_disputes = [dict(d) for d in cur.fetchall()]
+    except:
+        pending_disputes = []
+
+    # Открытые тикеты
+    try:
+        cur.execute("SELECT COUNT(*) FROM support_tickets WHERE status='open'")
+        open_tickets = cur.fetchone()[0] or 0
+    except:
+        open_tickets = 0
+
+    conversion = round(premium_users / total_users * 100, 1) if total_users else 0
+
     conn.close()
     return render(request, 'dashboard.html', {
         'active_page': 'dashboard',
@@ -89,6 +139,20 @@ def dashboard_view(request):
         'tickets_open': disputes,
         'new_users_week': new_users_week,
         'payments_month': deals_month,
+        'active_deals': active_deals,
+        'completed_deals': completed_deals,
+        'cancelled_deals': cancelled_deals,
+        'awaiting_deals': awaiting_deals,
+        'revenue_week': revenue_week,
+        'revenue_labels': json.dumps(revenue_labels),
+        'revenue_data': json.dumps(revenue_data),
+        'users_labels': json.dumps(users_labels),
+        'users_data': json.dumps(users_data),
+        'conversion': conversion,
+        'recent_users': recent_users,
+        'recent_deals': recent_deals,
+        'pending_disputes': pending_disputes,
+        'open_tickets': open_tickets,
     })
 
 
@@ -96,12 +160,26 @@ def dashboard_view(request):
 def users_view(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT user_id, username,
-               balance_RUB AS balance, created_at, is_blocked,
-               is_premium
-        FROM users ORDER BY created_at DESC
-    """)
+    search = request.GET.get('q', '').strip()
+    page = int(request.GET.get('page', 1))
+    per_page = 50
+    offset = (page - 1) * per_page
+
+    if search:
+        cur.execute("""
+            SELECT user_id, username, balance_RUB AS balance, created_at, is_blocked, is_premium
+            FROM users WHERE username LIKE ? OR CAST(user_id AS TEXT) LIKE ?
+            ORDER BY created_at DESC LIMIT ? OFFSET ?
+        """, (f'%{search}%', f'%{search}%', per_page, offset))
+        cur.execute("SELECT COUNT(*) FROM users WHERE username LIKE ? OR CAST(user_id AS TEXT) LIKE ?",
+                    (f'%{search}%', f'%{search}%'))
+    else:
+        cur.execute("""
+            SELECT user_id, username, balance_RUB AS balance, created_at, is_blocked, is_premium
+            FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?
+        """, (per_page, offset))
+        cur.execute("SELECT COUNT(*) FROM users")
+    total = cur.fetchone()[0] or 0
     rows = cur.fetchall()
     conn.close()
     user_list = []
@@ -111,13 +189,14 @@ def users_view(request):
         display = d.get('username') or str(d['telegram_id'])
         d['display_name'] = display
         d['avatar_letter'] = display[0].upper()
-        d['total_referrals'] = 0
-        d['active_referrals'] = 0
-        d['subscription_count'] = 0
         user_list.append(d)
     return render(request, 'users.html', {
         'active_page': 'users',
         'users': user_list,
+        'search': search,
+        'page': page,
+        'total_pages': max(1, (total + per_page - 1) // per_page),
+        'total': total,
     })
 
 
@@ -188,6 +267,106 @@ def user_detail_view(request, telegram_id):
         'now': datetime.now(),
         'currencies': CURRENCY_LIST,
     })
+
+
+@login_required(login_url='/')
+def deals_list_view(request):
+    conn = get_db()
+    cur = conn.cursor()
+    search = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    page = int(request.GET.get('page', 1))
+    per_page = 50
+    offset = (page - 1) * per_page
+
+    conditions = []
+    params = []
+    if search:
+        conditions.append("(CAST(id AS TEXT) LIKE ? OR item LIKE ?)")
+        params.extend([f'%{search}%', f'%{search}%'])
+    if status_filter:
+        conditions.append("status=?")
+        params.append(status_filter)
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+    cur.execute(f"SELECT COUNT(*) FROM deals {where}", params)
+    total = cur.fetchone()[0] or 0
+
+    cur.execute(f"SELECT * FROM deals {where} ORDER BY created DESC LIMIT ? OFFSET ?", params + [per_page, offset])
+    deals = cur.fetchall()
+    conn.close()
+
+    statuses = ['awaiting', 'completed', 'cancelled', 'disputed']
+    return render(request, 'deals_list.html', {
+        'active_page': 'deals',
+        'deals': [dict(d) for d in deals],
+        'search': search,
+        'status_filter': status_filter,
+        'statuses': statuses,
+        'page': page,
+        'total_pages': max(1, (total + per_page - 1) // per_page),
+        'total': total,
+    })
+
+
+@login_required(login_url='/')
+def withdrawals_view(request):
+    conn = get_db()
+    cur = conn.cursor()
+    status_filter = request.GET.get('status', '').strip()
+    page = int(request.GET.get('page', 1))
+    per_page = 50
+    offset = (page - 1) * per_page
+    conditions = []
+    params = []
+    if status_filter:
+        conditions.append("status=?")
+        params.append(status_filter)
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    cur.execute(f"SELECT COUNT(*) FROM withdrawal_requests {where}", params)
+    total = cur.fetchone()[0] or 0
+    cur.execute(f"SELECT * FROM withdrawal_requests {where} ORDER BY created_at DESC LIMIT ? OFFSET ?", params + [per_page, offset])
+    requests = cur.fetchall()
+    conn.close()
+    return render(request, 'withdrawals.html', {
+        'active_page': 'withdrawals',
+        'requests': [dict(r) for r in requests],
+        'status_filter': status_filter,
+        'page': page,
+        'total_pages': max(1, (total + per_page - 1) // per_page),
+        'total': total,
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def withdrawal_approve_api(request, req_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM withdrawal_requests WHERE id=?", (req_id,))
+    req = cur.fetchone()
+    if not req:
+        conn.close()
+        return JsonResponse({'error': 'Not found'}, status=404)
+    cur.execute("UPDATE withdrawal_requests SET status='approved' WHERE id=?", (req_id,))
+    cur.execute("UPDATE users SET balance_RUB = balance_RUB - ? WHERE user_id=?", (req['amount'], req['user_id']))
+    conn.commit()
+    conn.close()
+    log_admin_action(request, f"withdrawal_approve", req['user_id'], req['amount'])
+    return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def withdrawal_reject_api(request, req_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE withdrawal_requests SET status='rejected' WHERE id=?", (req_id,))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
 
 
 @login_required(login_url='/')

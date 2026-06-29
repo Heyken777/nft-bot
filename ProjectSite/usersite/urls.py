@@ -16,6 +16,9 @@ urlpatterns = [
     path('tickets/<int:ticket_id>/', views.user_ticket_detail_view, name='user_ticket_detail'),
 
     # API тикетов
+    path('withdraw/', views.withdraw_view, name='withdraw'),
+    path('api/withdraw/create/', views.withdraw_create_api),
+    path('api/notifications/read/', views.notifications_mark_read, name='notifications_mark_read'),
     path('api/request-code/', views.request_code_api, name='request_code'),
     path('api/tickets/create/', views.create_ticket),
     path('api/tickets/<int:ticket_id>/reply/', views.add_ticket_reply),

@@ -13,6 +13,10 @@ urlpatterns = [
     path('promocodes/', views.promocodes_view, name='promocodes'),
     path('broadcast/', views.broadcast_view, name='broadcast'),
     path('disputes/', views.disputes_view, name='disputes'),
+    path('deals/', views.deals_list_view, name='deals_list'),
+    path('withdrawals/', views.withdrawals_view, name='withdrawals'),
+    path('api/withdrawals/<int:req_id>/approve/', views.withdrawal_approve_api),
+    path('api/withdrawals/<int:req_id>/reject/', views.withdrawal_reject_api),
     path('profile/', views.profile_view, name='profile'),
 
     # API: вход

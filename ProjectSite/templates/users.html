@@ -1,78 +1,67 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load dict_filters %}
 {% block title %}Пользователи{% endblock %}
-
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <h1 class="gradient-text">👨‍🚀 ПОЛЬЗОВАТЕЛИ</h1>
+    <h1 class="gradient-text">👨‍🚀 ПОЛЬЗОВАТЕЛИ <span class="small text-cyan-300/50">({{ total }})</span></h1>
     <div class="d-flex gap-2">
-        <div class="position-relative">
-            <i class="fas fa-search position-absolute" style="left: 15px; top: 12px; color: rgba(0,255,255,0.5);"></i>
-            <input type="text" id="searchInput" class="form-control ps-5" style="width: 250px;" placeholder="Поиск по ID или имени...">
-        </div>
-        <button class="btn-primary" onclick="exportUsers()"><i class="fas fa-download me-2"></i>Экспорт</button>
+        <form method="get" class="d-flex gap-2">
+            <div class="position-relative">
+                <i class="fas fa-search position-absolute" style="left:15px;top:12px;color:rgba(0,255,255,.5);"></i>
+                <input type="text" name="q" class="form-control ps-5" style="width:250px;" placeholder="Поиск по ID или имени..." value="{{ search }}">
+            </div>
+            <button class="btn-primary" type="submit"><i class="fas fa-search"></i></button>
+            {% if search %}<a href="/users/" class="btn-primary" style="background:rgba(255,255,255,.1);"><i class="fas fa-times"></i></a>{% endif %}
+        </form>
+        <button class="btn-primary" onclick="window.location.href='/api/users/export/'"><i class="fas fa-download me-2"></i>Экспорт</button>
     </div>
 </div>
 
 <div class="row" id="usersContainer">
     {% for user in users %}
-    <div class="col-lg-6 col-xl-4 user-card-item" data-id="{{ user.telegram_id }}" data-name="{{ user.username|default:''|lower }}">
+    <div class="col-lg-6 col-xl-4 user-card-item">
         <div class="user-card" onclick="window.location.href='/users/{{ user.telegram_id }}/'">
             <div class="d-flex align-items-center gap-3">
-                <div class="user-avatar" style="width:48px; height:48px; background:linear-gradient(135deg,#ff0066,#ff6600); border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:20px;">
+                <div class="user-avatar" style="width:48px;height:48px;background:linear-gradient(135deg,#ff0066,#ff6600);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;">
                     {{ user.avatar_letter|default:"?" }}
                 </div>
                 <div class="flex-grow-1">
                     <div class="fw-semibold">{{ user.username|default:"Без имени" }}</div>
                     <div class="text-cyan-300 small">ID: {{ user.telegram_id }}</div>
-                    <div class="text-cyan-300/50 small">Регистрация: {{ user.created_at|date:"d.m.Y"|default:"—" }}</div>
+                    <div class="text-cyan-300/50 small">{{ user.created_at|date:"d.m.Y"|default:"—" }}</div>
                 </div>
                 <div class="text-end">
                     <div><span class="badge-active">💰 {{ user.balance|floatformat:0 }} ₽</span></div>
                     <div class="small mt-1">
-                        {% if user.is_blocked %}
-                        <span class="badge-expired">🔒 Заблокирован</span>
-                        {% else %}
-                        <span class="badge-active">✅ Активен</span>
-                        {% endif %}
+                        {% if user.is_blocked %}<span class="badge-expired">🔒 Заблокирован</span>
+                        {% else %}<span class="badge-active">✅ Активен</span>{% endif %}
                     </div>
                 </div>
-            </div>
-            <div class="d-flex justify-content-between mt-3 pt-2 border-top border-cyan-300/10">
-                <div class="small"><i class="fas fa-users me-1"></i> Рефералов: {{ user.total_referrals|default:"0" }}</div>
-                <div class="small"><i class="fas fa-ticket-alt me-1"></i> {{ user.active_referrals|default:"0" }} активных</div>
-                <div class="small"><i class="fas fa-sync-alt me-1"></i> {{ user.subscription_count|default:"0" }} подписок</div>
             </div>
         </div>
     </div>
     {% empty %}
     <div class="col-12 text-center py-5">
-        <i class="fas fa-user-astronaut" style="font-size: 48px; color: rgba(0,255,255,0.3);"></i>
-        <p class="text-cyan-300/50 mt-3">✨ Пользователи не найдены ✨</p>
+        <i class="fas fa-user-astronaut" style="font-size:48px;color:rgba(0,255,255,.3);"></i>
+        <p class="text-cyan-300/50 mt-3">{% if search %}Ничего не найдено{% else %}Пользователей нет{% endif %}</p>
     </div>
     {% endfor %}
 </div>
 
-<script>
-    const searchInput = document.getElementById('searchInput');
-    const usersContainer = document.getElementById('usersContainer');
-    const allUsers = Array.from(document.querySelectorAll('.user-card-item'));
-    
-    searchInput.addEventListener('input', function() {
-        const query = this.value.toLowerCase().trim();
-        allUsers.forEach(user => {
-            const id = user.dataset.id;
-            const name = user.dataset.name;
-            if (id.includes(query) || name.includes(query)) {
-                user.style.display = '';
-            } else {
-                user.style.display = 'none';
-            }
-        });
-    });
-    
-    function exportUsers() {
-        window.location.href = '/api/users/export/';
-    }
-</script>
+{% if total_pages > 1 %}
+<nav class="mt-4 d-flex justify-content-center">
+    <ul class="pagination" style="list-style:none;display:flex;gap:8px;padding:0;">
+        {% if page > 1 %}
+        <li><a class="btn-primary btn-sm" href="?page={{ page|add:-1 }}{% if search %}&q={{ search }}{% endif %}">←</a></li>
+        {% endif %}
+        {% for p in total_pages|get_range %}
+        <li><a class="btn-sm {% if p == page %}btn-primary{% else %}" style="background:rgba(255,255,255,.1);{% endif %}" href="?page={{ p }}{% if search %}&q={{ search }}{% endif %}">{{ p }}</a></li>
+        {% endfor %}
+        {% if page < total_pages %}
+        <li><a class="btn-primary btn-sm" href="?page={{ page|add:1 }}{% if search %}&q={{ search }}{% endif %}">→</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
 {% endblock %}

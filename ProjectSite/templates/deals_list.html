@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load dict_filters %}
+{% block title %}Сделки{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <h1 class="gradient-text">📋 СДЕЛКИ <span class="small text-cyan-300/50">({{ total }})</span></h1>
+    <div class="d-flex gap-2">
+        <form method="get" class="d-flex gap-2 align-items-center">
+            <select name="status" class="form-control" style="width:auto;" onchange="this.form.submit()">
+                <option value="">Все статусы</option>
+                {% for s in statuses %}
+                <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+            <div class="position-relative">
+                <i class="fas fa-search position-absolute" style="left:15px;top:12px;color:rgba(0,255,255,.5);"></i>
+                <input type="text" name="q" class="form-control ps-5" style="width:200px;" placeholder="ID или товар..." value="{{ search }}">
+            </div>
+            <button class="btn-primary" type="submit"><i class="fas fa-search"></i></button>
+            {% if search or status_filter %}<a href="/deals/" class="btn-primary" style="background:rgba(255,255,255,.1);"><i class="fas fa-times"></i></a>{% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="stat-card">
+    <div class="table-responsive">
+        <table class="table-custom w-100">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Товар</th>
+                    <th>Сумма</th>
+                    <th>Валюта</th>
+                    <th>Продавец</th>
+                    <th>Покупатель</th>
+                    <th>Статус</th>
+                    <th>Дата</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in deals %}
+                <tr>
+                    <td>{{ d.id }}</td>
+                    <td>{{ d.item|truncatechars:30 }}</td>
+                    <td>{{ d.amount|floatformat:2 }}</td>
+                    <td>{{ d.currency }}</td>
+                    <td><a href="/users/{{ d.seller }}/">{{ d.seller }}</a></td>
+                    <td><a href="/users/{{ d.buyer }}/">{{ d.buyer }}</a></td>
+                    <td>
+                        <span class="badge-{{ d.status }}" style="
+                            {% if d.status == 'completed' %}background:rgba(0,255,100,.15);color:#00ff66;
+                            {% elif d.status == 'awaiting' %}background:rgba(255,193,7,.15);color:#ffc107;
+                            {% elif d.status == 'cancelled' %}background:rgba(220,53,69,.15);color:#dc3545;
+                            {% elif d.status == 'disputed' %}background:rgba(255,71,87,.15);color:#ff4757;
+                            {% else %}background:rgba(13,110,253,.15);color:var(--accent);{% endif %}
+                            padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;
+                        ">{{ d.status }}</span>
+                    </td>
+                    <td>{{ d.created|date:"d.m H:i" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-center text-cyan-300 py-4">✨ Сделок нет ✨</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if total_pages > 1 %}
+<nav class="mt-4 d-flex justify-content-center">
+    <ul class="pagination" style="list-style:none;display:flex;gap:8px;padding:0;">
+        {% if page > 1 %}
+        <li><a class="btn-primary btn-sm" href="?page={{ page|add:-1 }}{% if search %}&q={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">←</a></li>
+        {% endif %}
+        {% for p in total_pages|get_range %}
+        <li><a class="btn-sm {% if p == page %}btn-primary{% else %}" style="background:rgba(255,255,255,.1);{% endif %}" href="?page={{ p }}{% if search %}&q={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">{{ p }}</a></li>
+        {% endfor %}
+        {% if page < total_pages %}
+        <li><a class="btn-primary btn-sm" href="?page={{ page|add:1 }}{% if search %}&q={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">→</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
