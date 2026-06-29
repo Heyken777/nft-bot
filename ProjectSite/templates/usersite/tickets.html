@@ -1,0 +1,110 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Поддержка{% endblock %}
+
+{% block content %}
+<div>
+    <div class="breadcrumb">
+        <a href="/usersite/dashboard/">Главная</a>
+        <span class="separator">/</span>
+        <span class="current">Мои заявки</span>
+    </div>
+    
+    <div class="flex-between flex-wrap gap-2 mb-4">
+        <div>
+            <h1>Поддержка</h1>
+            <p class="text-muted">Ваши обращения в службу поддержки</p>
+        </div>
+        <a href="/usersite/tickets/new/" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Новая заявка
+        </a>
+    </div>
+    
+    <div class="warning-banner">
+        <i class="fas fa-clock me-2"></i>
+        <strong>Время ожидания ответа увеличено</strong> в связи с высокой загруженностью запросами. 
+        Приносим извинения за неудобства.
+    </div>
+    
+    <div class="ticket-filters">
+        <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" id="searchTickets" placeholder="Поиск по заявкам...">
+        </div>
+        <div class="flex gap-2">
+            <select id="statusFilter" class="filter-select" onchange="filterTickets()">
+                <option value="all">Все статусы</option>
+                <option value="open">Открытые</option>
+                <option value="in_progress">В работе</option>
+                <option value="closed">Закрытые</option>
+            </select>
+            <select id="sortFilter" class="filter-select" onchange="sortTickets()">
+                <option value="newest">Сначала новые</option>
+                <option value="oldest">Сначала старые</option>
+            </select>
+        </div>
+    </div>
+    
+    {% if tickets %}
+    <div class="ticket-list" id="ticketsList">
+        {% for ticket in tickets %}
+        <div class="ticket-item" data-status="{{ ticket.status }}" data-date="{{ ticket.created_at|date:'Y-m-d H:i:s' }}" onclick="window.location.href='/usersite/tickets/{{ ticket.id }}/'">
+            <div>
+                <div class="fw-500 mb-1">
+                    Заявка #{{ ticket.id }} — {{ ticket.created_at|date:"d.m.Y, H:i" }}
+                </div>
+                <div class="text-muted small">{{ ticket.subject|truncatechars:80 }}</div>
+            </div>
+            <div class="flex gap-2">
+                <span class="ticket-status ticket-status--{{ ticket.status }}">
+                    {% if ticket.status == 'open' %}Открыта
+                    {% elif ticket.status == 'in_progress' %}В работе
+                    {% else %}Закрыта{% endif %}
+                </span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card text-center py-5">
+        <i class="fas fa-inbox" style="font-size: 48px; color: var(--text-muted);"></i>
+        <p class="text-muted mt-3 mb-3">У вас пока нет обращений</p>
+        <a href="/usersite/tickets/new/" class="btn btn-primary">Создать первую заявку</a>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function filterTickets() {
+    const status = document.getElementById('statusFilter').value;
+    document.querySelectorAll('.ticket-item').forEach(el => {
+        if (status === 'all' || el.dataset.status === status) {
+            el.style.display = 'flex';
+        } else {
+            el.style.display = 'none';
+        }
+    });
+}
+
+function sortTickets() {
+    const sort = document.getElementById('sortFilter').value;
+    const container = document.getElementById('ticketsList');
+    const items = Array.from(document.querySelectorAll('.ticket-item'));
+    
+    items.sort((a, b) => {
+        const dateA = new Date(a.dataset.date);
+        const dateB = new Date(b.dataset.date);
+        return sort === 'newest' ? dateB - dateA : dateA - dateB;
+    });
+    
+    items.forEach(item => container.appendChild(item));
+}
+
+document.getElementById('searchTickets')?.addEventListener('input', function(e) {
+    const query = e.target.value.toLowerCase();
+    document.querySelectorAll('.ticket-item').forEach(el => {
+        el.style.display = el.innerText.toLowerCase().includes(query) ? 'flex' : 'none';
+    });
+});
+</script>
+{% endblock %}

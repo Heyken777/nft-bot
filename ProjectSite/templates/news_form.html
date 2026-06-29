@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ title }} | Heyken Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="gradient-text">{{ title }}</h1>
+    <a href="/news/" class="btn-primary">
+        <i class="fas fa-arrow-left me-2"></i>Назад к списку
+    </a>
+</div>
+
+<div class="stat-card">
+    <form method="POST">
+        {% csrf_token %}
+        
+        <div class="form-group mb-3">
+            <label class="form-label">Заголовок</label>
+            <input type="text" name="title" class="form-control" value="{{ news.title|default:'' }}" required>
+        </div>
+        
+        <div class="form-group mb-3">
+            <label class="form-label">Краткое описание</label>
+            <textarea name="short_description" class="form-control" rows="3" 
+    placeholder="Краткое описание новости..." 
+    style="color: white; background: rgba(0,10,25,0.8);">{{ news.short_description|default:'' }}</textarea>
+            <div class="small text-cyan-300/50 mt-1">Отображается в карточке на главной странице</div>
+        </div>
+        
+        <div class="form-group mb-3">
+            <label class="form-label">Описание</label>
+            <textarea name="description" class="form-control" rows="4">{{ news.description|default:'' }}</textarea>
+            <div class="small text-cyan-300/50 mt-1">Дополнительное описание (необязательно)</div>
+        </div>
+        
+        <div class="form-group mb-3">
+            <label class="form-label">Основной текст</label>
+            <textarea name="content" class="form-control" rows="10" required>{{ news.content|default:'' }}</textarea>
+            <div class="small text-cyan-300/50 mt-1">Полный текст новости</div>
+        </div>
+        
+        <div class="form-group mb-4">
+            <label class="form-checkbox">
+                <input type="checkbox" name="is_published" {% if news.is_published or not news %}checked{% endif %}>
+                <span class="ms-2">Опубликовано</span>
+            </label>
+        </div>
+        
+        <div class="d-flex gap-3">
+            <button type="submit" class="btn-primary">
+                <i class="fas fa-save me-2"></i>Сохранить
+            </button>
+            <a href="/news/" class="btn-outline">Отмена</a>
+        </div>
+    </form>
+</div>
+
+<style>
+.form-checkbox {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+.form-checkbox input {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 24px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 0.3s;
+}
+.btn-outline:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+</style>
+{% endblock %}

@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Тарифы{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <h1 class="gradient-text">🏷️ УПРАВЛЕНИЕ ТАРИФАМИ</h1>
+    <div class="d-flex gap-2">
+        <button class="btn-primary" onclick="syncWithBot()"><i class="fas fa-sync-alt me-2"></i>Синхронизировать с ботом</button>
+        <button class="btn-primary" onclick="openAddTariffModal()"><i class="fas fa-plus me-2"></i>Добавить тариф</button>
+    </div>
+</div>
+
+<div class="row g-4" id="tariffsContainer">
+    {% for tariff in tariffs %}
+    <div class="col-md-6 col-lg-4">
+        <div class="tariff-card" data-id="{{ tariff.id }}">
+            <h3 class="fw-bold mb-1">{{ tariff.name }}</h3>
+            <p class="text-cyan-300 small mb-2">Код: {{ tariff.code }}</p>
+            <p class="text-cyan-300/50 small mb-3">{{ tariff.description|default:"—" }}</p>
+            <div class="d-flex flex-wrap gap-2 mb-4">
+                {% for days, price in tariff.prices.items %}
+                <div class="price-item" data-days="{{ days }}">
+                    <span class="badge-active">{{ days }}дн: <span class="price-value">{{ price }}</span>₽</span>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn-primary btn-sm" onclick="editTariff({{ tariff.id }})"><i class="fas fa-edit"></i> Изменить</button>
+                <button class="btn-danger btn-sm" onclick="deleteTariff({{ tariff.id }})"><i class="fas fa-trash"></i> Удалить</button>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12 text-center py-5">
+        <i class="fas fa-tags" style="font-size:48px; color:rgba(0,255,255,0.3);"></i>
+        <p class="text-cyan-300/50 mt-3">✨ Тарифы не добавлены ✨</p>
+        <p class="small text-cyan-300/30">Нажмите "Синхронизировать с ботом" чтобы импортировать тарифы из бота</p>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Модальное окно -->
+<div id="tariffModal" class="modal-overlay" style="display:none;">
+    <div class="modal-window">
+        <h3 id="modalTitle">Добавить тариф</h3>
+        <input type="hidden" id="tariffId">
+        <input type="text" id="tName" class="form-control mb-2" placeholder="Название">
+        <input type="text" id="tCode" class="form-control mb-2" placeholder="Код">
+        <input type="text" id="tDesc" class="form-control mb-2" placeholder="Описание">
+        <div class="row g-2 mb-3">
+            <div class="col-6"><input type="number" id="t14" class="form-control" placeholder="14 дней"></div>
+            <div class="col-6"><input type="number" id="t30" class="form-control" placeholder="30 дней"></div>
+            <div class="col-6"><input type="number" id="t60" class="form-control" placeholder="60 дней"></div>
+            <div class="col-6"><input type="number" id="t90" class="form-control" placeholder="90 дней"></div>
+            <div class="col-6"><input type="number" id="t180" class="form-control" placeholder="180 дней"></div>
+            <div class="col-6"><input type="number" id="t360" class="form-control" placeholder="360 дней"></div>
+        </div>
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn-primary" onclick="closeTariffModal()" style="background:rgba(255,255,255,0.1);">Отмена</button>
+            <button class="btn-primary" onclick="saveTariff()">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function openAddTariffModal() {
+    document.getElementById('modalTitle').innerText = 'Добавить тариф';
+    document.getElementById('tariffId').value = '';
+    ['tName','tCode','tDesc','t14','t30','t60','t90','t180','t360'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('tariffModal').style.display = 'flex';
+}
+function closeTariffModal() { document.getElementById('tariffModal').style.display = 'none'; }
+
+async function saveTariff() {
+    const id = document.getElementById('tariffId').value;
+    const data = {
+        name: document.getElementById('tName').value,
+        code: document.getElementById('tCode').value,
+        description: document.getElementById('tDesc').value,
+        prices: {
+            '14': parseInt(document.getElementById('t14').value) || 0,
+            '30': parseInt(document.getElementById('t30').value) || 0,
+            '60': parseInt(document.getElementById('t60').value) || 0,
+            '90': parseInt(document.getElementById('t90').value) || 0,
+            '180': parseInt(document.getElementById('t180').value) || 0,
+            '360': parseInt(document.getElementById('t360').value) || 0,
+        }
+    };
+    
+    if(!data.name || !data.code) { showToast('Заполните название и код', 'error'); return; }
+    
+    const url = id ? `/api/tariffs/${id}/update/` : '/api/tariffs/create/';
+    await fetch(url, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)});
+    closeTariffModal();
+    showToast(id ? 'Тариф обновлён' : 'Тариф создан');
+    setTimeout(() => location.reload(), 1000);
+}
+
+async function editTariff(id) {
+    const res = await fetch(`/api/tariffs/${id}/`);
+    const t = await res.json();
+    
+    document.getElementById('modalTitle').innerText = 'Редактировать тариф';
+    document.getElementById('tariffId').value = id;
+    document.getElementById('tName').value = t.name;
+    document.getElementById('tCode').value = t.code;
+    document.getElementById('tDesc').value = t.description || '';
+    for(let [days, price] of Object.entries(t.prices)) {
+        let el = document.getElementById(`t${days}`);
+        if(el) el.value = price;
+    }
+    document.getElementById('tariffModal').style.display = 'flex';
+}
+
+async function deleteTariff(id) {
+    if(confirm('Удалить тариф? Это действие нельзя отменить.')) {
+        await fetch(`/api/tariffs/${id}/delete/`, {method: 'DELETE'});
+        showToast('Тариф удалён');
+        location.reload();
+    }
+}
+
+async function syncWithBot() {
+    showToast('🔄 Синхронизация с ботом...');
+    const res = await fetch('/api/tariffs/sync-with-bot/', {method: 'POST'});
+    const data = await res.json();
+    if(data.success) {
+        showToast(`✅ Синхронизировано ${data.count} тарифов`);
+        location.reload();
+    } else {
+        showToast('❌ Ошибка синхронизации', 'error');
+    }
+}
+</script>
+{% endblock %}

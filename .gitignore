@@ -16,3 +16,11 @@ Thumbs.db
 # Other
 cloudflared.msi
 currency_cache.json
+setup_admin.py
+
+# Django / Project
+media/
+staticfiles/
+*.db-journal
+*.db-wal
+*.db-shm

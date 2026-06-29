@@ -1,0 +1,578 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Тикет #{{ ticket.id }} | Heyken Support{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* FunPay стиль — приглушённые цвета */
+    .ticket-container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    
+    .ticket-header {
+        margin-bottom: 24px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border);
+    }
+    
+    .ticket-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+    
+    /* Приглушённые статусы */
+    .status-badge {
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 30px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    .status-open { background: #e3f2fd; color: #1565c0; }
+    .status-review { background: #fff3e0; color: #e65100; }
+    .status-considered { background: #e8f5e9; color: #2e7d32; }
+    .status-approved { background: #e3f2fd; color: #1565c0; }
+    .status-closed { background: #eceff1; color: #546e7a; }
+    
+    /* Основной контент */
+    .ticket-main {
+        display: flex;
+        gap: 32px;
+        flex-wrap: wrap;
+    }
+    
+    .ticket-chat {
+        flex: 2;
+        min-width: 300px;
+    }
+    
+    .ticket-sidebar {
+        flex: 1;
+        min-width: 280px;
+    }
+    
+    /* Информационная панель (FunPay стиль — светло-голубая) */
+    .info-panel {
+        background: #f5f8fc;
+        border: 1px solid #e1e8f0;
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 24px;
+    }
+    
+    .info-section {
+        border-bottom: 1px solid #e1e8f0;
+        padding: 16px 20px;
+    }
+    
+    .info-section:last-child {
+        border-bottom: none;
+    }
+    
+    .info-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: #5a6e85;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+    }
+    
+    .info-value {
+        font-size: 14px;
+        font-weight: 500;
+        color: #1a2a3a;
+        word-break: break-word;
+    }
+    
+    .info-value a {
+        color: #1565c0;
+        text-decoration: none;
+    }
+    
+    .info-value a:hover {
+        text-decoration: underline;
+    }
+    
+    /* Чат — сообщения пользователя белые, админа светло-голубые */
+    .chat-messages {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        height: 500px;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+    
+    .message {
+        max-width: 85%;
+        padding: 12px 16px;
+        border-radius: 12px;
+        position: relative;
+    }
+    
+    .message-user {
+        align-self: flex-end;
+        background: #ffffff;
+        color: #1a2a3a;
+        border: 1px solid #e1e8f0;
+        border-bottom-right-radius: 4px;
+    }
+    
+    .message-admin {
+        align-self: flex-start;
+        background: #e3f2fd;
+        color: #1a2a3a;
+        border: 1px solid #bbd4fb;
+        border-bottom-left-radius: 4px;
+    }
+    
+    .message-header {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+        font-size: 12px;
+    }
+    
+    .message-author {
+        font-weight: 600;
+    }
+    
+    .message-role {
+        font-size: 10px;
+        opacity: 0.7;
+    }
+    
+    .message-time {
+        font-size: 10px;
+        opacity: 0.5;
+    }
+    
+    .message-text {
+        font-size: 14px;
+        line-height: 1.5;
+        word-break: break-word;
+    }
+    
+    /* Форма ввода */
+    .chat-input-wrapper {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+    }
+    
+    .chat-input {
+        width: 100%;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-light);
+        border-radius: 10px;
+        padding: 12px 16px;
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 14px;
+        resize: vertical;
+    }
+    
+    .chat-input:focus {
+        outline: none;
+        border-color: var(--accent);
+    }
+    
+    .chat-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 12px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    
+    /* Кнопки */
+    .btn {
+        padding: 8px 20px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+    }
+    
+    .btn-primary {
+        background: var(--accent);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: var(--accent-hover);
+        transform: translateY(-1px);
+    }
+    
+    .btn-outline {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+    }
+    
+    .btn-outline:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+    }
+    
+    .btn-danger {
+        background: #ffebee;
+        color: #c62828;
+        border: 1px solid #ffcdd2;
+    }
+    
+    .btn-danger:hover {
+        background: #c62828;
+        color: white;
+    }
+    
+    .assign-save {
+        margin-top: 8px;
+        padding: 4px 12px;
+        font-size: 11px;
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+    
+    .ticket-status-select {
+        background: #ffffff;
+        border: 1px solid #e1e8f0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 13px;
+        width: 100%;
+        cursor: pointer;
+    }
+    
+    .toast-custom {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        background: var(--accent);
+        color: white;
+        padding: 12px 24px;
+        border-radius: 8px;
+        z-index: 1100;
+        animation: slideIn 0.3s ease;
+        cursor: pointer;
+    }
+    @keyframes slideIn {
+        from { transform: translateX(100px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ticket-container">
+    <!-- Заголовок -->
+    <div class="ticket-header">
+        <div class="ticket-title">
+            <div>
+                <h1 class="mb-1">Тикет #{{ ticket.id }}</h1>
+                <div class="d-flex gap-2 mt-2">
+                    <span class="status-badge status-{{ ticket.status }}">
+                        {% if ticket.status == 'open' %}Открыт
+                        {% elif ticket.status == 'review' %}На рассмотрении
+                        {% elif ticket.status == 'considered' %}Рассмотрено
+                        {% elif ticket.status == 'approved' %}Одобрено
+                        {% else %}Закрыт{% endif %}
+                    </span>
+                    <span class="category-badge">📝 {{ ticket.subject|default:"Другое" }}</span>
+                </div>
+            </div>
+            <div class="text-muted small">
+                Создан: {{ ticket.created_at|date:"d.m.Y, H:i" }}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Основной контент -->
+    <div class="ticket-main">
+        <!-- Чат (левая часть) -->
+        <div class="ticket-chat">
+            <div class="chat-messages" id="chatMessages">
+                {% for msg in messages %}
+                <div class="message message-{{ msg.sender_type }}">
+                    <div class="message-header">
+                        <span class="message-author">{{ msg.sender_name|default:"Пользователь" }}</span>
+                        <span class="message-role">
+                            {% if msg.sender_type == 'admin' %}
+                                {% if msg.sender_name == 'Heyken' %}👑 Владелец
+                                {% elif msg.sender_name == 'Support' %}🎧 Поддержка
+                                {% else %}🔧 Администратор{% endif %}
+                            {% else %}
+                                📱 Пользователь
+                            {% endif %}
+                        </span>
+                        <span class="message-time">{{ msg.created_at|date:"d.m.Y, H:i" }}</span>
+                    </div>
+                    <div class="message-text">{{ msg.message|safe|linebreaks }}</div>
+                </div>
+                {% empty %}
+                <div class="text-muted text-center py-4">Нет сообщений</div>
+                {% endfor %}
+            </div>
+            
+            <!-- Форма отправки -->
+            {% if ticket.status != 'closed' and ticket.status != 'approved' %}
+            <div class="chat-input-wrapper">
+                <textarea id="replyMessage" class="chat-input" rows="3" placeholder="Введите ваше сообщение..."></textarea>
+                <div class="chat-actions">
+                    <div class="text-muted small">
+                        <i class="fas fa-info-circle"></i> Enter — отправить, Shift+Enter — новая строка
+                    </div>
+                    <button class="btn btn-primary" id="sendReplyBtn" onclick="sendReply()">Отправить</button>
+                </div>
+            </div>
+            {% elif ticket.status == 'approved' %}
+            <div class="chat-input-wrapper text-center">
+                <i class="fas fa-check-circle" style="color: #2e7d32;"></i>
+                <span class="text-muted">Тикет одобрен и закрыт для дальнейших сообщений</span>
+            </div>
+            {% else %}
+            <div class="chat-input-wrapper text-center">
+                <i class="fas fa-lock"></i>
+                <span class="text-muted">Тикет закрыт. Нельзя отправить сообщение.</span>
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Правая панель (FunPay стиль — светло-голубая) -->
+        <div class="ticket-sidebar">
+            <!-- Статус -->
+            <div class="info-panel">
+                <div class="info-section">
+                    <div class="info-label">Статус</div>
+                    <div class="info-value">
+                        {% if is_admin %}
+                        <select id="statusSelect" class="ticket-status-select" onchange="saveStatus()">
+                            <option value="open" {% if ticket.status == 'open' %}selected{% endif %}>Открыт</option>
+                            <option value="in_progress" {% if ticket.status == 'in_progress' %}selected{% endif %}>В работе</option>
+                            <option value="closed" {% if ticket.status == 'closed' %}selected{% endif %}>Закрыт</option>
+                        </select>
+                        {% else %}
+                        <span class="status-badge status-{{ ticket.status }}">
+                            {% if ticket.status == 'open' %}Открыт
+                            {% elif ticket.status == 'in_progress' %}В работе
+                            {% else %}Закрыт{% endif %}
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Назначить ответственного -->
+                <div class="info-section">
+                    <div class="info-label">НАЗНАЧИТЬ ОТВЕТСТВЕННОГО</div>
+                    <div class="info-value">
+                        {% if is_admin %}
+                        <select id="assignSelect" class="ticket-status-select">
+                            <option value="">— Не назначен —</option>
+                            {% for admin in admins %}
+                            <option value="{{ admin.username }}" {% if ticket.assigned_to == admin.username %}selected{% endif %}>
+                                {{ admin.username }} ({{ admin.role }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <button class="assign-save" style="margin-top: 8px; width: 100%;" onclick="saveAssign()">Сохранить</button>
+                        {% else %}
+                        <div class="info-value">{{ ticket.assigned_to|default:"Не назначен" }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Создатель (кликабельный) -->
+                <div class="info-section">
+                    <div class="info-label">СОЗДАТЕЛЬ</div>
+                    <div class="info-value">
+                        <a href="/usersite/profile/{{ ticket.user_id }}/" target="_blank">
+                            {{ ticket.user_login|default:user.username|default:"Пользователь" }}
+                        </a>
+                    </div>
+                    <div class="info-label mt-2">ID ПОЛЬЗОВАТЕЛЯ</div>
+                    <div class="info-value"><small>{{ ticket.user_id }}</small></div>
+                </div>
+                
+                <!-- Детали заявки -->
+                <div class="info-section">
+                    <div class="info-label">ТЕМА ОБРАЩЕНИЯ</div>
+                    <div class="info-value">{{ ticket.subject|default:"Другое" }}</div>
+                    
+                    <div class="info-label mt-3">НОМЕР ЗАКАЗА</div>
+                    <div class="info-value">{{ ticket.order_number|default:"—" }}</div>
+                    
+                    <div class="info-label mt-3">ТИП ПОЛЬЗОВАТЕЛЯ</div>
+                    <div class="info-value">
+                        {% if ticket.user_type == 'buyer' %}
+                        <i class="fas fa-shopping-cart"></i> Покупатель
+                        {% elif ticket.user_type == 'seller' %}
+                        <i class="fas fa-store"></i> Продавец
+                        {% else %}
+                        —
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Действия -->
+            <div class="info-panel">
+                <div class="info-section">
+                    <div class="info-label">ДЕЙСТВИЯ</div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <a href="{% if is_admin %}/tickets/{% else %}/usersite/tickets/{% endif %}" class="btn btn-outline" style="text-align: center;">
+                            <i class="fas fa-arrow-left"></i> Вернуться к списку
+                        </a>
+                        {% if ticket.status != 'closed' and ticket.status != 'approved' %}
+                        <button class="btn btn-danger" onclick="closeTicket()">
+                            <i class="fas fa-times-circle"></i> Закрыть тикет
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const chatMessages = document.getElementById('chatMessages');
+    if (chatMessages) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    const replyInput = document.getElementById('replyMessage');
+    if (replyInput) {
+        replyInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendReply();
+            }
+        });
+    }
+    
+    async function sendReply() {
+        const message = document.getElementById('replyMessage').value.trim();
+        if (!message) {
+            showToast('Введите сообщение', 'error');
+            return;
+        }
+    
+        const btn = document.getElementById('sendReplyBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
+    
+        try {
+            const res = await fetch('/usersite/api/tickets/{{ ticket.id }}/reply/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ message: message })
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                showToast('Сообщение отправлено');
+                location.reload();
+            } else {
+                showToast('Ошибка: ' + (data.error || 'Неизвестная ошибка'), 'error');
+            }
+        } catch (err) {
+            showToast('Ошибка соединения', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Отправить';
+        }
+    }
+    
+    async function saveStatus() {
+        const statusSelect = document.getElementById('statusSelect');
+        if (!statusSelect) return;
+    
+        const newStatus = statusSelect.value;
+    
+        const res = await fetch(`/api/tickets/{{ ticket.id }}/change-status/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ status: newStatus })
+        });
+    
+        const data = await res.json();
+        if (data.success) {
+            showToast('Статус обновлён');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast('Ошибка обновления статуса', 'error');
+        }
+    }
+    
+    async function saveAssign() {
+        const assignedTo = document.getElementById('assignSelect').value;
+        const res = await fetch('/usersite/api/tickets/{{ ticket.id }}/assign/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ assigned_to: assignedTo })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Ответственный назначен');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast('Ошибка', 'error');
+        }
+    }
+    
+    async function closeTicket() {
+        if (!confirm('Вы уверены, что хотите закрыть этот тикет?')) return;
+        
+        const res = await fetch('/usersite/api/tickets/{{ ticket.id }}/close/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('Тикет закрыт');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('Ошибка', 'error');
+        }
+    }
+    
+    function showToast(msg, type = 'success') {
+        const toast = document.createElement('div');
+        toast.className = 'toast-custom';
+        toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i> ${msg}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+</script>
+{% endblock %}

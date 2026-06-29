@@ -1,0 +1,284 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Мой профиль | Heyken{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="breadcrumb">
+        <a href="/usersite/dashboard/">Главная</a>
+        <span class="separator">/</span>
+        <span class="current">Профиль</span>
+    </div>
+
+    <div class="row g-4">
+        <!-- Левая колонка - Основная информация -->
+        <div class="col-lg-4">
+            <div class="card text-center">
+                <div class="profile-avatar">
+                    {% if user.avatar %}
+                    <img src="{{ user.avatar }}" alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+                    {% else %}
+                    {{ user.username|default:user.telegram_id|slice:":1"|upper }}
+                    {% endif %}
+                </div>
+                
+                <h3 class="mt-3">{{ user.username|default:"Пользователь" }}</h3>
+                
+                <div class="mt-3">
+                    <div class="info-row">
+                        <span class="info-label">Telegram ID</span>
+                        <span class="info-value">{{ user.telegram_id }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Telegram</span>
+                        <span class="info-value">@{{ user.username|default:"—" }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Дата регистрации</span>
+                        <span class="info-value">{{ user.created_at|date:"d.m.Y"|default:"—" }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Реферальная ссылка -->
+            <div class="card mt-4">
+                <h4><i class="fas fa-users"></i> Реферальная программа</h4>
+                <div class="referral-stats mt-2">
+                    <div class="info-row">
+                        <span class="info-label">Приглашено друзей</span>
+                        <span class="info-value">{{ referrals|length }}</span>
+                    </div>
+                </div>
+                <div class="form-group mt-3">
+                    <label class="form-label">Ваша реферальная ссылка</label>
+                    <div class="input-group">
+                        <input type="text" id="refLink" class="form-control" value="https://t.me/HeykenVPNBot?start=ref{{ user.telegram_id }}" readonly>
+                        <button class="btn btn-primary" onclick="copyRefLink()">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Правая колонка - Подписки и история -->
+        <div class="col-lg-8">
+            <!-- Активная подписка -->
+            <div class="card">
+                <h4><i class="fas fa-sync-alt"></i> Текущая подписка</h4>
+                {% if active_subscription %}
+                <div class="subscription-info mt-3">
+                    <div class="info-row">
+                        <span class="info-label">Тариф</span>
+                        <span class="info-value">{{ active_subscription.tariff_name }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Устройств</span>
+                        <span class="info-value">{{ active_subscription.devices }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Действует до</span>
+                        <span class="info-value">{{ active_subscription.end_date|date:"d.m.Y" }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Осталось дней</span>
+                        <span class="info-value">{{ days_left }}</span>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-info-circle"></i> Нет активной подписки
+                </div>
+                <a href="/usersite/tariffs/" class="btn btn-primary mt-3">Выбрать тариф</a>
+                {% endif %}
+            </div>
+            
+            <!-- История подписок -->
+            <div class="card mt-4">
+                <h4><i class="fas fa-history"></i> История подписок</h4>
+                <div class="table-responsive mt-3">
+                    <table class="table-custom">
+                        <thead>
+                            <tr>
+                                <th>Тариф</th>
+                                <th>Устройств</th>
+                                <th>Цена</th>
+                                <th>Начало</th>
+                                <th>Окончание</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sub in subscriptions %}
+                            <tr>
+                                <td>{{ sub.tariff_name|default:"Пробный" }}</td>
+                                <td>{{ sub.devices|default:2 }}</td>
+                                <td>{{ sub.price_paid|default:"0" }} ₽</td>
+                                <td>{{ sub.start_date|date:"d.m.Y"|default:"—" }}</td>
+                                <td>{{ sub.end_date|date:"d.m.Y"|default:"—" }}</td>
+                                <td>
+                                    {% if sub.end_date > now %}
+                                    <span class="badge-active">Активна</span>
+                                    {% else %}
+                                    <span class="badge-expired">Истекла</span>
+                                    {% endif %}
+                                </td>
+                            </table>
+                            {% empty %}
+                            <tr><td colspan="6" class="text-muted text-center py-3">Нет подписок</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- История операций -->
+            <div class="card mt-4">
+                <h4><i class="fas fa-history"></i> История операций</h4>
+                <div class="table-responsive mt-3">
+                    <table class="table-custom">
+                        <thead>
+                            <tr>
+                                <th>Дата</th>
+                                <th>Тип</th>
+                                <th>Сумма</th>
+                                <th>Описание</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for op in operations %}
+                            <tr>
+                                <td>{{ op.date|date:"d.m.Y H:i"|default:"—" }}</td>
+                                <td>{{ op.type }}</td>
+                                <td class="{% if op.amount > 0 %}text-success{% else %}text-danger{% endif %}">{{ op.amount }} ₽</td>
+                                <td>{{ op.description|default:"—"|truncatechars:50 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-muted text-center py-3">Нет операций</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyRefLink() {
+    const input = document.getElementById('refLink');
+    input.select();
+    document.execCommand('copy');
+    showToast('Ссылка скопирована');
+}
+</script>
+
+<style>
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+}
+
+.profile-avatar {
+    width: 100px;
+    height: 100px;
+    background: linear-gradient(135deg, var(--accent), #4a90e2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    font-weight: 600;
+    color: white;
+    margin: 0 auto;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.info-value {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.input-group {
+    display: flex;
+    gap: 8px;
+}
+
+.input-group .form-control {
+    flex: 1;
+}
+
+.alert-info {
+    background: rgba(13, 110, 253, 0.1);
+    border: 1px solid rgba(13, 110, 253, 0.2);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--accent);
+}
+
+.table-custom {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table-custom th {
+    text-align: left;
+    padding: 12px 8px;
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.table-custom td {
+    padding: 12px 8px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+}
+
+.table-custom tr:last-child td {
+    border-bottom: none;
+}
+
+.badge-active {
+    background: rgba(0, 255, 100, 0.15);
+    color: #00ff66;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+}
+
+.badge-expired {
+    background: rgba(255, 71, 87, 0.15);
+    color: #ff4757;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+}
+
+.text-success {
+    color: #00ff66 !important;
+}
+
+.text-danger {
+    color: #ff4757 !important;
+}
+</style>
+{% endblock %}

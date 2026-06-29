@@ -1,0 +1,49 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Вход{% endblock %}
+
+{% block content %}
+<div class="hero" style="min-height: 70vh;">
+    <div class="hero__content" style="max-width: 450px; margin: 0 auto;">
+        <div class="card text-center">
+            <div class="profile-avatar" style="width: 80px; height: 80px; margin: 0 auto 24px;">
+                <i class="fas fa-shield-haltered"></i>
+            </div>
+            <h1>Добро пожаловать</h1>
+            <p class="text-muted mb-4">Войдите в личный кабинет через Telegram бота</p>
+            
+            <!-- Кнопка для перехода в бота -->
+            <a href="{{ bot_link }}" target="_blank" class="btn btn-primary mb-3" style="width: 100%; justify-content: center;">
+                <i class="fab fa-telegram me-2"></i> Перейти в бота
+            </a>
+            
+            <div class="text-muted small">
+                <i class="fas fa-info-circle"></i> Получите код у бота и введите ниже
+            </div>
+            
+            <div class="mt-4">
+                <label class="form-label">Или введите код из бота</label>
+                <div class="flex gap-2">
+                    <input type="text" id="authCode" class="form-control" placeholder="6-значный код" maxlength="6">
+                    <button class="btn btn-primary" onclick="loginWithCode()">Войти</button>
+                </div>
+            </div>
+            
+            <div class="mt-4">
+                <a href="/usersite/test-login/" class="text-muted small">Тестовый вход</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function loginWithCode() {
+    const code = document.getElementById('authCode').value.trim();
+    if (code.length === 6 && /^\d+$/.test(code)) {
+        window.location.href = `/usersite/telegram-auth/?code=${code}`;
+    } else {
+        showToast('Введите 6-значный код', 'error');
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,173 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Заявка #{{ partnership.id }} | Heyken{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chat-container {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+        margin-bottom: 24px;
+    }
+    .chat-messages {
+        max-height: 450px;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+    .message {
+        max-width: 80%;
+        padding: 12px 18px;
+        border-radius: 16px;
+    }
+    .message-user {
+        align-self: flex-end;
+        background: var(--accent);
+        color: white;
+        border-bottom-right-radius: 4px;
+    }
+    .message-admin {
+        align-self: flex-start;
+        background: var(--bg-tertiary);
+        border-left: 3px solid var(--accent);
+    }
+    .message-system {
+        align-self: center;
+        background: rgba(212, 175, 55, 0.1);
+        color: #d4af37;
+        text-align: center;
+        max-width: 70%;
+    }
+    .chat-input-area {
+        display: flex;
+        gap: 12px;
+        padding: 16px 20px;
+        border-top: 1px solid var(--border);
+    }
+    .info-panel {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+    }
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .info-row:last-child { border-bottom: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="breadcrumb">
+        <a href="/usersite/dashboard/">Главная</a>
+        <span class="separator">/</span>
+        <a href="/usersite/partnership/my/">Мои заявки</a>
+        <span class="separator">/</span>
+        <span class="current">Заявка #{{ partnership.id }}</span>
+    </div>
+    
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    {% for msg in messages %}
+                    <div class="message message-{{ msg.sender_type }}{% if msg.sender_name == 'Система' %} message-system{% endif %}">
+                        <div class="small opacity-75 mb-1">
+                            {{ msg.sender_name }} • {{ msg.created_at|date:"d.m.Y H:i" }}
+                        </div>
+                        <div>{{ msg.message|safe|linebreaks }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                {% if partnership.status != 'rejected' and partnership.status != 'approved' %}
+                <div class="chat-input-area">
+                    <textarea id="replyMessage" class="form-control" rows="3" placeholder="Введите сообщение..."></textarea>
+                    <button class="btn btn-primary" id="sendBtn">Отправить</button>
+                </div>
+                {% elif partnership.status == 'approved' %}
+                <div class="text-center py-3" style="border-top: 1px solid var(--border); color: #00ff66;">
+                    <i class="fas fa-check-circle"></i> Заявка одобрена. Спасибо за сотрудничество!
+                </div>
+                {% elif partnership.status == 'rejected' %}
+                <div class="text-center py-3" style="border-top: 1px solid var(--border); color: #ff4757;">
+                    <i class="fas fa-times-circle"></i> Заявка отклонена.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <div class="info-panel">
+                <h4>Информация</h4>
+                <div class="info-row">
+                    <span class="text-muted">Статус</span>
+                    <span>
+                        {% if partnership.status == 'pending' %}🟡 Ожидает ответа
+                        {% elif partnership.status == 'approved' %}🟢 Одобрено
+                        {% else %}🔴 Отказано{% endif %}
+                    </span>
+                </div>
+                <div class="info-row">
+                    <span class="text-muted">Тип</span>
+                    <span>
+                        {% if partnership.partnership_type == 'advertising' %}Реклама
+                        {% elif partnership.partnership_type == 'blogger' %}Блогер
+                        {% elif partnership.partnership_type == 'partnership' %}Партнёрство
+                        {% else %}Другое{% endif %}
+                    </span>
+                </div>
+                <div class="info-row">
+                    <span class="text-muted">Создана</span>
+                    <span>{{ partnership.created_at|date:"d.m.Y H:i" }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="text-muted">Обновлена</span>
+                    <span>{{ partnership.updated_at|date:"d.m.Y H:i" }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const chatMessages = document.getElementById('chatMessages');
+    if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    document.getElementById('sendBtn')?.addEventListener('click', async function() {
+        const message = document.getElementById('replyMessage').value.trim();
+        if (!message) { showToast('Введите сообщение', 'error'); return; }
+        
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        
+        const res = await fetch('/usersite/partnership/{{ partnership.id }}/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ message: message })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('Сообщение отправлено');
+            location.reload();
+        } else {
+            showToast('Ошибка', 'error');
+        }
+        
+        this.disabled = false;
+        this.innerHTML = 'Отправить';
+    });
+</script>
+{% endblock %}

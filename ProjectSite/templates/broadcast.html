@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Рассылка{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="gradient-text">📡 РАССЫЛКА</h1>
+</div>
+
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="stat-card">
+            <div class="mb-3">
+                <label class="text-cyan-300 small mb-2">Заголовок</label>
+                <input type="text" id="broadcastTitle" class="form-control" placeholder="Например: 🚀 Важная новость!">
+            </div>
+            <div class="mb-3">
+                <label class="text-cyan-300 small mb-2">Текст сообщения</label>
+                <textarea id="broadcastMessage" rows="6" class="form-control" placeholder="Введите текст рассылки... Поддерживается HTML"></textarea>
+            </div>
+            <div class="mb-3">
+                <label class="text-cyan-300 small mb-2">URL фото (необязательно)</label>
+                <input type="text" id="broadcastPhoto" class="form-control" placeholder="https://example.com/image.jpg">
+            </div>
+            <div class="d-flex gap-3">
+                <button class="btn-primary flex-grow-1" onclick="sendBroadcast()"><i class="fas fa-paper-plane me-2"></i>Отправить рассылку</button>
+                <button class="btn-primary" onclick="previewBroadcast()" style="background:rgba(255,255,255,0.1);"><i class="fas fa-eye me-2"></i>Предпросмотр</button>
+            </div>
+            <div id="previewContainer" class="mt-4" style="display:none;">
+                <div class="border-top border-cyan-300/20 pt-3 mt-2">
+                    <div class="text-cyan-300 small mb-2">📱 Предпросмотр сообщения:</div>
+                    <div id="previewContent" class="stat-card" style="background:rgba(0,0,0,0.3);"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function previewBroadcast() {
+    const title = document.getElementById('broadcastTitle').value;
+    const message = document.getElementById('broadcastMessage').value;
+    const container = document.getElementById('previewContainer');
+    const content = document.getElementById('previewContent');
+    
+    if(!title && !message) { showToast('Введите заголовок или текст', 'error'); return; }
+    
+    content.innerHTML = `<b>${title}</b><br><br>${message.replace(/\n/g,'<br>')}<br><br><span style="font-size:11px; opacity:0.5;">📱 Сообщение отправится через Telegram бота</span>`;
+    container.style.display = 'block';
+}
+
+async function sendBroadcast() {
+    const title = document.getElementById('broadcastTitle').value;
+    const message = document.getElementById('broadcastMessage').value;
+    const photo_url = document.getElementById('broadcastPhoto').value;
+    
+    if(!title && !message) { showToast('Введите заголовок или текст', 'error'); return; }
+    
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Отправка...';
+    
+    const res = await fetch('/api/broadcast/send/', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({title, message, photo_url})
+    });
+    const data = await res.json();
+    
+    if(data.success) {
+        showToast(`✅ Рассылка отправлена ${data.sent} пользователям`);
+        document.getElementById('broadcastTitle').value = '';
+        document.getElementById('broadcastMessage').value = '';
+        document.getElementById('broadcastPhoto').value = '';
+        document.getElementById('previewContainer').style.display = 'none';
+    } else {
+        showToast('❌ Ошибка отправки', 'error');
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Отправить рассылку';
+}
+</script>
+{% endblock %}

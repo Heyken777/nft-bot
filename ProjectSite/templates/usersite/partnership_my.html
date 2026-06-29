@@ -1,0 +1,59 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Мои заявки | Heyken{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="breadcrumb">
+        <a href="/usersite/dashboard/">Главная</a>
+        <span class="separator">/</span>
+        <span class="current">Мои заявки</span>
+    </div>
+    
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h1>Мои заявки</h1>
+            <p class="text-muted">Статус ваших обращений по сотрудничеству</p>
+        </div>
+        <a href="/usersite/partnership/" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Новая заявка
+        </a>
+    </div>
+    
+    {% if partnerships %}
+    <div class="ticket-list">
+        {% for p in partnerships %}
+        <div class="ticket-item" onclick="window.location.href='/usersite/partnership/{{ p.id }}/'">
+            <div>
+                <div class="fw-500 mb-1">
+                    Заявка #{{ p.id }} — {{ p.created_at|date:"d.m.Y, H:i" }}
+                </div>
+                <div class="text-muted small">{{ p.full_name }} • 
+                    {% if p.partnership_type == 'advertising' %}Реклама
+                    {% elif p.partnership_type == 'blogger' %}Блогер
+                    {% elif p.partnership_type == 'partnership' %}Партнёрство
+                    {% else %}Другое{% endif %}
+                </div>
+            </div>
+            <div class="d-flex gap-2 align-center">
+                <span class="ticket-status 
+                    {% if p.status == 'pending' %}ticket-status--progress
+                    {% elif p.status == 'approved' %}ticket-status--open
+                    {% else %}ticket-status--closed{% endif %}">
+                    {% if p.status == 'pending' %}🟡 Ожидает ответа
+                    {% elif p.status == 'approved' %}🟢 Одобрено
+                    {% else %}🔴 Отказано{% endif %}
+                </span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card text-center py-5">
+        <i class="fas fa-handshake" style="font-size: 48px; color: var(--text-muted);"></i>
+        <p class="text-muted mt-3 mb-3">У вас пока нет заявок на сотрудничество</p>
+        <a href="/usersite/partnership/" class="btn btn-primary">Создать заявку</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

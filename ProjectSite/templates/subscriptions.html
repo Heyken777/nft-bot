@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Подписки{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <h1 class="gradient-text">🔄 АКТИВНЫЕ ПОДПИСКИ</h1>
+    <div class="d-flex gap-2">
+        <div class="position-relative">
+            <i class="fas fa-search position-absolute" style="left: 15px; top: 12px; color: rgba(0,255,255,0.5);"></i>
+            <input type="text" id="searchInput" class="form-control ps-5" style="width: 250px;" placeholder="Поиск по ID пользователя...">
+        </div>
+        <button class="btn-primary" onclick="exportSubscriptions()"><i class="fas fa-download me-2"></i>Экспорт</button>
+    </div>
+</div>
+
+<div class="stat-card">
+    <div class="table-responsive">
+        <table class="table-custom w-100" id="subscriptionsTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Пользователь</th>
+                    <th>Тариф</th>
+                    <th>Устройств</th>
+                    <th>Цена</th>
+                    <th>Начало</th>
+                    <th>Окончание</th>
+                    <th>Осталось дней</th>
+                    <th>Статус</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sub in subscriptions %}
+                <tr>
+                    <td>#{{ sub.id }}</td>
+                    <td onclick="window.location.href='/users/{{ sub.user_id }}/'" style="cursor:pointer;">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="user-avatar" style="width:32px; height:32px; font-size:14px;">
+                                {{ sub.user__username|default:sub.user_id|slice:":1"|upper }}
+                            </div>
+                            <span>{{ sub.user__username|default:sub.user_id }}</span>
+                        </div>
+                    </td>
+                    <td>{{ sub.tariff_name|default:"Пробный" }}</td>
+                    <td>{{ sub.devices|default:2 }}</td>
+                    <td>{{ sub.price_paid|default:"0" }} ₽</td>
+                    <td>{{ sub.start_date|date:"d.m.Y"|default:"—" }}</td>
+                    <td>{{ sub.end_date|date:"d.m.Y"|default:"—" }}</td>
+                    <td>{% if sub.days_left > 0 %}{{ sub.days_left }}{% else %}0{% endif %}</td>
+                    <td>
+                        {% if sub.end_date > now %}
+                        <span class="badge-active">✅ Активна</span>
+                        {% else %}
+                        <span class="badge-expired">❌ Истекла</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <button class="btn-danger btn-sm" onclick="cancelSubscription({{ sub.id }})">Отменить</button>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="10" class="text-center text-cyan-300 py-4">✨ Активных подписок нет ✨</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const searchInput = document.getElementById('searchInput');
+    if(searchInput) {
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase();
+            const rows = document.querySelectorAll('#subscriptionsTable tbody tr');
+            rows.forEach(row => {
+                const text = row.innerText.toLowerCase();
+                row.style.display = text.includes(query) ? '' : 'none';
+            });
+        });
+    }
+    
+    function exportSubscriptions() {
+        window.location.href = '/api/subscriptions/export/';
+    }
+    
+    async function cancelSubscription(id) {
+        if(confirm('Отменить подписку?')) {
+            await fetch(`/api/subscriptions/${id}/cancel/`, {method: 'POST'});
+            showToast('Подписка отменена');
+            setTimeout(() => location.reload(), 1000);
+        }
+    }
+</script>
+{% endblock %}

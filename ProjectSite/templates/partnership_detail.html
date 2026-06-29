@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Заявка #{{ partnership.id }} | Heyken Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chat-messages {
+        max-height: 500px;
+        overflow-y: auto;
+        margin-bottom: 20px;
+        padding: 10px;
+    }
+    .message {
+        padding: 12px 16px;
+        border-radius: 12px;
+        margin-bottom: 12px;
+        max-width: 80%;
+    }
+    .message-admin {
+        background: rgba(0, 163, 255, 0.15);
+        border-left: 3px solid #00a3ff;
+        margin-left: auto;
+    }
+    .message-user {
+        background: rgba(255, 255, 255, 0.05);
+        margin-right: auto;
+    }
+    .message-system {
+        background: rgba(212, 175, 55, 0.1);
+        border-left: 3px solid #d4af37;
+        margin: 0 auto;
+        text-align: center;
+        max-width: 60%;
+    }
+    .info-panel {
+        background: rgba(10, 20, 40, 0.75);
+        border: 1px solid rgba(0, 255, 255, 0.2);
+        border-radius: 16px;
+        padding: 20px;
+    }
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(0, 255, 255, 0.1);
+    }
+    .info-row:last-child {
+        border-bottom: none;
+    }
+    .status-select {
+        background: rgba(0, 10, 20, 0.6);
+        border: 1px solid rgba(0, 255, 255, 0.3);
+        border-radius: 10px;
+        padding: 8px 12px;
+        color: #fff;
+        width: 100%;
+        cursor: pointer;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>Заявка на сотрудничество #{{ partnership.id }}</h2>
+                <a href="/news/partnership/" class="btn-primary btn-sm">← Назад</a>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages">
+                {% for msg in messages %}
+                <div class="message message-{{ msg.sender_type }}{% if msg.sender_name == 'Система' %} message-system{% endif %}">
+                    <div class="small text-muted mb-1">
+                        <strong>{{ msg.sender_name }}</strong> • {{ msg.created_at|date:"d.m.Y H:i" }}
+                    </div>
+                    <div>{{ msg.message|safe|linebreaks }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <textarea id="replyMessage" class="form-control" rows="3" placeholder="Введите ответ..."></textarea>
+            <div class="mt-3">
+                <button class="btn-primary" onclick="sendReply()">Отправить ответ</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="info-panel">
+            <h4 class="mb-3">Информация</h4>
+            
+            <div class="info-row">
+                <div class="info-label">Статус</div>
+                <div class="info-value">
+                    <select id="statusSelect" class="status-select" onchange="updateStatus()">
+                        <option value="pending" {% if partnership.status == 'pending' %}selected{% endif %}>🟡 Ожидает ответа</option>
+                        <option value="approved" {% if partnership.status == 'approved' %}selected{% endif %}>🟢 Одобрено</option>
+                        <option value="rejected" {% if partnership.status == 'rejected' %}selected{% endif %}>🔴 Отказано</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">ФИО</div>
+                <div class="info-value">{{ partnership.full_name }}</div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">Email</div>
+                <div class="info-value">{{ partnership.email }}</div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">Telegram</div>
+                <div class="info-value">@{{ partnership.telegram }}</div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">Тип сотрудничества</div>
+                <div class="info-value">
+                    {% if partnership.partnership_type == 'advertising' %}📢 Реклама
+                    {% elif partnership.partnership_type == 'blogger' %}🎥 Блогер
+                    {% elif partnership.partnership_type == 'partnership' %}🤝 Партнёрство
+                    {% else %}📝 Другое{% endif %}
+                </div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">Описание</div>
+                <div class="info-value">{{ partnership.description|linebreaks }}</div>
+            </div>
+            
+            {% if partnership.social_links %}
+            <div class="info-row">
+                <div class="info-label">Соцсети</div>
+                <div class="info-value">
+                    {% for link in partnership.social_links.split ',' %}
+                    <a href="{{ link }}" target="_blank" style="color: #00a3ff;">{{ link }}</a><br>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <div class="info-row">
+                <div class="info-label">Создана</div>
+                <div class="info-value">{{ partnership.created_at|date:"d.m.Y H:i" }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const chatMessages = document.getElementById('chatMessages');
+    if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    async function sendReply() {
+        const message = document.getElementById('replyMessage').value.trim();
+        if (!message) {
+            showToast('Введите сообщение', 'error');
+            return;
+        }
+        
+        const res = await fetch('/news/partnership/{{ partnership.id }}/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ message: message })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('Сообщение отправлено');
+            location.reload();
+        } else {
+            showToast('Ошибка', 'error');
+        }
+    }
+    
+    async function updateStatus() {
+        const status = document.getElementById('statusSelect').value;
+        
+        const res = await fetch('/news/partnership/{{ partnership.id }}/update-status/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ status: status })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('Статус обновлён');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast('Ошибка', 'error');
+        }
+    }
+</script>
+{% endblock %}

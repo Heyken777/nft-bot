@@ -1,0 +1,540 @@
+﻿{% extends 'base.html' %}
+{% load static %}
+{% block title %}Профиль: {{ admin_data.username|default:"Администратор" }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <div>
+        <h1 class="gradient-text" style="font-size:clamp(1.5rem, 5vw, 2.5rem);">👤 ПРОФИЛЬ АДМИНИСТРАТОРА</h1>
+        <p class="text-cyan-300 mt-2" style="opacity:0.7; font-size:clamp(0.8rem, 3vw, 1rem);">Управление личными данными и настройками аккаунта</p>
+    </div>
+    {% if not viewing_self %}
+    <a href="/admins/" class="btn-primary"><i class="fas fa-arrow-left me-2"></i>Назад к админам</a>
+    {% else %}
+    <a href="/dashboard/" class="btn-primary"><i class="fas fa-chart-line me-2"></i>На дашборд</a>
+    {% endif %}
+</div>
+
+{% if admin_data %}
+<div class="row g-4">
+    <!-- ЛЕВАЯ КОЛОНКА - АВАТАР И ОСНОВНАЯ ИНФОРМАЦИЯ -->
+    <div class="col-xl-4 col-lg-5 col-md-12">
+        <div class="stat-card text-center" style="position:relative; overflow:hidden;">
+            <div style="position:absolute; top:-50%; left:-50%; width:200%; height:200%; background:radial-gradient(circle, rgba(0,255,255,0.05) 0%, transparent 70%); pointer-events:none;"></div>
+            
+            <!-- АВАТАР -->
+            <div class="avatar-wrapper" style="position:relative; width:min(140px, 35vw); height:min(140px, 35vw); margin:0 auto;">
+                <div class="profile-avatar" id="avatarDisplay" style="width:100%; height:100%; background:linear-gradient(135deg, #ff0066, #ff6600); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:clamp(2rem, 8vw, 3.5rem); font-weight:800; box-shadow:0 0 30px rgba(255,0,102,0.5);">
+                    {% if admin_data.avatar and admin_data.avatar != '' %}
+                    <img src="{{ admin_data.avatar }}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">
+                    {% else %}
+                    {{ admin_data.username|slice:":1"|upper }}
+                    {% endif %}
+                </div>
+                {% if viewing_self %}
+                <div class="avatar-sticker" style="position:absolute; bottom:5px; right:5px; width:min(40px, 10vw); height:min(40px, 10vw); background:#ff0066; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid #0a0a1a; cursor:pointer; box-shadow:0 0 15px rgba(255,0,102,0.5);">
+                    <i class="fas fa-camera" style="font-size:clamp(0.8rem, 3vw, 1.2rem);"></i>
+                </div>
+                {% endif %}
+            </div>
+            {% if viewing_self %}
+            <input type="file" id="avatarInput" class="hidden-input" accept="image/*" style="display:none;">
+            {% endif %}
+            
+            <h2 class="mt-4 mb-2" style="font-size:clamp(1.2rem, 5vw, 1.8rem);">{{ admin_data.username }}</h2>
+            
+            <div class="role-badge" style="display:inline-block; background:rgba(255,0,102,0.15); padding:8px 24px; border-radius:30px; margin-bottom:16px;">
+                <i class="fas fa-shield-alt me-2"></i> {{ admin_data.role|default:"Admin" }}
+            </div>
+            
+            <div class="d-flex justify-content-center gap-3 mb-4 flex-wrap">
+                <div class="text-center">
+                    <div class="text-cyan-300 small"><i class="fas fa-id-card me-1"></i> ID</div>
+                    <div class="fw-bold text-white">#{{ admin_data.id|default:"—" }}</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-cyan-300 small"><i class="fas fa-calendar me-1"></i> Регистрация</div>
+                    <div class="fw-bold text-white">{{ admin_data.created_at|date:"d.m.Y"|default:"—" }}</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-cyan-300 small"><i class="fas fa-clock me-1"></i> Время</div>
+                    <div class="fw-bold text-white">{{ admin_data.created_at|date:"H:i"|default:"—" }}</div>
+                </div>
+            </div>
+            
+            {% if admin_data.custom_roles %}
+            <div class="mb-4">
+                <div class="text-cyan-300 small mb-2"><i class="fas fa-tags me-1"></i> Дополнительные роли</div>
+                <div class="d-flex flex-wrap justify-content-center gap-2">
+                    {% for role in admin_data.custom_roles %}
+                    <span class="custom-role-tag">{{ role }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <div class="row g-3 mt-2 pt-3 border-top border-cyan-300/10">
+                <div class="col-6">
+                    <div class="stat-card text-center p-3" style="background:rgba(0,0,0,0.3);">
+                        <div class="text-cyan-300 small"><i class="fas fa-ticket-alt me-1"></i> ТИКЕТОВ</div>
+                        <div class="stat-value text-white" style="font-size:clamp(1.5rem, 6vw, 2rem);">{{ tickets_assigned|default:"0" }}</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="stat-card text-center p-3" style="background:rgba(0,0,0,0.3);">
+                        <div class="text-cyan-300 small"><i class="fas fa-history me-1"></i> ДЕЙСТВИЙ</div>
+                        <div class="stat-value text-white" style="font-size:clamp(1.5rem, 6vw, 2rem);">{{ logs|length }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ПРАВАЯ КОЛОНКА - РЕДАКТИРОВАНИЕ И ЛОГИ -->
+    <div class="col-xl-8 col-lg-7 col-md-12">
+        <!-- Форма редактирования -->
+        <div class="stat-card mb-4">
+            <h3 class="mb-4" style="font-size:clamp(1.1rem, 4vw, 1.5rem);"><i class="fas fa-user-edit text-cyan-300 me-2"></i> Редактирование профиля</h3>
+            
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label"><i class="fas fa-user me-1"></i> Имя (логин)</label>
+                    <input type="text" id="editName" class="form-control" value="{{ admin_data.username }}" {% if not viewing_self and request.session.admin != 'Heyken' %}disabled{% endif %}>
+                    <div class="small text-cyan-300/50 mt-1">Используется для входа в админку</div>
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label"><i class="fab fa-telegram me-1"></i> Telegram @username</label>
+                    <input type="text" id="editTelegram" class="form-control" value="{{ admin_data.telegram|default:'' }}" placeholder="@username">
+                    <div class="small text-cyan-300/50 mt-1">Ваш Telegram для связи</div>
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label"><i class="fas fa-shield-alt me-1"></i> Роль</label>
+                    {% if viewing_self or request.session.admin == 'Heyken' %}
+                    <select id="editRole" class="form-control">
+                        <option value="Admin" {% if admin_data.role == 'Admin' %}selected{% endif %}>🔹 Admin</option>
+                        <option value="Moderator" {% if admin_data.role == 'Moderator' %}selected{% endif %}>🟢 Moderator</option>
+                        <option value="Support" {% if admin_data.role == 'Support' %}selected{% endif %}>🟡 Support</option>
+                        <option value="Analyst" {% if admin_data.role == 'Analyst' %}selected{% endif %}>🔵 Analyst</option>
+                        <option value="CEO" {% if admin_data.role == 'CEO' %}selected{% endif %}>👑 CEO / Владелец</option>
+                    </select>
+                    {% else %}
+                    <input type="text" class="form-control" value="{{ admin_data.role|default:'Admin' }}" disabled>
+                    {% endif %}
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label"><i class="fas fa-key me-1"></i> UUID ключ</label>
+                    <div class="input-group">
+                        <input type="password" id="passwordDisplay" class="form-control" value="{{ admin_data.password|default:'••••••••••••••••' }}" disabled style="font-family:monospace;">
+                        <button class="btn-primary" onclick="togglePassword()" style="width:50px;"><i class="fas fa-eye"></i></button>
+                    </div>
+                    <div class="small text-cyan-300/50 mt-1">Ваш пароль для входа в админку</div>
+                </div>
+            </div>
+            
+            <div class="mt-4">
+                <label class="form-label"><i class="fas fa-tags me-1"></i> Дополнительные роли</label>
+                <div class="role-input-container" style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <input type="text" id="newRoleInput" class="form-control flex-grow-1" placeholder="Новая роль (например: Модератор)">
+                    <button class="add-role-btn" onclick="addRole()"><i class="fas fa-plus"></i> Добавить</button>
+                </div>
+                <div id="rolesList" class="mt-3">
+                    {% for role in admin_data.custom_roles %}
+                    <span class="custom-role-tag">{{ role }} <span class="role-tag-remove" onclick="removeRole('{{ role }}')"><i class="fas fa-times-circle"></i></span></span>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="d-flex gap-3 mt-4 pt-3 border-top border-cyan-300/10 flex-wrap">
+                <button class="btn-primary flex-grow-1" onclick="saveProfile()"><i class="fas fa-save me-2"></i>Сохранить изменения</button>
+                {% if viewing_self %}
+                <button class="btn-primary" onclick="changePassword()" style="background:linear-gradient(135deg,#ff4757,#c0392b);"><i class="fas fa-key me-2"></i>Сменить пароль</button>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Статистика активности -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-4 col-sm-6">
+                <div class="stat-card text-center">
+                    <i class="fas fa-calendar-plus" style="font-size:2rem; color:#00a3ff;"></i>
+                    <div class="text-cyan-300 small mt-2">В системе</div>
+                    <div class="text-white fw-bold" style="font-size:clamp(1rem, 4vw, 1.2rem);">{{ admin_data.created_at|date:"d.m.Y"|default:"Новенький" }}</div>
+                </div>
+            </div>
+            <div class="col-md-4 col-sm-6">
+                <div class="stat-card text-center">
+                    <i class="fas fa-tasks" style="font-size:2rem; color:#00ff66;"></i>
+                    <div class="text-cyan-300 small mt-2">Закрыто тикетов</div>
+                    <div class="stat-value text-white" style="font-size:clamp(1.3rem, 5vw, 1.8rem);">{{ closed_tickets|default:"0" }}</div>
+                </div>
+            </div>
+            <div class="col-md-4 col-sm-12">
+                <div class="stat-card text-center">
+                    <i class="fas fa-star" style="font-size:2rem; color:#ffcc00;"></i>
+                    <div class="text-cyan-300 small mt-2">Рейтинг</div>
+                    <div class="stat-value" style="font-size:clamp(1.3rem, 5vw, 1.8rem); color:#ffcc00;">{{ rating|default:"0" }}/100</div>
+                    <div class="progress mt-2" style="height:6px; background:rgba(255,255,255,0.1); border-radius:3px;">
+                        <div class="progress-bar" style="width:{{ rating|default:0 }}%; background:linear-gradient(90deg,#ffcc00,#ffa500); border-radius:3px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Логи действий -->
+        <div class="stat-card">
+            <h3 class="mb-3" style="font-size:clamp(1rem, 4vw, 1.3rem);"><i class="fas fa-history text-cyan-300 me-2"></i> История действий</h3>
+            <div class="table-responsive" style="max-height:400px; overflow-y:auto;">
+                <table class="table-custom w-100">
+                    <thead>
+                        <tr>
+                            <th style="min-width:100px;"><i class="far fa-clock me-1"></i> Время</th>
+                            <th><i class="fas fa-info-circle me-1"></i> Действие</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td style="white-space:nowrap;">{{ log.timestamp|date:"d.m.Y H:i:s"|default:"—" }}</td>
+                            <td style="word-break:break-word;">{{ log.action|default:"—"|truncatechars:100 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-center text-cyan-300 py-5"><i class="fas fa-inbox me-2"></i>Действий не найдено</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const TOKEN = localStorage.getItem('admin_token');
+const ADMIN_NAME = "{{ request.session.admin|default:'Heyken' }}";
+const VIEWING_USER = "{{ admin_data.username|default:'' }}";
+const IS_SELF = {{ viewing_self|yesno:"true,false" }};
+
+let currentRoles = [];
+{% if admin_data.custom_roles %}
+    currentRoles = {{ admin_data.custom_roles|safe }};
+{% endif %}
+
+let passwordVisible = false;
+
+function togglePassword() {
+    const input = document.getElementById('passwordDisplay');
+    passwordVisible = !passwordVisible;
+    input.type = passwordVisible ? 'text' : 'password';
+}
+
+function updateRolesList() {
+    const container = document.getElementById('rolesList');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!currentRoles || !currentRoles.length) return;
+    currentRoles.forEach((role, index) => {
+        const span = document.createElement('span');
+        span.className = 'custom-role-tag';
+        span.innerHTML = `${role} <span class="role-tag-remove" onclick="removeRole('${role}')"><i class="fas fa-times-circle"></i></span>`;
+        container.appendChild(span);
+    });
+}
+
+function addRole() {
+    const input = document.getElementById('newRoleInput');
+    const role = input.value.trim();
+    if(role && !currentRoles.includes(role)) {
+        currentRoles.push(role);
+        updateRolesList();
+        input.value = '';
+        showToast('✅ Роль добавлена');
+    } else if(role && currentRoles.includes(role)) {
+        showToast('❌ Роль уже существует', 'error');
+    }
+}
+
+function removeRole(role) {
+    if(confirm(`Удалить роль "${role}"?`)) {
+        currentRoles = currentRoles.filter(r => r !== role);
+        updateRolesList();
+        showToast('✅ Роль удалена');
+    }
+}
+
+function showToast(msg, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = 'toast-custom';
+    toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i> ${msg}`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+async function saveProfile() {
+    const name = document.getElementById('editName').value;
+    const telegram = document.getElementById('editTelegram').value;
+    const role = document.getElementById('editRole')?.value;
+    
+    if(!name) {
+        showToast('❌ Имя не может быть пустым', 'error');
+        return;
+    }
+    
+    const data = { name, telegram, role, custom_roles: currentRoles };
+    const url = IS_SELF ? '/api/profile/update/' : `/api/admins/${VIEWING_USER}/update/`;
+    
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        
+        if(result.success) {
+            showToast('✅ Профиль сохранён');
+            if(data.name !== VIEWING_USER && IS_SELF) {
+                localStorage.setItem('admin_username', data.name);
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                setTimeout(() => window.location.reload(), 1500);
+            }
+        } else {
+            showToast('❌ Ошибка сохранения', 'error');
+        }
+    } catch(e) {
+        showToast('❌ Ошибка сети: ' + e.message, 'error');
+    }
+}
+
+async function changePassword() {
+    const newPassword = prompt('Введите новый UUID пароль (минимум 20 символов):');
+    if(newPassword && newPassword.length >= 20) {
+        const res = await fetch('/api/profile/change-password/', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({password: newPassword})
+        });
+        if(res.ok) {
+            showToast('✅ Пароль изменён');
+            document.getElementById('passwordDisplay').value = newPassword;
+        } else {
+            showToast('❌ Ошибка смены пароля', 'error');
+        }
+    } else if(newPassword && newPassword.length < 20) {
+        showToast('❌ Пароль слишком короткий (минимум 20 символов)', 'error');
+    }
+}
+
+// Загрузка аватара
+if(IS_SELF) {
+    document.querySelector('.avatar-sticker')?.addEventListener('click', function(e) {
+        e.stopPropagation();
+        document.getElementById('avatarInput').click();
+    });
+    
+    document.querySelector('.avatar-wrapper')?.addEventListener('click', function(e) {
+        if(e.target.classList.contains('avatar-sticker')) return;
+        document.getElementById('avatarInput').click();
+    });
+    
+    document.getElementById('avatarInput')?.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        
+        if(file.size > 5 * 1024 * 1024) {
+            showToast('❌ Файл слишком большой. Максимум 5MB', 'error');
+            return;
+        }
+        
+        if(!file.type.startsWith('image/')) {
+            showToast('❌ Пожалуйста, выберите изображение', 'error');
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = async function(ev) {
+            const avatarData = ev.target.result;
+            const avatarDiv = document.getElementById('avatarDisplay');
+            avatarDiv.innerHTML = `<img src="${avatarData}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+            
+            const res = await fetch('/api/profile/update/', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({avatar: avatarData})
+            });
+            const result = await res.json();
+            if(result.success) {
+                showToast('✅ Аватар обновлён');
+            } else {
+                showToast('❌ Ошибка загрузки аватара', 'error');
+                avatarDiv.innerHTML = '{{ admin_data.username|slice:":1"|upper }}';
+            }
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+updateRolesList();
+</script>
+
+<style>
+/* Адаптивные стили */
+@media (max-width: 768px) {
+    .stat-card { padding: 16px; }
+    .role-input-container { flex-direction: column; }
+    .role-input-container .add-role-btn { width: 100%; }
+    .btn-primary { padding: 8px 16px; font-size: 14px; }
+    .table-custom th, .table-custom td { padding: 8px 10px; font-size: 12px; }
+}
+
+@media (max-width: 576px) {
+    .d-flex.gap-3 { gap: 8px; }
+    .stat-value { font-size: 1.3rem; }
+    .custom-role-tag { font-size: 10px; padding: 4px 10px; }
+}
+
+.hidden-input { display: none; }
+.avatar-wrapper { position: relative; cursor: pointer; }
+.avatar-sticker { transition: transform 0.3s; }
+.avatar-sticker:hover { transform: scale(1.1); }
+.custom-role-tag {
+    background: rgba(0,255,255,0.12);
+    color: #00ffcc;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    margin: 4px;
+    display: inline-block;
+    border: 1px solid rgba(0,255,255,0.2);
+}
+.role-tag-remove {
+    cursor: pointer;
+    margin-left: 8px;
+    color: #ff4757;
+    transition: color 0.2s;
+}
+.role-tag-remove:hover { color: #ff6b81; }
+.role-input-container { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.add-role-btn {
+    background: rgba(0,255,255,0.1);
+    border: 1px solid rgba(0,255,255,0.2);
+    padding: 10px 24px;
+    border-radius: 14px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.add-role-btn:hover {
+    background: rgba(0,255,255,0.2);
+    transform: translateY(-2px);
+}
+.form-label {
+    color: #00ffcc !important;
+    font-size: 12px;
+    margin-bottom: 8px;
+    display: block;
+    letter-spacing: 0.5px;
+}
+.input-group { display: flex; gap: 8px; }
+.btn-primary {
+    background: linear-gradient(135deg, #00a3ff, #0066cc);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 12px;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 20px rgba(0,163,255,0.5);
+}
+.stat-card {
+    background: rgba(10, 18, 35, 0.75);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(0, 255, 255, 0.15);
+    border-radius: 24px;
+    padding: 24px;
+    transition: all 0.3s;
+}
+.stat-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(0, 255, 255, 0.4);
+    box-shadow: 0 10px 40px rgba(0, 255, 255, 0.1);
+}
+.stat-value {
+    font-size: 2rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #00a3ff, #00ffcc);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.table-custom {
+    background: rgba(10, 18, 35, 0.6);
+    border-radius: 20px;
+    overflow: hidden;
+    width: 100%;
+}
+.table-custom th {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 14px;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #00ffcc;
+}
+.table-custom td {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(0, 255, 255, 0.08);
+    color: #e2e8f0;
+}
+.table-custom tr:hover td { background: rgba(0, 255, 255, 0.05); }
+.toast-custom {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: linear-gradient(135deg, #00a3ff, #0066cc);
+    color: white;
+    padding: 14px 28px;
+    border-radius: 16px;
+    z-index: 1100;
+    animation: slideIn 0.3s ease;
+    cursor: pointer;
+    box-shadow: 0 0 25px rgba(0, 163, 255, 0.5);
+}
+@keyframes slideIn {
+    from { transform: translateX(100px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+.gradient-text {
+    background: linear-gradient(135deg, #ff0066, #ff6600, #ffcc00, #00ffcc, #0066ff);
+    background-size: 400% 400%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: rainbow 6s ease infinite;
+}
+@keyframes rainbow {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+.text-cyan-300 { color: #00ffcc !important; }
+.text-white { color: #ffffff !important; }
+.fw-bold { font-weight: 700; }
+.progress-bar { transition: width 0.5s ease; }
+</style>
+
+{% else %}
+<div class="stat-card text-center py-5">
+    <i class="fas fa-user-slash" style="font-size:64px; color:#ff4757;"></i>
+    <h3 class="mt-4">Администратор не найден</h3>
+    <p class="text-cyan-300/50 mt-2">Пользователь с таким именем не существует</p>
+    <a href="/admins/" class="btn-primary mt-3"><i class="fas fa-arrow-left me-2"></i>Вернуться к списку</a>
+</div>
+{% endif %}
+{% endblock %}

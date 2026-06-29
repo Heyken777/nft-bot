@@ -1,0 +1,83 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Сотрудничество | Heyken{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 800px;">
+    <div class="breadcrumb">
+        <a href="/usersite/dashboard/">Главная</a>
+        <span class="separator">/</span>
+        <a href="/usersite/partnership/my/">Мои заявки</a>
+        <span class="separator">/</span>
+        <span class="current">Новая заявка</span>
+    </div>
+    
+    <h1>Сотрудничество</h1>
+    <p class="text-muted mb-4">Заполните форму, и мы свяжемся с вами</p>
+    
+    <div class="card">
+        <form method="POST">
+            {% csrf_token %}
+            
+            <div class="form-group">
+                <label class="form-label required">ФИО</label>
+                <input type="text" name="full_name" class="form-control" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label required">Email</label>
+                <input type="email" name="email" class="form-control" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label required">Telegram @username</label>
+                <input type="text" name="telegram" class="form-control" placeholder="@username" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label required">Тип сотрудничества</label>
+                <select name="partnership_type" class="form-control" required>
+                    <option value="advertising">📢 Реклама</option>
+                    <option value="blogger">🎥 Блогер</option>
+                    <option value="partnership">🤝 Партнёрство</option>
+                    <option value="other">📝 Другое</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label required">Описание предложения</label>
+                <textarea name="description" class="form-control" rows="5" required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Ссылки на соцсети (через запятую)</label>
+                <input type="text" name="social_links" class="form-control" placeholder="https://instagram.com/..., https://t.me/...">
+                <div class="small text-muted mt-1">Укажите ссылки на ваши профили в соцсетях</div>
+            </div>
+            
+            <div class="d-flex gap-3 mt-4">
+                <button type="submit" class="btn btn-primary">Отправить заявку</button>
+                <a href="/usersite/partnership/my/" class="btn btn-outline">Отмена</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+}
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+}
+.btn-outline:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+</style>
+{% endblock %}

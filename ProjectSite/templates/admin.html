@@ -1,0 +1,614 @@
+﻿<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HeykenVPN Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root{--bg:#0a0e17;--card:rgba(15,20,30,0.95);--accent:#00a3ff;--text:#e8ecf4;--text-secondary:#8892a4;--border:rgba(255,255,255,0.08);--shadow:0 8px 32px rgba(0,0,0,0.3)}
+        [data-theme="light"]{--bg:#f4f6f9;--card:#fff;--text:#1e293b;--text-secondary:#64748b;--border:#e2e8f0;--shadow:0 8px 32px rgba(0,0,0,0.08)}
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;display:flex;min-height:100vh}
+        .sidebar{width:260px;background:var(--card);backdrop-filter:blur(24px);border-right:1px solid var(--border);padding:24px 16px;position:sticky;top:0;height:100vh;box-shadow:var(--shadow)}
+        .sidebar h2{font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,#00a3ff,#0066cc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:32px;padding:0 8px}
+        .sidebar a{color:var(--text-secondary);padding:12px 16px;border-radius:12px;text-decoration:none;margin-bottom:4px;display:flex;align-items:center;gap:12px;font-weight:500;font-size:0.9rem;transition:all 0.2s}
+        .sidebar a:hover,.sidebar a.active{background:rgba(0,163,255,0.15);color:var(--accent);transform:translateX(4px);box-shadow:0 4px 15px rgba(0,163,255,0.1)}
+        .main{flex:1;padding:32px 40px;overflow-y:auto}
+        .card-stat{background:var(--card);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:20px;padding:28px 24px;transition:all 0.3s;box-shadow:var(--shadow)}
+        .card-stat:hover{transform:translateY(-4px);border-color:rgba(0,163,255,0.3);box-shadow:0 12px 40px rgba(0,163,255,0.15)}
+        .stat-label{font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-secondary);margin-bottom:8px}
+        .stat-value{font-size:2.2rem;font-weight:800;background:linear-gradient(135deg,#00a3ff,#0066cc);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+        table{width:100%;border-collapse:collapse;background:var(--card);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+        th{text-align:left;padding:16px 20px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-secondary);border-bottom:1px solid var(--border);background:rgba(0,0,0,0.1)}
+        td{padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.03);transition:all 0.2s}
+        tr:hover td{background:rgba(0,163,255,0.08)}
+        .btn{padding:10px 20px;border-radius:10px;font-weight:600;font-size:0.85rem;transition:all 0.2s;border:none;cursor:pointer;color:#fff}
+        .btn-primary{background:linear-gradient(135deg,#00a3ff,#0066cc);box-shadow:0 4px 15px rgba(0,163,255,0.3)}
+        .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,163,255,0.5)}
+        .btn-danger{background:linear-gradient(135deg,#ff4757,#c0392b)}.btn-danger:hover{transform:translateY(-2px)}
+        .btn-sm{padding:6px 14px;font-size:0.75rem}
+        .form-control{width:100%;padding:12px 16px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:var(--text);margin-bottom:10px;transition:all 0.2s}
+        .form-control:focus{border-color:var(--accent);box-shadow:0 0 20px rgba(0,163,255,0.2);outline:none}
+        .badge-active{background:rgba(46,213,115,0.15);color:#2ed573;padding:4px 12px;border-radius:20px;font-size:0.75rem;font-weight:600}
+        .badge-expired{background:rgba(255,71,87,0.15);color:#ff4757;padding:4px 12px;border-radius:20px;font-size:0.75rem;font-weight:600}
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:1000;align-items:center;justify-content:center}
+        .modal.active{display:flex}
+        .modal-content{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+        .toast{position:fixed;bottom:20px;right:20px;padding:14px 24px;border-radius:12px;color:#fff;font-weight:500;z-index:2000;animation:slideIn 0.3s ease;background:var(--accent);box-shadow:0 8px 24px rgba(0,163,255,0.3)}
+        @keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <aside class="sidebar">
+        <h2>HeykenVPN</h2>
+        <a href="#" data-page="dashboard" class="active"><i class="fas fa-tachometer-alt"></i> Дашборд</a>
+        <a href="#" data-page="users"><i class="fas fa-users"></i> Пользователи</a>
+        <a href="#" data-page="subscriptions"><i class="fas fa-sync-alt"></i> Подписки</a>
+        <a href="#" data-page="tariffs"><i class="fas fa-tags"></i> Тарифы</a>
+        <a href="#" data-page="broadcast"><i class="fas fa-envelope"></i> Рассылка</a>
+        <a href="#" data-page="tickets"><i class="fas fa-ticket-alt"></i> Тикеты</a>
+        <a href="#" data-page="promocodes"><i class="fas fa-percent"></i> Промокоды</a>
+        <a href="#" data-page="analytics"><i class="fas fa-chart-bar"></i> Аналитика</a>
+        <a href="#" data-page="audit"><i class="fas fa-history"></i> Аудит</a>
+        <a href="#" data-page="admins"><i class="fas fa-user-shield"></i> Админы</a>
+        <a href="#" data-page="profile"><i class="fas fa-user-circle"></i> Профиль</a>
+        <a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Выйти</a>
+    </aside>
+    <main class="main" id="content"></main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const TOKEN = localStorage.getItem('admin_token');
+        const ADMIN = JSON.parse(localStorage.getItem('admin_data') || '{}');
+
+        async function api(url, method='GET', body=null) {
+            const opts = {method, headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`}};
+            if(body) opts.body = JSON.stringify(body);
+            const res = await fetch(url, opts);
+            if(res.status === 401) { logout(); return; }
+            return res.json();
+        }
+
+        function logout() {
+            localStorage.removeItem('admin_token');
+            localStorage.removeItem('admin_data');
+            window.location.href = '/login';
+        }
+
+        function showToast(msg) {
+            const t = document.createElement('div');
+            t.className = 'toast'; t.innerText = msg;
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+
+        function navigate(page) {
+            document.querySelectorAll('.sidebar a').forEach(a => a.classList.remove('active'));
+            document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
+            renderPage(page);
+        }
+
+        async function renderPage(page) {
+            const c = document.getElementById('content');
+            switch(page) {
+                case 'dashboard': await dashboard(c); break;
+                case 'users': await users(c); break;
+                case 'subscriptions': subscriptions(c); break;
+                case 'tariffs': await tariffs(c); break;
+                case 'broadcast': broadcast(c); break;
+                case 'tickets': await tickets(c); break;
+                case 'promocodes': await promocodes(c); break;
+                case 'analytics': analytics(c); break;
+                case 'audit': await audit(c); break;
+                case 'admins': await admins(c); break;
+                case 'profile': profile(c); break;
+            }
+        }
+
+        async function dashboard(c) {
+            const data = await api('/api/dashboard');
+            c.innerHTML = `<h1 class="mb-4">Дашборд</h1>
+                <div class="row g-3">
+                    <div class="col-md-3"><div class="card-stat"><div class="stat-label">Пользователей</div><div class="stat-value">${data.total_users}</div></div></div>
+                    <div class="col-md-3"><div class="card-stat"><div class="stat-label">Активных подписок</div><div class="stat-value">${data.active_subs}</div></div></div>
+                    <div class="col-md-3"><div class="card-stat"><div class="stat-label">Доход</div><div class="stat-value">${data.revenue} ₽</div></div></div>
+                    <div class="col-md-3"><div class="card-stat"><div class="stat-label">Тикетов</div><div class="stat-value">${data.tickets_open}</div></div></div>
+                </div>`;
+        }
+
+        async function users(c) {
+    const data = await api('/api/users');
+    c.innerHTML = `<h1 class="mb-3">Пользователи</h1>
+        <div class="mb-3">
+            <input type="text" class="form-control w-25 d-inline-block" id="searchInput" placeholder="🔍 Поиск по ID или имени">
+            <button class="btn btn-primary ms-2" onclick="searchUsers()">Найти</button>
+            <button class="btn btn-secondary ms-2" onclick="loadUsers()">Сброс</button>
+        </div>
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr><th>ID</th><th>Username</th><th>Баланс</th><th>Активен</th><th>Действия</th></tr>
+                </thead>
+                <tbody>
+                    ${data.map(u => `
+                        <tr>
+                            <td>${u.telegram_id}</td>
+                            <td>@${u.username || 'нет'}</td>
+                            <td>${u.balance} ₽</td>
+                            <td><span class="badge ${u.is_blocked ? 'badge-expired' : 'badge-active'}">${u.is_blocked ? '❌ Заблокирован' : '✅ Активен'}</span></td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); window.open('/admin/users/${u.telegram_id}', '_blank')">
+                                    <i class="fas fa-eye"></i> Профиль
+                                </button>
+                                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); changeBalance(${u.telegram_id})">
+                                    <i class="fas fa-coins"></i> Баланс
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    window.loadUsers = async function() {
+        const data = await api('/api/users');
+        const tbody = document.querySelector('#users table tbody');
+        if (tbody) {
+            tbody.innerHTML = data.map(u => `
+                <tr>
+                    <td>${u.telegram_id}</td>
+                    <td>@${u.username || 'нет'}</td>
+                    <td>${u.balance} ₽</td>
+                    <td><span class="badge ${u.is_blocked ? 'badge-expired' : 'badge-active'}">${u.is_blocked ? '❌ Заблокирован' : '✅ Активен'}</span></td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="window.open('/admin/users/${u.telegram_id}', '_blank')"><i class="fas fa-eye"></i> Профиль</button>
+                        <button class="btn btn-primary btn-sm" onclick="changeBalance(${u.telegram_id})"><i class="fas fa-coins"></i> Баланс</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+    };
+    
+    window.searchUsers = async function() {
+        const query = document.getElementById('searchInput').value;
+        if (!query) return loadUsers();
+        const users = await api(`/api/users?search=${encodeURIComponent(query)}`);
+        const tbody = document.querySelector('#users table tbody');
+        tbody.innerHTML = users.map(u => `
+            <tr>
+                <td>${u.telegram_id}</td>
+                <td>@${u.username || 'нет'}</td>
+                <td>${u.balance} ₽</td>
+                <td><span class="badge ${u.is_blocked ? 'badge-expired' : 'badge-active'}">${u.is_blocked ? '❌ Заблокирован' : '✅ Активен'}</span></td>
+                <td>
+                    <button class="btn btn-primary btn-sm" onclick="window.open('/admin/users/${u.telegram_id}', '_blank')"><i class="fas fa-eye"></i> Профиль</button>
+                    <button class="btn btn-primary btn-sm" onclick="changeBalance(${u.telegram_id})"><i class="fas fa-coins"></i> Баланс</button>
+                </td>
+            </tr>
+        `).join('');
+    };
+}
+
+        function changeBalance(userId) {
+            const amount = prompt('Сумма (+ для начисления, - для списания):');
+            if(amount) {
+                api(`/api/users/${userId}/balance`, 'POST', {amount: parseFloat(amount), reason: 'Ручное изменение'});
+                showToast('Баланс обновлён');
+                navigate('users');
+            }
+        }
+
+        function subscriptions(c) { c.innerHTML = '<h1>Подписки</h1><p>Загрузка...</p>'; }
+
+        async function tariffs(c) {
+            const data = await api('/api/tariffs');
+            c.innerHTML = `<h1 class="mb-3">Тарифы</h1>
+                <button class="btn btn-primary mb-3" onclick="addTariff()">Добавить тариф</button>
+                <table><thead><tr><th>Название</th><th>Код</th><th>Цены</th><th>Действия</th></tr></thead>
+                <tbody>${data.map(t => `<tr><td>${t.name}</td><td>${t.code}</td><td>${JSON.stringify(t.prices)}</td>
+                    <td><button class="btn btn-primary btn-sm" onclick="editTariff(${t.id})">Ред.</button>
+                    <button class="btn btn-danger btn-sm" onclick="api('/api/tariffs/${t.id}','DELETE').then(()=>navigate('tariffs'))">Удалить</button></td></tr>`).join('')}</tbody></table>`;
+        }
+
+        function addTariff() {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `<div class="modal-content">
+                <h3>Добавить тариф</h3>
+                <input class="form-control" id="tname" placeholder="Название">
+                <input class="form-control" id="tcode" placeholder="Код">
+                <input class="form-control" id="t14" placeholder="14 дней" type="number">
+                <input class="form-control" id="t30" placeholder="30 дней" type="number">
+                <input class="form-control" id="t60" placeholder="60 дней" type="number">
+                <input class="form-control" id="t90" placeholder="90 дней" type="number">
+                <input class="form-control" id="t180" placeholder="180 дней" type="number">
+                <input class="form-control" id="t360" placeholder="360 дней" type="number">
+                <button class="btn btn-primary mt-3" onclick="saveTariff()">Сохранить</button>
+                <button class="btn btn-danger mt-3" onclick="this.closest('.modal').remove()">Отмена</button>
+            </div>`;
+            document.body.appendChild(modal);
+        }
+
+        async function saveTariff() {
+            await api('/api/tariffs', 'POST', {
+                name: document.getElementById('tname').value,
+                code: document.getElementById('tcode').value,
+                prices: {
+                    '14': +document.getElementById('t14').value,
+                    '30': +document.getElementById('t30').value,
+                    '60': +document.getElementById('t60').value,
+                    '90': +document.getElementById('t90').value,
+                    '180': +document.getElementById('t180').value,
+                    '360': +document.getElementById('t360').value,
+                }
+            });
+            document.querySelector('.modal').remove();
+            navigate('tariffs');
+        }
+
+        function broadcast(c) {
+            c.innerHTML = `<h1 class="mb-3">Рассылка</h1>
+                <input class="form-control" id="btitle" placeholder="Заголовок">
+                <textarea class="form-control" id="btext" rows="5" placeholder="Текст"></textarea>
+                <input class="form-control" id="bphoto" placeholder="URL фото (необязательно)">
+                <button class="btn btn-primary mt-3" onclick="sendBroadcast()">Отправить</button>`;
+        }
+
+        async function sendBroadcast() {
+            await api('/api/broadcast', 'POST', {
+                title: document.getElementById('btitle').value,
+                text: document.getElementById('btext').value,
+                photo_url: document.getElementById('bphoto').value
+            });
+            showToast('Рассылка отправлена');
+        }
+
+        async function tickets(c) {
+            const data = await api('/api/tickets');
+            c.innerHTML = `<h1 class="mb-3">Тикеты</h1>
+                <select class="form-control mb-3" onchange="filterTickets(this.value)">
+                    <option value="">Все</option><option value="open">Открыт</option><option value="in_progress">В работе</option><option value="closed">Закрыт</option>
+                </select>
+                <table><thead><tr><th>ID</th><th>Пользователь</th><th>Тема</th><th>Статус</th><th>Действия</th></tr></thead>
+                <tbody>${data.map(t => `<tr><td>#${t.id}</td><td>${t.user_id}</td><td>${t.subject}</td><td>${t.status}</td>
+                    <td><button class="btn btn-primary btn-sm" onclick="openTicket(${t.id})">Чат</button></td></tr>`).join('')}</tbody></table>`;
+        }
+
+        function openTicket(id) {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `<div class="modal-content">
+                <h3>Тикет #${id}</h3>
+                <div id="ticketMessages" style="max-height:300px;overflow-y:auto;margin-bottom:16px;"></div>
+                <input class="form-control" id="treply" placeholder="Сообщение...">
+                <button class="btn btn-primary mt-2" onclick="replyTicket(${id})">Отправить</button>
+                <button class="btn btn-danger mt-2" onclick="this.closest('.modal').remove()">Закрыть</button>
+            </div>`;
+            document.body.appendChild(modal);
+        }
+
+        async function replyTicket(id) {
+            const msg = document.getElementById('treply').value;
+            await api(`/api/tickets/${id}/reply`, 'POST', {message: msg});
+            showToast('Ответ отправлен');
+            document.querySelector('.modal').remove();
+        }
+
+        function filterTickets(status) {
+            api(`/api/tickets?status=${status}`).then(data => {
+                document.querySelector('tbody').innerHTML = data.map(t => `<tr><td>#${t.id}</td><td>${t.user_id}</td><td>${t.subject}</td><td>${t.status}</td>
+                    <td><button class="btn btn-primary btn-sm" onclick="openTicket(${t.id})">Чат</button></td></tr>`).join('');
+            });
+        }
+
+        async function promocodes(c) {
+    const data = await api('/api/promocodes');
+    c.innerHTML = `<h1 class="mb-3">Промокоды</h1>
+        <button class="btn btn-primary mb-3" onclick="addPromo()">Создать</button>
+        <table><thead><tr><th>Код</th><th>Тип</th><th>Номинал</th><th>Создатель</th><th>Действует до</th><th>Активаций</th><th></th></tr></thead>
+        <tbody>${data.map(p => `<tr>
+            <td><code>${p.code}</code></td>
+            <td>${p.type === 'percent' ? 'Скидка' : 'Баланс'}</td>
+            <td>${p.discount}${p.type === 'percent' ? '%' : '₽'}</td>
+            <td>${p.created_by || '-'}</td>
+            <td>${p.expiry_text || '∞'}</td>
+            <td>${p.used || 0}/${p.max_uses}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="deletePromo(${p.id})">Удалить</button></td>
+        </tr>`).join('')}</tbody></table>`;
+}
+
+        async function addPromo() {
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
+    modal.innerHTML = `
+    <div class="modal-content" style="max-width:550px;">
+        <h3>Создать новый промокод</h3>
+        <div class="row">
+            <div class="col-md-6">
+                <label class="form-label">Код (до 16 симв.)</label>
+                <input class="form-control" id="pcode" placeholder="SUMMER2025" maxlength="16">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Тип награды</label>
+                <select class="form-control" id="ptype">
+                    <option value="percent">Скидка (%)</option>
+                    <option value="fixed">Бонусный баланс (₽)</option>
+                </select>
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col-md-6">
+                <label class="form-label">Номинал</label>
+                <input class="form-control" id="pdiscount" type="number" placeholder="15">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Макс. активаций</label>
+                <input class="form-control" id="pmax" type="number" value="100">
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col-md-6">
+                <label class="form-label">Срок действия</label>
+                <select class="form-control" id="pexpiry">
+                    <option value="unlimited">Бессрочный</option>
+                    <option value="date">До даты</option>
+                    <option value="days">Количество дней</option>
+                </select>
+            </div>
+            <div class="col-md-6" id="pexpiryValueContainer" style="display:none;">
+                <label class="form-label">Значение</label>
+                <input class="form-control" id="pexpiryValue" type="text" placeholder="2026-06-01 или 30">
+            </div>
+        </div>
+        <p class="text-muted mt-3 mb-0 small">Создатель: <strong>${ADMIN.username}</strong></p>
+        <div class="mt-3">
+            <button class="btn btn-primary" onclick="savePromo()">Создать</button>
+            <button class="btn btn-danger" onclick="this.closest('.modal').remove()">Отмена</button>
+        </div>
+    </div>`;
+    document.body.appendChild(modal);
+
+    document.getElementById('pexpiry').addEventListener('change', function() {
+        document.getElementById('pexpiryValueContainer').style.display = this.value === 'unlimited' ? 'none' : 'block';
+    });
+}
+
+async function savePromo() {
+    const data = {
+        code: document.getElementById('pcode').value,
+        discount: +document.getElementById('pdiscount').value,
+        type: document.getElementById('ptype').value,
+        max_uses: +document.getElementById('pmax').value,
+        expiry: document.getElementById('pexpiry').value,
+        expiry_value: document.getElementById('pexpiryValue').value,
+        created_by: ADMIN.username
+    };
+    await api('/api/promocodes', 'POST', data);
+    document.querySelector('.modal').remove();
+    navigate('promocodes');
+    showToast('Промокод создан');
+}
+
+        function analytics(c) {
+    c.innerHTML = `<h1 class="mb-3">Аналитика</h1><div class="row"><div class="col-md-6"><canvas id="revenueChart"></canvas></div><div class="col-md-6"><canvas id="usersChart"></canvas></div></div>`;
+    loadCharts();
+}
+
+async function loadCharts() {
+    const data = await api('/api/dashboard');
+    new Chart(document.getElementById('revenueChart'), {
+        type: 'line',
+        data: {labels: ['Доход'], datasets: [{label: '₽', data: [data.revenue], borderColor: '#00a3ff'}]}
+    });
+    new Chart(document.getElementById('usersChart'), {
+        type: 'bar',
+        data: {labels: ['Пользователи'], datasets: [{label: 'Чел.', data: [data.total_users], backgroundColor: '#00a3ff'}]}
+    });
+}
+
+        async function audit(c) {
+            const data = await api('/api/audit');
+            c.innerHTML = `<h1 class="mb-3">Аудит</h1>
+                <table><thead><tr><th>Время</th><th>Админ</th><th>Действие</th></tr></thead>
+                <tbody>${data.map(a => `<tr><td>${a.time}</td><td>${a.admin}</td><td>${a.action}</td></tr>`).join('')}</tbody></table>`;
+        }
+
+        async function admins(c) {
+    const data = await api('/api/admins');
+    c.innerHTML = `<h1 class="mb-3">Администраторы</h1>
+        <button class="btn btn-primary mb-3" onclick="addAdmin()">+ Добавить администратора</button>
+        <div class="row g-3">
+            ${data.map(a => `
+                <div class="col-md-6 col-lg-4">
+                    <div class="card-stat" style="cursor:pointer" onclick="editAdmin('${a.name}')">
+                        <div style="display:flex; align-items:center; gap:16px;">
+                            <div style="width:60px; height:60px; background:linear-gradient(135deg,#00a3ff,#0066cc); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800;">
+                                ${a.avatar ? `<img src="${a.avatar}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">` : (a.name[0] || 'A')}
+                            </div>
+                            <div>
+                                <h4 style="margin:0">${a.name}</h4>
+                                <p style="margin:0; color:#8892a4; font-size:12px;">${a.role}</p>
+                                <p style="margin:0; color:#8892a4; font-size:11px;">${a.telegram || 'Нет Telegram'}</p>
+                                ${a.custom_roles && a.custom_roles.length > 0 ? `<p style="margin:4px 0 0; font-size:10px;">${a.custom_roles.join(', ')}</p>` : ''}
+                            </div>
+                        </div>
+                        <div style="margin-top:16px; display:flex; gap:8px;">
+                            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); resetUUID('${a.name}')">Новый UUID</button>
+                            ${a.name !== 'Heyken' ? `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); api('/api/admins/${a.name}','DELETE').then(()=>navigate('admins'))">Удалить</button>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        
+        <!-- Модальное окно редактирования -->
+        <div class="modal fade" id="editAdminModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Редактировать администратора</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="editAdminName">
+                        <div class="mb-3">
+                            <label class="form-label">Имя</label>
+                            <input class="form-control" id="editAdminNewName" placeholder="Новое имя">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Роль</label>
+                            <select class="form-control" id="editAdminRole">
+                                <option value="Admin">Admin</option>
+                                <option value="Moderator">Moderator</option>
+                                <option value="Support">Support</option>
+                                <option value="CEO">CEO</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Telegram @username</label>
+                            <input class="form-control" id="editAdminTelegram" placeholder="@username">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Дополнительные роли (через запятую)</label>
+                            <input class="form-control" id="editAdminCustomRoles" placeholder="Модератор, Аналитик">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">URL аватара</label>
+                            <input class="form-control" id="editAdminAvatar" placeholder="https://...">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                        <button class="btn btn-primary" onclick="saveAdminEdit()">Сохранить</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Добавляем стили для карточек
+    const style = document.createElement('style');
+    style.textContent = `
+        .card-stat {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+        .card-stat:hover {
+            transform: translateY(-4px);
+            border-color: rgba(0,163,255,0.3);
+            box-shadow: 0 12px 40px rgba(0,163,255,0.15);
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+window.editAdmin = async function(name) {
+    const admins = await api('/api/admins');
+    const admin = admins.find(a => a.name === name);
+    if (!admin) return;
+    
+    document.getElementById('editAdminName').value = name;
+    document.getElementById('editAdminNewName').value = name;
+    document.getElementById('editAdminRole').value = admin.role;
+    document.getElementById('editAdminTelegram').value = admin.telegram || '';
+    document.getElementById('editAdminCustomRoles').value = (admin.custom_roles || []).join(', ');
+    document.getElementById('editAdminAvatar').value = admin.avatar || '';
+    
+    const modal = new bootstrap.Modal(document.getElementById('editAdminModal'));
+    modal.show();
+}
+
+window.saveAdminEdit = async function() {
+    const oldName = document.getElementById('editAdminName').value;
+    const newName = document.getElementById('editAdminNewName').value;
+    const role = document.getElementById('editAdminRole').value;
+    const telegram = document.getElementById('editAdminTelegram').value;
+    const customRoles = document.getElementById('editAdminCustomRoles').value.split(',').map(s => s.trim()).filter(s => s);
+    const avatar = document.getElementById('editAdminAvatar').value;
+    
+    if (newName !== oldName) {
+        // Создаём нового с новым именем и удаляем старого
+        await api('/api/admins', 'POST', {name: newName, role, telegram});
+        await api(`/api/admins/${oldName}`, 'DELETE');
+    } else {
+        await api(`/api/admins/${oldName}`, 'PUT', {role, telegram, avatar, custom_roles: customRoles});
+    }
+    
+    bootstrap.Modal.getInstance(document.getElementById('editAdminModal')).hide();
+    navigate('admins');
+    showToast('Администратор обновлён');
+}
+
+        function addAdmin() {
+            const name = prompt('Имя нового администратора:');
+            const role = prompt('Роль (Admin):', 'Admin');
+            if(name) {
+                api('/api/admins', 'POST', {name, role}).then(data => {
+                    alert(`UUID пароль: ${data.uuid}\nЗапишите его!`);
+                    navigate('admins');
+                });
+            }
+        }
+
+        async function resetUUID(name) {
+            const data = await api(`/api/admins/${name}/reset-uuid`, 'POST');
+            alert(`Новый UUID для ${name}: ${data.new_uuid}`);
+        }
+
+        async function profile(c) {
+            window.location.href = '/profile';
+    c.innerHTML = `<h1 class="mb-3">Личный кабинет</h1>
+        <div class="row">
+            <div class="col-md-4 text-center">
+                <img src="${data.avatar || 'https://via.placeholder.com/150'}" class="rounded-circle mb-3" width="150" height="150" id="avatarImg">
+                <input type="file" class="form-control" id="avatarInput" accept="image/*" onchange="uploadAvatar()">
+            </div>
+            <div class="col-md-8">
+                <div class="card-stat">
+                    <h3>${data.name}</h3>
+                    <p class="text-muted">${data.role}</p>
+                    <div class="mt-3">
+                        <label>Telegram @username</label>
+                        <input class="form-control" id="ptelegram" value="${data.telegram}">
+                        <button class="btn btn-primary mt-2" onclick="saveProfile()">Сохранить</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+}
+
+async function uploadAvatar() {
+    const file = document.getElementById('avatarInput').files[0];
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        document.getElementById('avatarImg').src = e.target.result;
+        await api('/api/profile', 'PUT', {telegram: document.getElementById('ptelegram').value, avatar: e.target.result});
+        showToast('Аватар обновлён');
+    };
+    reader.readAsDataURL(file);
+}
+
+async function saveProfile() {
+    await api('/api/profile', 'PUT', {telegram: document.getElementById('ptelegram').value});
+    showToast('Профиль сохранён');
+}
+
+        document.addEventListener('click', e => {
+            const link = e.target.closest('[data-page]');
+            if(link) {
+                e.preventDefault();
+                navigate(link.dataset.page);
+            }
+        });
+
+        if(!TOKEN) window.location.href = '/login';
+        else navigate('dashboard');
+    </script>
+</body>
+</html>
