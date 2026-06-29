@@ -1,245 +1,228 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load dict_filters %}
 {% block title %}Пользователь {{ user.telegram_id }}{% endblock %}
-
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
     <h1 class="gradient-text">👤 ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</h1>
-    <a href="/users/" class="btn-primary"><i class="fas fa-arrow-left me-2"></i>Назад к списку</a>
+    <a href="/users/" class="btn-primary"><i class="fas fa-arrow-left me-2"></i>Назад</a>
 </div>
-
 {% if user %}
 <div class="row g-4">
-    <!-- ЛЕВАЯ КОЛОНКА - ИНФОРМАЦИЯ -->
     <div class="col-lg-8">
-        <!-- Основная информация -->
         <div class="stat-card mb-4">
             <div class="d-flex align-items-center gap-4 flex-wrap">
-                <div class="user-avatar" style="width:80px; height:80px; font-size:32px;">
-                    {{ user.avatar_letter|default:"?" }}
-                </div>
+                <div class="user-avatar" style="width:80px;height:80px;font-size:32px;">{{ user.avatar_letter|default:"?" }}</div>
                 <div>
-                    <h2 class="mb-1">{{ user.username|default:"Без имени" }}</h2>
-                    <div class="text-cyan-300">Telegram ID: {{ user.telegram_id }}</div>
+                    <h2 class="mb-1">@{{ user.username|default:"—" }}</h2>
+                    <div class="text-cyan-300">ID: <a href="https://t.me/{{ user.telegram_id }}" target="_blank" style="color:#00ffcc;">{{ user.telegram_id }}</a></div>
                     <div class="text-cyan-300/50">Регистрация: {{ user.created_at|date:"d.m.Y H:i"|default:"—" }}</div>
-                    <div class="text-cyan-300/50">Последняя активность: {{ user.last_activity|date:"d.m.Y H:i"|default:"—" }}</div>
+                    <div class="text-cyan-300/50">Активность: {{ user.last_activity|date:"d.m.Y H:i"|default:"—" }}</div>
+                    <div class="text-cyan-300/50">Реф. код: <code>{{ user.referral_code|default:"—" }}</code></div>
                 </div>
-                <div class="ms-auto">
-                    <span class="badge-active" style="font-size:1.2rem;">💰 {{ user.balance|floatformat:2 }} ₽</span>
-                    {% if user.is_blocked %}
-                    <span class="badge-expired ms-2" style="font-size:1.2rem;">🔒 Заблокирован</span>
+                <div class="ms-auto text-end">
+                    <div style="font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,#00a3ff,#00ffcc);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">{{ user.total_rub|floatformat:2 }} ₽</div>
+                    <div class="small text-cyan-300/50">Общий баланс (RUB)</div>
+                    <div class="mt-2">
+                        {% if user.is_blocked %}<span class="badge-expired">🔒 Заблокирован</span>
+                        {% else %}<span class="badge-active">✅ Активен</span>{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="stat-card mb-4">
+            <h3 class="mb-3"><i class="fas fa-coins text-cyan-300"></i> Все балансы</h3>
+            <div class="row g-2">
+                {% for c in currencies %}
+                <div class="col-6 col-md-4 col-lg-3">
+                    <div class="text-center p-2" style="background:rgba(0,0,0,0.3);border-radius:12px;">
+                        <div class="small text-cyan-300/50">{{ c }}</div>
+                        <div class="fw-bold">{{ user.balances|dictget:c|floatformat:2 }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div class="stat-card h-100">
+                    <h3 class="mb-3"><i class="fas fa-crown text-cyan-300"></i> Premium</h3>
+                    {% if premium_active %}
+                    <div class="badge-active mb-2" style="font-size:1rem;">✅ Активен до {{ user.premium_until|date:"d.m.Y" }}</div>
                     {% else %}
-                    <span class="badge-active ms-2" style="font-size:1.2rem;">✅ Активен</span>
+                    <div class="badge-expired mb-2" style="font-size:1rem;">❌ Не активен</div>
                     {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Управление балансом -->
-        <div class="stat-card mb-4">
-            <h3 class="mb-3"><i class="fas fa-coins text-cyan-300"></i> Управление балансом</h3>
-            <div class="row g-3">
-                <div class="col-md-5">
-                    <input type="number" id="balanceAmount" class="form-control" placeholder="Сумма (+ начисление, - списание)" step="0.01">
-                </div>
-                <div class="col-md-5">
-                    <input type="text" id="balanceReason" class="form-control" placeholder="Причина изменения">
-                </div>
-                <div class="col-md-2">
-                    <button class="btn-primary w-100" onclick="changeBalance()">Изменить</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Реферальная система -->
-        <div class="stat-card mb-4">
-            <h3 class="mb-3"><i class="fas fa-users text-cyan-300"></i> Реферальная система</h3>
-            <div class="row g-3 mb-3">
-                <div class="col-md-4">
-                    <div class="text-center p-3" style="background:rgba(0,0,0,0.3); border-radius:16px;">
-                        <div class="text-cyan-300 small">ПРИГЛАСИЛ</div>
-                        <div class="stat-value">{% if inviter %}{{ inviter.telegram_id }}{% else %}—{% endif %}</div>
-                        <div class="small">@{{ inviter.username|default:"нет" }}</div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="text-center p-3" style="background:rgba(0,0,0,0.3); border-radius:16px;">
-                        <div class="text-cyan-300 small">ПРИГЛАШЕНО</div>
-                        <div class="stat-value">{{ invited_users|length }}</div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="text-center p-3" style="background:rgba(0,0,0,0.3); border-radius:16px;">
-                        <div class="text-cyan-300 small">АКТИВНЫХ РЕФЕРАЛОВ</div>
-                        <div class="stat-value">{{ user.active_referrals|default:"0" }}</div>
+                    <div class="d-flex gap-2 mt-3 flex-wrap">
+                        <button class="btn-primary btn-sm" onclick="grantPremium()"><i class="fas fa-crown"></i> Выдать Premium</button>
+                        <button class="btn-danger btn-sm" onclick="removePremium()"><i class="fas fa-times"></i> Забрать Premium</button>
                     </div>
                 </div>
             </div>
-            {% if invited_users %}
-            <div class="table-responsive">
-                <table class="table-custom w-100">
-                    <thead>
-                        <tr><th>ID</th><th>Username</th><th>Регистрация</th><th>Активен</th><th>Подписка</th></thead>
-                    <tbody>
-                        {% for inv in invited_users %}
-                        <tr onclick="window.location.href='/users/{{ inv.telegram_id }}/'" style="cursor:pointer;">
-                            <td>{{ inv.telegram_id }}</td>
-                            <td>@{{ inv.username|default:"нет" }}</td>
-                            <td>{{ inv.created_at|date:"d.m.Y"|default:"—" }}</td>
-                            <td>{% if inv.is_blocked %}❌{% else %}✅{% endif %}</td>
-                            <td>{% if inv.has_active_sub %}✅{% else %}❌{% endif %}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div class="col-md-6">
+                <div class="stat-card h-100">
+                    <h3 class="mb-3"><i class="fas fa-coins text-cyan-300"></i> Изменить баланс</h3>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <select id="balCurrency" class="form-control">
+                                {% for c in currencies %}<option value="{{ c }}" {% if c == 'RUB' %}selected{% endif %}>{{ c }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <input type="number" id="balAmount" class="form-control" placeholder="Сумма" step="0.01">
+                        </div>
+                        <div class="col-12">
+                            <input type="text" id="balReason" class="form-control" placeholder="Причина">
+                        </div>
+                        <div class="col-6">
+                            <button class="btn-primary btn-sm w-100" onclick="changeBalance(1)">➕ Начислить</button>
+                        </div>
+                        <div class="col-6">
+                            <button class="btn-danger btn-sm w-100" onclick="changeBalance(-1)">➖ Списать</button>
+                        </div>
+                    </div>
+                </div>
             </div>
-            {% endif %}
         </div>
-
-        <!-- Подписки -->
         <div class="stat-card mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h3><i class="fas fa-sync-alt text-cyan-300"></i> Подписки</h3>
-                <button class="btn-primary btn-sm" onclick="openAddSubscriptionModal()"><i class="fas fa-plus"></i> Добавить</button>
+                <h3><i class="fas fa-exclamation-triangle text-warning"></i> Экстренное управление</h3>
             </div>
-            <div class="table-responsive">
+            <div class="d-flex gap-3 flex-wrap">
+                <button class="btn-danger btn-sm" onclick="backupBalance()"><i class="fas fa-trash-alt"></i> Забрать весь баланс (бэкап)</button>
+                <button class="btn-primary btn-sm" onclick="restoreBalance()"><i class="fas fa-undo"></i> Восстановить из бэкапа</button>
+                {% if latest_backup %}
+                <span class="badge-active">Бэкап от {{ latest_backup.backed_up_at|date:"d.m.Y H:i" }}</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="stat-card mb-4">
+            <h3 class="mb-3"><i class="fas fa-history text-cyan-300"></i> Сделки</h3>
+            <div class="table-responsive" style="max-height:300px;overflow-y:auto;">
                 <table class="table-custom w-100">
-                    <thead>
-                        <tr><th>Тариф</th><th>Устройств</th><th>Цена</th><th>Начало</th><th>Окончание</th><th>Статус</th></thead>
-                    <tbody>
-                        {% for sub in subscriptions %}
-                        <tr>
-                            <td>{{ sub.tariff_name|default:"Пробный" }}</td>
-                            <td>{{ sub.devices|default:2 }}</td>
-                            <td>{{ sub.price_paid|default:"0" }} ₽</td>
-                            <td>{{ sub.start_date|date:"d.m.Y"|default:"—" }}</td>
-                            <td>{{ sub.end_date|date:"d.m.Y"|default:"—" }}</td>
-                            <td>{% if sub.end_date > now %}<span class="badge-active">Активна</span>{% else %}<span class="badge-expired">Истекла</span>{% endif %}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="6" class="text-center text-cyan-300">Нет подписок</td></tr>
-                        {% endfor %}
-                    </tbody>
+                    <thead><tr><th>ID</th><th>Предмет</th><th>Сумма</th><th>Валюта</th><th>Статус</th><th>Дата</th></tr></thead>
+                    <tbody>{% for d in deals %}
+                        <tr><td>#{{ d.id }}</td><td>{{ d.item|truncatechars:20 }}</td><td>{{ d.amount }}</td><td>{{ d.currency }}</td><td>{% if d.status == 'completed' %}<span class="badge-active">Завершена</span>{% elif d.status == 'cancelled' %}<span class="badge-expired">Отменена</span>{% else %}<span class="badge-progress">Активна</span>{% endif %}</td><td>{{ d.created|date:"d.m.Y"|default:"—" }}</td></tr>
+                    {% empty %}<tr><td colspan="6" class="text-center text-cyan-300">Нет сделок</td></tr>{% endfor %}</tbody>
                 </table>
             </div>
         </div>
-
-        <!-- История операций -->
-        <div class="stat-card">
-            <h3 class="mb-3"><i class="fas fa-history text-cyan-300"></i> История операций</h3>
-            <div class="table-responsive">
+        <div class="stat-card mb-4">
+            <h3 class="mb-3"><i class="fas fa-clipboard-list text-cyan-300"></i> Лог администраторов</h3>
+            <div class="table-responsive" style="max-height:250px;overflow-y:auto;">
                 <table class="table-custom w-100">
-                    <thead><tr><th>Тип</th><th>Сумма</th><th>Описание</th><th>Дата</th></tr></thead>
-                    <tbody>
-                        {% for op in operations %}
-                        <tr>
-                            <td>{{ op.type }}</td>
-                            <td class="{% if op.amount > 0 %}text-success{% else %}text-danger{% endif %}">{{ op.amount }} ₽</td>
-                            <td>{{ op.description|default:"—" }}</td>
-                            <td>{{ op.date|date:"d.m.Y H:i"|default:"—" }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="4" class="text-center text-cyan-300">Нет операций</td></tr>
-                        {% endfor %}
-                    </tbody>
+                    <thead><tr><th>Время</th><th>Действие</th><th>Admin</th></tr></thead>
+                    <tbody>{% for l in admin_logs %}
+                        <tr><td class="small">{{ l.timestamp|date:"d.m.Y H:i"|default:"—" }}</td><td>{{ l.action }}</td><td class="small">@{{ l.admin_id }}</td></tr>
+                    {% empty %}<tr><td colspan="3" class="text-center text-cyan-300">Нет записей</td></tr>{% endfor %}</tbody>
                 </table>
             </div>
+        </div>
+        <div class="stat-card">
+            <h3 class="mb-3"><i class="fas fa-users text-cyan-300"></i> Рефералы</h3>
+            <div class="row g-3 mb-3">
+                <div class="col-4"><div class="text-center p-3" style="background:rgba(0,0,0,0.3);border-radius:16px;"><div class="text-cyan-300 small">ПРИГЛАСИЛ</div><div class="stat-value">{% if inviter %}{{ inviter.telegram_id }}{% else %}—{% endif %}</div><div class="small">@{{ inviter.username|default:"нет" }}</div></div></div>
+                <div class="col-4"><div class="text-center p-3" style="background:rgba(0,0,0,0.3);border-radius:16px;"><div class="text-cyan-300 small">ПРИГЛАШЕНО</div><div class="stat-value">{{ invited_users|length }}</div></div></div>
+                <div class="col-4"><div class="text-center p-3" style="background:rgba(0,0,0,0.3);border-radius:16px;"><div class="text-cyan-300 small">РЕФЕРАЛЬНЫХ</div><div class="stat-value">{{ user.referral_earnings|default:"0" }}</div></div></div>
+            </div>
+            {% if invited_users %}<div class="table-responsive" style="max-height:200px;overflow-y:auto;"><table class="table-custom w-100"><thead><tr><th>ID</th><th>Username</th><th>Регистрация</th></tr></thead><tbody>{% for inv in invited_users %}<tr onclick="window.location.href='/users/{{ inv.telegram_id }}/'" style="cursor:pointer;"><td>{{ inv.telegram_id }}</td><td>@{{ inv.username|default:"нет" }}</td><td>{{ inv.created_at|date:"d.m.Y"|default:"—" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
         </div>
     </div>
-
-    <!-- ПРАВАЯ КОЛОНКА - ЧАТ -->
     <div class="col-lg-4">
-        <div class="stat-card" style="height:100%; display:flex; flex-direction:column;">
+        <div class="stat-card mb-4">
+            <h3 class="mb-3"><i class="fas fa-ticket-alt text-cyan-300"></i> Тикеты</h3>
+            {% for t in tickets %}
+            <div class="p-2 mb-2" style="background:rgba(0,0,0,0.3);border-radius:10px;">
+                <div class="small">{{ t.subject|truncatechars:30 }}</div>
+                <div class="small text-cyan-300/50">#{{ t.id }} · {% if t.status == 'open' %}🟢 Открыт{% elif t.status == 'in_progress' %}🟡 В работе{% else %}🔴 Закрыт{% endif %}</div>
+            </div>
+            {% empty %}<div class="text-cyan-300/50 text-center py-3">Нет тикетов</div>{% endfor %}
+        </div>
+        <div class="stat-card" style="display:flex;flex-direction:column;">
             <h3 class="mb-3"><i class="fas fa-comment-dots text-cyan-300"></i> Чат с пользователем</h3>
-            <div id="chatMessages" style="flex:1; max-height:500px; overflow-y:auto; margin-bottom:16px;">
-                {% for msg in messages %}
-                <div class="message-bubble {% if msg.sender_type == 'admin' %}message-admin{% else %}message-user{% endif %}">
-                    <div class="small opacity-75">{{ msg.sender_name|default:"Пользователь" }} • {{ msg.created_at|date:"d.m.Y H:i" }}</div>
-                    <div>{{ msg.message }}</div>
-                </div>
-                {% empty %}
-                <div class="text-center text-cyan-300 py-5">Нет сообщений</div>
-                {% endfor %}
+            <div id="chatMessages" style="flex:1;max-height:500px;overflow-y:auto;margin-bottom:16px;">
+                <div class="text-center text-cyan-300 py-5">Чат временно отключён</div>
             </div>
             <textarea id="chatInput" class="form-control" rows="3" placeholder="Введите сообщение..." style="margin-bottom:12px;"></textarea>
             <button class="btn-primary" onclick="sendMessage()"><i class="fas fa-paper-plane"></i> Отправить</button>
-            <div class="small text-cyan-300/50 mt-2">Сообщение отправится через Telegram бота</div>
+            <div class="small text-cyan-300/50 mt-2">Сообщение будет отправлено через Telegram бота</div>
         </div>
     </div>
 </div>
-
-<!-- Модальное окно добавления подписки -->
-<div id="subscriptionModal" class="modal-overlay" style="display:none;">
-    <div class="modal-window">
-        <h3 class="mb-3"><i class="fas fa-plus"></i> Добавить подписку</h3>
-        <input type="number" id="subDays" class="form-control mb-2" placeholder="Количество дней" value="30">
-        <input type="text" id="subTariff" class="form-control mb-2" placeholder="Название тарифа" value="Standard">
-        <input type="number" id="subPrice" class="form-control mb-2" placeholder="Цена" value="0" step="0.01">
-        <div class="d-flex gap-2 justify-content-end mt-3">
-            <button class="btn-primary" onclick="closeModal()" style="background:rgba(255,255,255,0.1);">Отмена</button>
-            <button class="btn-primary" onclick="addSubscription()">Добавить</button>
-        </div>
-    </div>
-</div>
-
 <script>
-const TOKEN = localStorage.getItem('admin_token');
-const ADMIN_NAME = localStorage.getItem('admin_username') || 'Admin';
 const USER_ID = {{ user.telegram_id }};
 
-async function api(url, method='GET', body=null) {
-    const opts = {method, headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`}};
-    if(body) opts.body = JSON.stringify(body);
-    const res = await fetch(url, opts);
-    if(res.status === 401) { logout(); }
+function getCSRF() {
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : '';
+}
+
+async function api(url, body) {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRF()},
+        body: JSON.stringify(body)
+    });
     return res.json();
 }
 
-async function changeBalance() {
-    const amount = parseFloat(document.getElementById('balanceAmount').value);
-    const reason = document.getElementById('balanceReason').value;
-    if(isNaN(amount)) { showToast('Введите сумму', 'error'); return; }
-    const result = await api(`/api/users/${USER_ID}/balance/`, 'POST', {amount, reason});
-    if(result.success) { showToast(`Баланс изменён: ${amount} ₽`); setTimeout(() => location.reload(), 1500); }
+async function changeBalance(sign) {
+    const currency = document.getElementById('balCurrency').value;
+    const amount = parseFloat(document.getElementById('balAmount').value) * sign;
+    const reason = document.getElementById('balReason').value;
+    if (!amount) { showToast('Введите сумму', 'error'); return; }
+    const r = await api(`/api/users/${USER_ID}/balance/`, {amount, currency, reason});
+    if (r.success) { showToast(`Баланс ${currency} изменён`); setTimeout(() => location.reload(), 1500); }
     else { showToast('Ошибка', 'error'); }
+}
+
+async function grantPremium() {
+    const days = prompt('Введите количество дней Premium (99999 = навсегда):', '30');
+    if (!days) return;
+    const r = await api(`/api/users/${USER_ID}/grant-premium/`, {days: parseInt(days)});
+    if (r.success) { showToast('Premium выдан'); setTimeout(() => location.reload(), 1500); }
+    else { showToast('Ошибка', 'error'); }
+}
+
+async function removePremium() {
+    if (!confirm('Забрать Premium у пользователя?')) return;
+    const r = await api(`/api/users/${USER_ID}/grant-premium/`, {days: 0});
+    if (r.success) { showToast('Premium забран'); setTimeout(() => location.reload(), 1500); }
+    else { showToast('Ошибка', 'error'); }
+}
+
+async function backupBalance() {
+    if (!confirm('Обнулить ВСЕ балансы пользователя? Состояние сохранится в бэкап.')) return;
+    const r = await api(`/api/users/${USER_ID}/backup-balance/`, {});
+    if (r.success) { showToast(r.message); setTimeout(() => location.reload(), 1500); }
+    else { showToast('Ошибка', 'error'); }
+}
+
+async function restoreBalance() {
+    if (!confirm('Восстановить балансы из последнего бэкапа?')) return;
+    const r = await api(`/api/users/${USER_ID}/restore-balance/`, {});
+    if (r.success) { showToast(r.message); setTimeout(() => location.reload(), 1500); }
+    else { showToast('Ошибка: ' + (r.error || 'нет бэкапа'), 'error'); }
 }
 
 async function sendMessage() {
     const message = document.getElementById('chatInput').value.trim();
-    if(!message) { showToast('Введите сообщение', 'error'); return; }
-    const result = await api(`/api/users/${USER_ID}/send-message/`, 'POST', {message, admin_name: ADMIN_NAME});
-    if(result.success) {
-        showToast('Сообщение отправлено');
-        addMessageToChat(message, true);
-        document.getElementById('chatInput').value = '';
-    } else { showToast('Ошибка отправки', 'error'); }
-}
-
-function addMessageToChat(message, isAdmin) {
-    const container = document.getElementById('chatMessages');
-    if(container.querySelector('.text-center')) container.innerHTML = '';
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message-bubble ${isAdmin ? 'message-admin' : 'message-user'}`;
-    msgDiv.innerHTML = `<div class="small opacity-75">${isAdmin ? ADMIN_NAME + ' (Вы)' : 'Пользователь'} • Только что</div><div>${message}</div>`;
-    container.appendChild(msgDiv);
-    container.scrollTop = container.scrollHeight;
-}
-
-function openAddSubscriptionModal() { document.getElementById('subscriptionModal').style.display = 'flex'; }
-function closeModal() { document.getElementById('subscriptionModal').style.display = 'none'; }
-
-async function addSubscription() {
-    const days = parseInt(document.getElementById('subDays').value);
-    const tariff_name = document.getElementById('subTariff').value;
-    const price = parseFloat(document.getElementById('subPrice').value);
-    const result = await api(`/api/users/${USER_ID}/add-subscription/`, 'POST', {days, tariff_name, price});
-    if(result.success) { showToast('Подписка добавлена'); closeModal(); setTimeout(() => location.reload(), 1500); }
+    if (!message) { showToast('Введите сообщение', 'error'); return; }
+    const r = await api(`/api/users/${USER_ID}/send-message/`, {message});
+    if (r.success) { showToast('Сообщение залогировано'); document.getElementById('chatInput').value = ''; }
     else { showToast('Ошибка', 'error'); }
+}
+
+function showToast(msg, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = 'toast-custom';
+    toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i> ${msg}`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
 }
 </script>
 {% else %}
 <div class="stat-card text-center">
-    <i class="fas fa-user-slash" style="font-size:48px; color:#ff4757;"></i>
+    <i class="fas fa-user-slash" style="font-size:48px;color:#ff4757;"></i>
     <h3 class="mt-3">Пользователь не найден</h3>
     <a href="/users/" class="btn-primary mt-3">Вернуться к списку</a>
 </div>

@@ -478,8 +478,14 @@ code {
         <a href="/users/" class="{% if active_page == 'users' %}active{% endif %}">
             <i class="fas fa-users"></i> Пользователи
         </a>
+        <a href="/tickets/" class="{% if active_page == 'admin_tickets' %}active{% endif %}">
+            <i class="fas fa-ticket-alt"></i> Тикеты
+        </a>
         <a href="/disputes/" class="{% if active_page == 'tickets' %}active{% endif %}">
             <i class="fas fa-gavel"></i> Споры
+        </a>
+        <a href="/news/partnership/" class="{% if active_page == 'partnership' %}active{% endif %}">
+            <i class="fas fa-handshake"></i> Сотрудничество
         </a>
         <a href="/promocodes/" class="{% if active_page == 'promocodes' %}active{% endif %}">
             <i class="fas fa-percent"></i> Промокоды

@@ -22,6 +22,8 @@ urlpatterns = [
     path('api/users/<int:telegram_id>/balance/', views.api_change_balance),
     path('api/users/<int:telegram_id>/send-message/', views.api_send_message),
     path('api/users/<int:telegram_id>/grant-premium/', views.api_grant_premium),
+    path('api/users/<int:telegram_id>/backup-balance/', views.api_backup_balance),
+    path('api/users/<int:telegram_id>/restore-balance/', views.api_restore_balance),
     path('api/users/export/', views.api_export_users),
 
     # API: промокоды (code — строка)
@@ -45,6 +47,20 @@ urlpatterns = [
     path('news/create/', news_views.news_create_view, name='news_create'),
     path('news/<int:news_id>/edit/', news_views.news_edit_view, name='news_edit'),
     path('news/<int:news_id>/delete/', news_views.news_delete_view, name='news_delete'),
+
+    # Тикеты поддержки (админка)
+    path('tickets/', views.admin_tickets_view, name='admin_tickets'),
+    path('tickets/<int:ticket_id>/', views.admin_ticket_detail_view, name='admin_ticket_detail'),
+    path('api/tickets/<int:ticket_id>/reply/', views.admin_ticket_reply_api, name='admin_ticket_reply'),
+    path('api/tickets/<int:ticket_id>/status/', views.admin_ticket_status_api, name='admin_ticket_status'),
+    path('api/tickets/<int:ticket_id>/assign/', views.admin_ticket_assign_api, name='admin_ticket_assign'),
+    path('api/tickets/<int:ticket_id>/close/', views.admin_ticket_close_api, name='admin_ticket_close'),
+
+    # Сотрудничество (админка)
+    path('news/partnership/', news_views.partnership_list_view, name='partnership_list'),
+    path('news/partnership/<int:partnership_id>/', news_views.partnership_detail_view, name='partnership_detail'),
+    path('news/partnership/<int:partnership_id>/update-status/', news_views.partnership_update_status, name='partnership_update_status'),
+    path('news/partnership/<int:partnership_id>/delete/', news_views.partnership_delete_view, name='partnership_delete'),
 
     # Пользовательский сайт
     path('usersite/', include('usersite.urls')),

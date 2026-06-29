@@ -36,7 +36,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-WEBAPP_URL = "https://heyken777.github.io/nft-bot/frontend"
+WEBAPP_URL = "http://93.115.101.179:9207"
 
 # ========== КОНФИГУРАЦИЯ PREMIUM ==========
 PREMIUM_RATES = {
@@ -176,7 +176,7 @@ async def answer_or_edit(msg, text: str, reply_markup, photo_name: str = None):
 
 def main_kb(is_admin: bool = False):
     kb = [
-        [InlineKeyboardButton(text="📱 Открыть приложение", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/index.html"))],
+        [InlineKeyboardButton(text="📱 Открыть приложение", url=f"{WEBAPP_URL}/usersite/")],
         [InlineKeyboardButton(text="💰 Пополнить", callback_data="deposit"),
         InlineKeyboardButton(text="💸 Вывести", callback_data="withdraw")],
         [InlineKeyboardButton(text="💳 Карта", callback_data="set_card"),
@@ -645,6 +645,16 @@ class Database:
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, ach)
         
+        # Таблица кодов авторизации
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS auth_codes (
+                user_id INTEGER NOT NULL,
+                code TEXT NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         self.conn.commit()
         logger.info("База данных инициализирована")
 
@@ -1533,7 +1543,7 @@ async def start_cmd(msg: types.Message, state: FSMContext):
             "• Управлять своими реквизитами",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="📱 Открыть Mini App", web_app=types.WebAppInfo(url=web_app_url))],
+                [InlineKeyboardButton(text="📱 Открыть Mini App", url=web_app_url)],
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")]
             ])
         )
@@ -1542,7 +1552,7 @@ async def start_cmd(msg: types.Message, state: FSMContext):
     text = f"🎁 *Добро пожаловать в {BOT_NAME}!*\n\n✨ *Главное меню*"
     
     main_kb_with_app = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📱 Открыть приложение", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/index.html"))],
+        [InlineKeyboardButton(text="📱 Открыть приложение", url=f"{WEBAPP_URL}/usersite/")],
         [InlineKeyboardButton(text="💰 Пополнить", callback_data="deposit"),
         InlineKeyboardButton(text="💸 Вывести", callback_data="withdraw")],
         [InlineKeyboardButton(text="💳 Карта", callback_data="set_card"),
@@ -1893,6 +1903,23 @@ async def copy_ref_cb(call: CallbackQuery):
     code = call.data.replace("copy_ref_", "")
     link = f"https://t.me/NovixGift_Bot?start=ref_{code}"
     await call.answer(f"🔗 Ссылка скопирована!", show_alert=True)
+
+@dp.message(lambda m: m.text and m.text.startswith('/code'))
+async def code_cmd(msg: types.Message):
+    uid = msg.from_user.id
+    conn = sqlite3.connect("novixgift.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT code FROM auth_codes WHERE user_id=? AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1",
+        (uid,)
+    )
+    row = cur.fetchone()
+    conn.close()
+    if row:
+        await msg.answer(f"🔐 Ваш код для входа на сайт: <b>{row['code']}</b>\n\nДействителен 5 минут.")
+    else:
+        await msg.answer("❌ У вас нет активного кода. Запросите новый на сайте в разделе «Вход».")
 
 @dp.message(lambda m: m.text and m.text.startswith('/promo'))
 async def activate_promo_cmd(msg: types.Message):

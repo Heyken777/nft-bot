@@ -11,10 +11,15 @@ urlpatterns = [
     path('profile/', views.profile_view, name='user_profile'),
     path('profile/<int:user_id>/', views.user_profile_redirect, name='user_profile_redirect'),
     path('logout/', views.logout_view, name='user_logout'),
+    path('tickets/', views.user_tickets_view, name='user_tickets'),
+    path('tickets/new/', views.user_ticket_new_view, name='user_ticket_new'),
+    path('tickets/<int:ticket_id>/', views.user_ticket_detail_view, name='user_ticket_detail'),
 
-    # API (заглушки — теперь споры в боте)
+    # API тикетов
+    path('api/request-code/', views.request_code_api, name='request_code'),
     path('api/tickets/create/', views.create_ticket),
     path('api/tickets/<int:ticket_id>/reply/', views.add_ticket_reply),
+    path('api/tickets/<int:ticket_id>/close/', views.close_ticket),
     path('api/tickets/<int:ticket_id>/assign/', views.assign_ticket),
     path('api/tickets/<int:ticket_id>/status/', views.change_ticket_status),
 ]

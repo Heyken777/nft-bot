@@ -303,7 +303,7 @@
     async function saveStatus() {
     const status = document.getElementById('statusSelect').value;
     
-    const response = await fetch(`/api/tickets/${ticketId}/change-status/`, {
+    const response = await fetch('/api/tickets/{{ ticket.id }}/status/', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

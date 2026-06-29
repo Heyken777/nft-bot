@@ -86,7 +86,7 @@ def broadcast_api(request):
 def promocodes_api(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT rowid AS id, code, amount AS discount, 'fixed' AS type, max_uses, used_count AS used, expires_at AS expiry_date, created_by, created_at FROM promocodes WHERE active=1 ORDER BY created_at DESC")
+    cur.execute("SELECT rowid AS id, code, amount AS discount, 'fixed' AS type, max_uses, used_count AS used, expires_at AS expiry_date, created_by, created_at, active FROM promocodes ORDER BY created_at DESC")
     promos = cur.fetchall()
     conn.close()
     return Response([dict(p) for p in promos])

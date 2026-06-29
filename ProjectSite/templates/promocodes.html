@@ -1,7 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block title %}Промокоды{% endblock %}
-
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
     <h1 class="gradient-text">🎟️ ПРОМОКОДЫ</h1>
@@ -14,13 +13,13 @@
             <thead>
                 <tr>
                     <th>Код</th>
-                    <th>Тип</th>
-                    <th>Значение</th>
+                    <th>Бонус</th>
                     <th>Использовано</th>
                     <th>Макс</th>
                     <th>Создатель</th>
                     <th>Создан</th>
                     <th>Действует до</th>
+                    <th>Статус</th>
                     <th>Действия</th>
                 </tr>
             </thead>
@@ -28,13 +27,13 @@
                 {% for promo in promocodes %}
                 <tr data-id="{{ promo.id }}">
                     <td><code>{{ promo.code }}</code></td>
-                    <td>{% if promo.type == 'percent' %}🎯 Скидка %{% elif promo.type == 'fixed' %}💰 Скидка ₽{% else %}🎁 Бонус ₽{% endif %}</td>
-                    <td>{{ promo.discount }}{% if promo.type == 'percent' %}%{% else %}₽{% endif %}</td>
+                    <td>{{ promo.discount }}₽</td>
                     <td>{{ promo.used }}/{{ promo.max_uses }}</td>
                     <td>{{ promo.max_uses }}</td>
                     <td>{{ promo.created_by|default:"—" }}</td>
                     <td>{{ promo.created_at|date:"d.m.Y H:i"|default:"—" }}</td>
                     <td>{{ promo.expiry_date|date:"d.m.Y"|default:"∞" }}</td>
+                    <td><span class="{{ promo.status_class }}">{{ promo.status_label }}</span></td>
                     <td>
                         <button class="btn-primary btn-sm" onclick="editPromo('{{ promo.code|escapejs }}')"><i class="fas fa-edit"></i></button>
                         <button class="btn-danger btn-sm" onclick="deletePromo('{{ promo.code|escapejs }}')"><i class="fas fa-trash"></i></button>
@@ -48,18 +47,12 @@
     </div>
 </div>
 
-<!-- Модальное окно создания/редактирования -->
 <div id="promoModal" class="modal-overlay" style="display:none;">
-    <div class="modal-window" style="max-width:550px;">
+    <div class="modal-window" style="max-width:500px;">
         <h3 id="modalTitle" class="mb-3">Создать промокод</h3>
         <input type="hidden" id="promoId">
         <input type="text" id="pCode" class="form-control mb-2" placeholder="Код (латиница, цифры)">
-        <select id="pType" class="form-control mb-2" onchange="togglePromoType()">
-            <option value="percent">🎯 Процентная скидка (%)</option>
-            <option value="fixed">💰 Фиксированная скидка (₽)</option>
-            <option value="bonus">🎁 Бонусный баланс (₽)</option>
-        </select>
-        <input type="number" id="pDiscount" class="form-control mb-2" placeholder="Значение">
+        <input type="number" id="pDiscount" class="form-control mb-2" placeholder="Сумма бонуса в ₽">
         <input type="number" id="pMaxUses" class="form-control mb-2" placeholder="Макс. использований" value="100">
         <select id="pExpiryType" class="form-control mb-2" onchange="toggleExpiry()">
             <option value="unlimited">♾️ Бессрочный</option>
@@ -78,10 +71,9 @@
 <script>
 let editMode = false;
 
-function togglePromoType() {}
 function toggleExpiry() {
-    const val = document.getElementById('pExpiryType').value;
-    document.getElementById('expiryDaysContainer').style.display = val === 'days' ? 'block' : 'none';
+    document.getElementById('expiryDaysContainer').style.display =
+        document.getElementById('pExpiryType').value === 'days' ? 'block' : 'none';
 }
 
 function openPromoModal() {
@@ -89,7 +81,6 @@ function openPromoModal() {
     document.getElementById('modalTitle').innerText = 'Создать промокод';
     document.getElementById('promoId').value = '';
     document.getElementById('pCode').value = '';
-    document.getElementById('pType').value = 'percent';
     document.getElementById('pDiscount').value = '';
     document.getElementById('pMaxUses').value = '100';
     document.getElementById('pExpiryType').value = 'unlimited';
@@ -105,16 +96,13 @@ async function savePromo() {
     const data = {
         code: document.getElementById('pCode').value.toUpperCase(),
         discount: parseFloat(document.getElementById('pDiscount').value),
-        type: document.getElementById('pType').value,
+        type: 'fixed',
         max_uses: parseInt(document.getElementById('pMaxUses').value),
         expiry_days: document.getElementById('pExpiryDays').value || null
     };
-    
-    if(!data.code || !data.discount) { showToast('Заполните код и значение', 'error'); return; }
-    
+    if(!data.code || !data.discount) { showToast('Заполните код и сумму', 'error'); return; }
     const url = editMode ? `/api/promocodes/${encodeURIComponent(id)}/update/` : '/api/promocodes/create/';
     await fetch(url, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)});
-    
     closePromoModal();
     showToast(editMode ? 'Промокод обновлён' : 'Промокод создан');
     setTimeout(() => location.reload(), 1000);
@@ -124,11 +112,9 @@ async function editPromo(id) {
     editMode = true;
     const res = await fetch(`/api/promocodes/${encodeURIComponent(id)}/`);
     const data = await res.json();
-    
     document.getElementById('modalTitle').innerText = 'Редактировать промокод';
     document.getElementById('promoId').value = id;
     document.getElementById('pCode').value = data.code;
-    document.getElementById('pType').value = data.type;
     document.getElementById('pDiscount').value = data.discount;
     document.getElementById('pMaxUses').value = data.max_uses;
     document.getElementById('promoModal').style.display = 'flex';

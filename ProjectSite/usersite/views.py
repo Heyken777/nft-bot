@@ -1,8 +1,9 @@
-import json, os, sqlite3, hashlib, hmac
+import json, os, sqlite3, hashlib, hmac, random
 from datetime import datetime
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from django.conf import settings
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -68,6 +69,18 @@ def telegram_auth_view(request):
             user = get_or_create_user(auth['user_id'])
             request.session['user_id'] = user['user_id']
             request.session['username'] = user.get('username', str(user['user_id']))
+            if user['user_id'] == OWNER_TELEGRAM_ID:
+                from django.contrib.auth import login
+                from django.contrib.auth.models import User as DjangoUser
+                django_user, _ = DjangoUser.objects.get_or_create(
+                    username=f"tg_{user['user_id']}",
+                    defaults={'is_staff': True, 'is_superuser': True}
+                )
+                django_user.is_staff = True
+                django_user.is_superuser = True
+                django_user.save()
+                login(request, django_user)
+                request.session['admin'] = 'Heyken'
             cur.execute("DELETE FROM auth_codes WHERE code=?", (code,))
             conn.commit()
             conn.close()
@@ -75,6 +88,29 @@ def telegram_auth_view(request):
         conn.close()
 
     return redirect('/usersite/login/')
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def request_code_api(request):
+    data = json.loads(request.body)
+    telegram_id = int(data.get('telegram_id', 0))
+    if not telegram_id:
+        return JsonResponse({'success': False, 'error': 'Invalid ID'}, status=400)
+    code = f"{random.randint(100000, 999999)}"
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO auth_codes (user_id, code, expires_at) VALUES (?, ?, datetime('now', '+5 minutes'))",
+        (telegram_id, code)
+    )
+    cur.execute(
+        "INSERT INTO notifications (user_id, title, message) VALUES (?, 'Код авторизации', ?)",
+        (telegram_id, f"🔐 Ваш код для входа на сайт: <b>{code}</b>\nДействителен 5 минут.\n\nВведите его на странице входа или отправьте боту команду /code {telegram_id}")
+    )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Код отправлен'})
 
 
 def test_login(request):
@@ -208,28 +244,126 @@ def user_profile_redirect(request, user_id):
     return redirect(f'/users/{user_id}/')
 
 
-# ============= API =============
+# ============= TICKET PAGES =============
+
+def user_tickets_view(request):
+    user_id = request.session.get('user_id')
+    if not user_id:
+        return redirect('/usersite/login/')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM support_tickets WHERE user_id=? ORDER BY updated_at DESC", (user_id,))
+    tickets = [dict(t) for t in cur.fetchall()]
+    conn.close()
+    return render(request, 'usersite/tickets.html', {'tickets': tickets})
+
+
+def user_ticket_new_view(request):
+    if not request.session.get('user_id'):
+        return redirect('/usersite/login/')
+    return render(request, 'usersite/ticket_new.html')
+
+
+def user_ticket_detail_view(request, ticket_id):
+    user_id = request.session.get('user_id')
+    if not user_id:
+        return redirect('/usersite/login/')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM support_tickets WHERE id=? AND user_id=?", (ticket_id, user_id))
+    ticket = cur.fetchone()
+    if not ticket:
+        conn.close()
+        return redirect('/usersite/tickets/')
+    cur.execute("SELECT * FROM support_ticket_messages WHERE ticket_id=? ORDER BY created_at", (ticket_id,))
+    messages = [dict(m) for m in cur.fetchall()]
+    conn.close()
+    return render(request, 'usersite/ticket_detail.html', {
+        'ticket': dict(ticket),
+        'messages': messages,
+    })
+
+
+# ============= TICKET API =============
 
 @csrf_exempt
 def create_ticket(request):
-    return JsonResponse({'success': False, 'error': 'Tickets system moved to disputes in bot'})
+    user_id = request.session.get('user_id')
+    if not user_id:
+        return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
+    subject = request.POST.get('subject', '')
+    message = request.POST.get('message', '')
+    user_login = request.POST.get('user_login', '')
+    order_number = request.POST.get('order_number', '')
+    user_type = request.POST.get('user_type', 'buyer')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO support_tickets (user_id, subject, category, user_type, order_number) VALUES (?,?,?,?,?)",
+        (user_id, subject, subject, user_type, order_number)
+    )
+    ticket_id = cur.lastrowid
+    cur.execute(
+        "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'user',?,?)",
+        (ticket_id, user_login or f'User {user_id}', message)
+    )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True, 'ticket_id': ticket_id})
 
 
 @csrf_exempt
 def add_ticket_reply(request, ticket_id):
-    return JsonResponse({'success': False, 'error': 'Use bot for dispute messages'})
+    user_id = request.session.get('user_id')
+    if not user_id:
+        return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
+    data = json.loads(request.body)
+    message = data.get('message', '').strip()
+    if not message:
+        return JsonResponse({'success': False, 'error': 'Пустое сообщение'}, status=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, status FROM support_tickets WHERE id=?", (ticket_id,))
+    ticket = cur.fetchone()
+    if not ticket or ticket['user_id'] != user_id:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Ticket not found'}, status=404)
+    if ticket['status'] == 'closed':
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Ticket closed'}, status=400)
+    cur.execute(
+        "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'user',?,?)",
+        (ticket_id, f'User {user_id}', message)
+    )
+    cur.execute("UPDATE support_tickets SET updated_at=datetime('now') WHERE id=?", (ticket_id,))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
 
 
 @csrf_exempt
 def close_ticket(request, ticket_id):
-    return JsonResponse({'success': False, 'error': 'Use bot for dispute management'})
+    user_id = request.session.get('user_id')
+    if not user_id:
+        return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM support_tickets WHERE id=?", (ticket_id,))
+    ticket = cur.fetchone()
+    if not ticket or ticket['user_id'] != user_id:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Ticket not found'}, status=404)
+    cur.execute("UPDATE support_tickets SET status='closed', updated_at=datetime('now') WHERE id=?", (ticket_id,))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
 
 
 @csrf_exempt
 def change_ticket_status(request, ticket_id):
-    return JsonResponse({'success': False, 'error': 'Use bot for dispute management'})
+    return JsonResponse({'success': False, 'error': 'Use admin panel for status changes'})
 
 
 @csrf_exempt
 def assign_ticket(request, ticket_id):
-    return JsonResponse({'success': False, 'error': 'Use bot for dispute management'})
+    return JsonResponse({'success': False, 'error': 'Use admin panel for assignment'})

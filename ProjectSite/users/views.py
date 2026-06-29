@@ -97,7 +97,7 @@ def users_view(request):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT user_id, username, first_name, last_name,
+        SELECT user_id, username,
                balance_RUB AS balance, created_at, is_blocked,
                is_premium
         FROM users ORDER BY created_at DESC
@@ -108,7 +108,7 @@ def users_view(request):
     for u in rows:
         d = dict(u)
         d['telegram_id'] = d.pop('user_id')
-        display = d.get('username') or d.get('first_name') or str(d['telegram_id'])
+        display = d.get('username') or str(d['telegram_id'])
         d['display_name'] = display
         d['avatar_letter'] = display[0].upper()
         d['total_referrals'] = 0
@@ -121,30 +121,57 @@ def users_view(request):
     })
 
 
+CURRENCY_LIST = ['RUB','USD','EUR','BYN','UAH','KZT','UZS','TON','USDT','STARS']
+CURRENCY_RATES = {'RUB':1,'USD':90,'EUR':95,'BYN':28,'UAH':2.3,'KZT':0.19,'UZS':0.0075,'TON':500,'USDT':90,'STARS':1.5}
+
 @login_required(login_url='/')
 def user_detail_view(request, telegram_id):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM users WHERE user_id=?", (telegram_id,))
     user = cur.fetchone()
-    cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 20",
-                (telegram_id, telegram_id))
+    if not user:
+        conn.close()
+        return render(request, 'user_detail.html', {'active_page':'users','user':None,'now':datetime.now()})
+
+    cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 20", (telegram_id, telegram_id))
     deals = cur.fetchall()
     cur.execute("SELECT * FROM disputes WHERE opened_by=? ORDER BY created_at DESC LIMIT 10", (telegram_id,))
     disputes = cur.fetchall()
     cur.execute("SELECT * FROM users WHERE referred_by=?", (telegram_id,))
     referrals = cur.fetchall()
-    cur.execute("SELECT * FROM users WHERE user_id=(SELECT referred_by FROM users WHERE user_id=?)",
-                (telegram_id,))
+    cur.execute("SELECT * FROM users WHERE user_id=(SELECT referred_by FROM users WHERE user_id=?)", (telegram_id,))
     inviter = cur.fetchone()
+    cur.execute("SELECT * FROM admin_logs WHERE target_id=? ORDER BY timestamp DESC LIMIT 50", (telegram_id,))
+    admin_logs = cur.fetchall()
+    cur.execute("SELECT * FROM user_balance_backups WHERE user_id=? AND restored=0 ORDER BY backed_up_at DESC LIMIT 1", (telegram_id,))
+    latest_backup = cur.fetchone()
+    cur.execute("SELECT * FROM support_tickets WHERE user_id=? ORDER BY created_at DESC LIMIT 10", (telegram_id,))
+    tickets = cur.fetchall()
     conn.close()
 
-    user_dict = dict(user) if user else None
-    if user_dict:
-        user_dict['telegram_id'] = user_dict.pop('user_id')
-        display = user_dict.get('username') or user_dict.get('first_name') or str(user_dict['telegram_id'])
-        user_dict['display_name'] = display
-        user_dict['avatar_letter'] = display[0].upper()
+    user_dict = dict(user)
+    user_dict['telegram_id'] = user_dict.pop('user_id')
+    display = user_dict.get('username') or str(user_dict['telegram_id'])
+    user_dict['display_name'] = display
+    user_dict['avatar_letter'] = display[0].upper()
+
+    balances = {}
+    total_rub = 0
+    for c in CURRENCY_LIST:
+        val = user_dict.get(f'balance_{c}', 0) or 0
+        balances[c] = val
+        total_rub += val * CURRENCY_RATES.get(c, 0)
+    user_dict['balances'] = balances
+    user_dict['total_rub'] = round(total_rub, 2)
+
+    premium_active = False
+    if user_dict.get('is_premium') and user_dict.get('premium_until'):
+        try:
+            premium_until = datetime.fromisoformat(user_dict['premium_until'].replace('Z',''))
+            premium_active = premium_until > datetime.now()
+        except:
+            pass
 
     return render(request, 'user_detail.html', {
         'active_page': 'users',
@@ -154,11 +181,12 @@ def user_detail_view(request, telegram_id):
         'referrals': [dict(r) for r in referrals],
         'inviter': dict(inviter) if inviter else None,
         'invited_users': [dict(r) for r in referrals],
-        'subscriptions': [],
-        'operations': [],
-        'messages': [],
-        'tickets': [],
+        'admin_logs': [dict(l) for l in admin_logs],
+        'latest_backup': dict(latest_backup) if latest_backup else None,
+        'tickets': [dict(t) for t in tickets],
+        'premium_active': premium_active,
         'now': datetime.now(),
+        'currencies': CURRENCY_LIST,
     })
 
 
@@ -166,9 +194,10 @@ def user_detail_view(request, telegram_id):
 def promocodes_view(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT rowid, * FROM promocodes WHERE active=1 ORDER BY created_at DESC")
+    cur.execute("SELECT rowid, * FROM promocodes ORDER BY created_at DESC")
     promos = cur.fetchall()
     conn.close()
+    now = datetime.now()
     promo_list = []
     for p in promos:
         d = dict(p)
@@ -177,10 +206,21 @@ def promocodes_view(request):
         d['type'] = 'fixed'
         d['used'] = d.get('used_count', 0)
         d['expiry_date'] = d.get('expires_at', '')
+        active_flag = d.get('active', 0)
+        if not active_flag:
+            d['status_label'] = 'Неактивен'
+            d['status_class'] = 'badge-expired'
+        elif d.get('expires_at') and d['expires_at'] < now.strftime('%Y-%m-%d %H:%M:%S'):
+            d['status_label'] = 'Истёк'
+            d['status_class'] = 'badge-expired'
+        else:
+            d['status_label'] = 'Активен'
+            d['status_class'] = 'badge-active'
         promo_list.append(d)
     return render(request, 'promocodes.html', {
         'active_page': 'promocodes',
         'promocodes': promo_list,
+        'now': now,
     })
 
 
@@ -402,7 +442,7 @@ def api_get_promocode(request, promo_code):
 def api_get_promocodes_list(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT rowid, * FROM promocodes WHERE active=1 ORDER BY created_at DESC")
+    cur.execute("SELECT rowid, * FROM promocodes ORDER BY created_at DESC")
     promos = cur.fetchall()
     conn.close()
     result = []
@@ -550,7 +590,7 @@ def api_login(request):
 def api_export_users(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT user_id, username, first_name, last_name, balance_RUB, created_at FROM users ORDER BY created_at DESC")
+    cur.execute("SELECT user_id, username, balance_RUB, created_at FROM users ORDER BY created_at DESC")
     rows = cur.fetchall()
     conn.close()
     import csv
@@ -558,9 +598,9 @@ def api_export_users(request):
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="users.csv"'
     writer = csv.writer(response)
-    writer.writerow(['ID', 'Username', 'Имя', 'Фамилия', 'Баланс RUB', 'Дата регистрации'])
+    writer.writerow(['ID', 'Username', 'Баланс RUB', 'Дата регистрации'])
     for u in rows:
-        writer.writerow([u['user_id'], u['username'], u['first_name'], u['last_name'], u['balance_RUB'], u['created_at']])
+        writer.writerow([u['user_id'], u['username'], u['balance_RUB'], u['created_at']])
     return response
 
 
@@ -582,3 +622,170 @@ def api_export_audit(request):
     for l in logs:
         writer.writerow([l['timestamp'], l['admin_id'], l['action'], l['target_id'], l['amount']])
     return response
+
+
+# ===================== ADMIN TICKETS =====================
+
+@login_required(login_url='/')
+def admin_tickets_view(request):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM support_tickets ORDER BY updated_at DESC")
+    rows = cur.fetchall()
+    conn.close()
+    tickets_data = []
+    for t in rows:
+        d = dict(t)
+        tickets_data.append({
+            'id': d['id'],
+            'user_id': d['user_id'],
+            'username': f"User {d['user_id']}",
+            'user_login': f"User {d['user_id']}",
+            'subject': d.get('subject', 'Без темы'),
+            'order_number': d.get('order_number', '—'),
+            'user_type': d.get('user_type', '—'),
+            'status': d['status'],
+            'created_at': d.get('created_at', ''),
+        })
+    return render(request, 'tickets.html', {
+        'active_page': 'admin_tickets',
+        'tickets': tickets_data,
+        'admin_name': get_admin_name(request),
+    })
+
+
+@login_required(login_url='/')
+def admin_ticket_detail_view(request, ticket_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM support_tickets WHERE id=?", (ticket_id,))
+    ticket = cur.fetchone()
+    if not ticket:
+        conn.close()
+        return redirect('/tickets/')
+    cur.execute("SELECT * FROM support_ticket_messages WHERE ticket_id=? ORDER BY created_at", (ticket_id,))
+    messages = [dict(m) for m in cur.fetchall()]
+    conn.close()
+    return render(request, 'ticket_detail_admin.html', {
+        'active_page': 'admin_tickets',
+        'ticket': dict(ticket),
+        'messages': messages,
+        'admin_name': get_admin_name(request),
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def admin_ticket_reply_api(request, ticket_id):
+    data = json.loads(request.body)
+    message = data.get('message', '').strip()
+    if not message:
+        return JsonResponse({'success': False, 'error': 'Пустое сообщение'}, status=400)
+    admin_name = get_admin_name(request)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'admin',?,?)",
+        (ticket_id, admin_name, message)
+    )
+    cur.execute("UPDATE support_tickets SET updated_at=datetime('now') WHERE id=?", (ticket_id,))
+    cur.execute("SELECT user_id FROM support_tickets WHERE id=?", (ticket_id,))
+    row = cur.fetchone()
+    if row:
+        cur.execute(
+            "INSERT INTO notifications (user_id, title, message) VALUES (?, 'Новый ответ в тикете', ?)",
+            (row['user_id'], '🔔 В вашем тикете на сайте появился новый ответ от поддержки!')
+        )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def admin_ticket_status_api(request, ticket_id):
+    data = json.loads(request.body)
+    new_status = data.get('status', 'open')
+    if new_status not in ('open', 'in_progress', 'closed'):
+        return JsonResponse({'success': False, 'error': 'Invalid status'}, status=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE support_tickets SET status=?, updated_at=datetime('now') WHERE id=?", (new_status, ticket_id))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def admin_ticket_assign_api(request, ticket_id):
+    data = json.loads(request.body)
+    assigned_to = data.get('assigned_to', '')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE support_tickets SET assigned_to=?, updated_at=datetime('now') WHERE id=?", (assigned_to, ticket_id))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def admin_ticket_close_api(request, ticket_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE support_tickets SET status='closed', updated_at=datetime('now') WHERE id=?", (ticket_id,))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+# ===================== BALANCE BACKUP / RESTORE =====================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def api_backup_balance(request, telegram_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE user_id=?", (telegram_id,))
+    user = cur.fetchone()
+    if not user:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Not found'}, status=404)
+    cols = [f'balance_{c}' for c in CURRENCY_LIST]
+    vals = {c: user.get(f'balance_{c}', 0) or 0 for c in CURRENCY_LIST}
+    cur.execute(
+        f"INSERT INTO user_balance_backups (user_id, {', '.join(cols)}) VALUES (?, {', '.join(['?']*len(cols))})",
+        [telegram_id] + [vals[c] for c in CURRENCY_LIST]
+    )
+    for c in CURRENCY_LIST:
+        cur.execute(f"UPDATE users SET balance_{c}=0 WHERE user_id=?", (telegram_id,))
+    conn.commit()
+    log_admin_action(request, f"Обнулил балансы пользователя {telegram_id} (бэкап сохранён)", target_id=telegram_id)
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Все балансы обнулены, бэкап сохранён'})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def api_restore_balance(request, telegram_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM user_balance_backups WHERE user_id=? AND restored=0 ORDER BY backed_up_at DESC LIMIT 1", (telegram_id,))
+    backup = cur.fetchone()
+    if not backup:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Нет сохранённого бэкапа'}, status=404)
+    for c in CURRENCY_LIST:
+        cur.execute(f"UPDATE users SET balance_{c}=COALESCE(balance_{c},0)+? WHERE user_id=?", (backup[f'balance_{c}'] or 0, telegram_id))
+    cur.execute("UPDATE user_balance_backups SET restored=1, restored_at=datetime('now') WHERE id=?", (backup['id'],))
+    conn.commit()
+    log_admin_action(request, f"Восстановил балансы пользователя {telegram_id} из бэкапа #{backup['id']}", target_id=telegram_id)
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Балансы восстановлены из бэкапа'})
