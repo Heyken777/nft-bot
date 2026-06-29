@@ -37,6 +37,9 @@ urlpatterns = [
     path('api/promocodes/<str:promo_code>/', views.api_get_promocode),
     path('api/promocodes/list/', views.api_get_promocodes_list),
 
+        # API: рассылка
+    path('api/broadcast/send/', views.api_broadcast_send),
+
     # API: аудит
     path('api/audit/logs/', views.api_get_audit_logs),
     path('api/audit/clear/', views.api_clear_audit),

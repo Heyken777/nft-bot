@@ -250,6 +250,12 @@ def profile_view(request):
     cur.execute("SELECT * FROM users WHERE referred_by=?", (user_id,))
     referrals = cur.fetchall()
 
+    cur.execute("SELECT r.*, d.item AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.id WHERE r.reviewed_id=? ORDER BY r.created_at DESC LIMIT 10", (user_id,))
+    reviews = cur.fetchall()
+
+    cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (user_id,))
+    avg_rating = cur.fetchone()[0] or 0
+
     conn.close()
 
     is_premium = user and user['is_premium']
@@ -271,6 +277,8 @@ def profile_view(request):
         'user': dict(user) if user else None,
         'deals': [dict(d) for d in deals],
         'referrals': [dict(r) for r in referrals],
+        'reviews': [dict(r) for r in reviews],
+        'avg_rating': round(avg_rating, 1),
         'premium_active': premium_active,
         'days_left': days_left,
         'bot_username': bot_username,

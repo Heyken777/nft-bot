@@ -137,6 +137,19 @@
             </div>
             {% empty %}<div class="text-cyan-300/50 text-center py-3">Нет тикетов</div>{% endfor %}
         </div>
+        <div class="stat-card mb-4">
+            <h3 class="mb-3">⭐ Отзывы <span class="small text-cyan-300/50">(средний {{ avg_rating }})</span></h3>
+            {% for r in reviews %}
+            <div class="p-2 mb-2" style="background:rgba(0,0,0,0.3);border-radius:10px;">
+                <div class="d-flex justify-content-between">
+                    <span>⭐ {{ r.rating }}/5</span>
+                    <span class="small text-cyan-300/50">{{ r.created_at|date:"d.m.Y" }}</span>
+                </div>
+                <div class="small text-cyan-300/50">Сделка #{{ r.deal_id }} · {{ r.deal_item|truncatechars:20 }}</div>
+                {% if r.comment %}<div class="small mt-1">"{{ r.comment }}"</div>{% endif %}
+            </div>
+            {% empty %}<div class="text-cyan-300/50 text-center py-3">Нет отзывов</div>{% endfor %}
+        </div>
         <div class="stat-card" style="display:flex;flex-direction:column;">
             <h3 class="mb-3"><i class="fas fa-comment-dots text-cyan-300"></i> Чат с пользователем</h3>
             <div id="chatMessages" style="flex:1;max-height:500px;overflow-y:auto;margin-bottom:16px;">

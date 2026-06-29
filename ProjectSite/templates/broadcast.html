@@ -1,7 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block title %}Рассылка{% endblock %}
-
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="gradient-text">📡 РАССЫЛКА</h1>
@@ -33,6 +32,35 @@
                 </div>
             </div>
         </div>
+
+        <!-- История рассылок -->
+        {% if newsletters %}
+        <div class="stat-card mt-4">
+            <div class="text-cyan-300 mb-3"><i class="fas fa-history me-2"></i>ИСТОРИЯ РАССЫЛОК</div>
+            <div class="table-responsive">
+                <table class="table-custom w-100">
+                    <thead>
+                        <tr>
+                            <th>Заголовок</th>
+                            <th>Отправлено</th>
+                            <th>Админ</th>
+                            <th>Дата</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for n in newsletters %}
+                        <tr>
+                            <td>{{ n.title|default:"—"|truncatechars:30 }}</td>
+                            <td>{{ n.sent_count }}</td>
+                            <td>{{ n.created_by }}</td>
+                            <td>{{ n.created_at|date:"d.m H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -42,10 +70,8 @@ function previewBroadcast() {
     const message = document.getElementById('broadcastMessage').value;
     const container = document.getElementById('previewContainer');
     const content = document.getElementById('previewContent');
-    
     if(!title && !message) { showToast('Введите заголовок или текст', 'error'); return; }
-    
-    content.innerHTML = `<b>${title}</b><br><br>${message.replace(/\n/g,'<br>')}<br><br><span style="font-size:11px; opacity:0.5;">📱 Сообщение отправится через Telegram бота</span>`;
+    content.innerHTML = `<b>${title}</b><br><br>${message.replace(/\n/g,'<br>')}<br><br><span style="font-size:11px;opacity:0.5;">📱 Рассылка через Telegram бота</span>`;
     container.style.display = 'block';
 }
 
@@ -53,28 +79,23 @@ async function sendBroadcast() {
     const title = document.getElementById('broadcastTitle').value;
     const message = document.getElementById('broadcastMessage').value;
     const photo_url = document.getElementById('broadcastPhoto').value;
-    
     if(!title && !message) { showToast('Введите заголовок или текст', 'error'); return; }
-    
     const btn = event.target;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Отправка...';
-    
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Отправка...';
     const res = await fetch('/api/broadcast/send/', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({title, message, photo_url})
     });
     const data = await res.json();
-    
     if(data.success) {
-        showToast(`✅ Рассылка отправлена ${data.sent} пользователям`);
+        showToast(`✅ Отправлено ${data.sent} пользователям${data.failed > 0 ? `, ${data.failed} ошибок` : ''}`);
         document.getElementById('broadcastTitle').value = '';
         document.getElementById('broadcastMessage').value = '';
         document.getElementById('broadcastPhoto').value = '';
         document.getElementById('previewContainer').style.display = 'none';
     } else {
-        showToast('❌ Ошибка отправки', 'error');
+        showToast('❌ ' + (data.error || 'Ошибка отправки'), 'error');
     }
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Отправить рассылку';

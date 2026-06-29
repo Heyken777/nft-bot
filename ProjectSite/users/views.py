@@ -1,4 +1,4 @@
-import json, os, sqlite3
+import json, os, sqlite3, requests
 from datetime import datetime, timedelta
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.conf import settings
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
@@ -227,6 +228,10 @@ def user_detail_view(request, telegram_id):
     latest_backup = cur.fetchone()
     cur.execute("SELECT * FROM support_tickets WHERE user_id=? ORDER BY created_at DESC LIMIT 10", (telegram_id,))
     tickets = cur.fetchall()
+    cur.execute("SELECT r.*, d.item AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.id WHERE r.reviewed_id=? ORDER BY r.created_at DESC LIMIT 20", (telegram_id,))
+    reviews = cur.fetchall()
+    cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (telegram_id,))
+    avg_rating = cur.fetchone()[0] or 0
     conn.close()
 
     user_dict = dict(user)
@@ -263,6 +268,8 @@ def user_detail_view(request, telegram_id):
         'admin_logs': [dict(l) for l in admin_logs],
         'latest_backup': dict(latest_backup) if latest_backup else None,
         'tickets': [dict(t) for t in tickets],
+        'reviews': [dict(r) for r in reviews],
+        'avg_rating': round(avg_rating, 1),
         'premium_active': premium_active,
         'now': datetime.now(),
         'currencies': CURRENCY_LIST,
@@ -405,7 +412,66 @@ def promocodes_view(request):
 
 @login_required(login_url='/')
 def broadcast_view(request):
-    return render(request, 'broadcast.html', {'active_page': 'broadcast'})
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM newsletters ORDER BY created_at DESC LIMIT 20")
+    newsletters = cur.fetchall()
+    conn.close()
+    return render(request, 'broadcast.html', {
+        'active_page': 'broadcast',
+        'newsletters': [dict(n) for n in newsletters],
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def api_broadcast_send(request):
+    data = json.loads(request.body)
+    title = data.get('title', '')
+    message = data.get('message', '')
+    photo_url = data.get('photo_url', '')
+    full_text = f"<b>{title}</b>\n\n{message}" if title else message
+
+    bot_token = os.getenv('BOT_TOKEN') or getattr(settings, 'BOT_TOKEN', '')
+    if not bot_token:
+        return JsonResponse({'success': False, 'error': 'BOT_TOKEN not configured'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users")
+    users = cur.fetchall()
+
+    sent = 0
+    failed = 0
+    for u in users:
+        uid = u[0]
+        try:
+            if photo_url:
+                requests.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendPhoto",
+                    json={'chat_id': uid, 'photo': photo_url, 'caption': full_text, 'parse_mode': 'HTML'},
+                    timeout=10
+                )
+            else:
+                requests.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={'chat_id': uid, 'text': full_text, 'parse_mode': 'HTML'},
+                    timeout=10
+                )
+            sent += 1
+        except Exception as e:
+            failed += 1
+
+    cur.execute(
+        "INSERT INTO newsletters (title, message, sent_count, created_by) VALUES (?, ?, ?, ?)",
+        (title, message, sent, request.user.id)
+    )
+    conn.commit()
+    conn.close()
+
+    log_admin_action(request, f"broadcast_sent to {sent} users", amount=sent)
+    return JsonResponse({'success': True, 'sent': sent, 'failed': failed})
 
 
 @login_required(login_url='/')

@@ -136,6 +136,29 @@
             </div>
         </div>
 
+        <!-- Отзывы -->
+        <div class="card mt-4">
+            <h4>⭐ Отзывы <span class="text-muted small">(средний {{ avg_rating }})</span></h4>
+            <div class="mt-2">
+                {% for r in reviews %}
+                <div style="padding:10px 0;border-bottom:1px solid var(--border);">
+                    <div style="display:flex;justify-content:space-between;">
+                        <span style="font-weight:600;">⭐ {{ r.rating }}/5</span>
+                        <span class="text-muted small">{{ r.created_at|date:"d.m.Y" }}</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">
+                        Сделка: {{ r.deal_item|default:"#"~r.deal_id|truncatechars:30 }}
+                    </div>
+                    {% if r.comment %}
+                    <div style="font-size:13px;margin-top:4px;color:var(--text-primary);">"{{ r.comment }}"</div>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <p class="text-muted" style="font-size:13px;">Отзывов пока нет</p>
+                {% endfor %}
+            </div>
+        </div>
+
         <!-- Рефералы -->
         <div class="card mt-4">
             <h4><i class="fas fa-user-friends"></i> Приглашённые пользователи</h4>
