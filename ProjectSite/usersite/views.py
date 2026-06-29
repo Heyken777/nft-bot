@@ -1,5 +1,6 @@
-import json, os, sqlite3, hashlib, hmac, random
+import json, os, sqlite3, hashlib, hmac, random, time
 from datetime import datetime
+from functools import wraps
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -16,6 +17,43 @@ def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+_rate_limit_store = {}
+
+def rate_limit(max_requests=5, window=60):
+    def decorator(f):
+        def wrapped(request, *args, **kwargs):
+            ip = request.META.get('REMOTE_ADDR', 'unknown')
+            key = f"{ip}:{f.__name__}"
+            now = time.time()
+            _rate_limit_store.setdefault(key, [])
+            _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < window]
+            if len(_rate_limit_store[key]) >= max_requests:
+                return JsonResponse({'success': False, 'error': 'Слишком много запросов. Попробуйте позже.'}, status=429)
+            _rate_limit_store[key].append(now)
+            return f(request, *args, **kwargs)
+        return wrapped
+    return decorator
+
+
+def safe_db(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except sqlite3.Error as e:
+            if len(args) > 0 and hasattr(args[0], 'META'):
+                request = args[0]
+                from django.shortcuts import render
+                return render(request, 'errors/db_error.html', {'error': str(e)}, status=500)
+            return JsonResponse({'success': False, 'error': 'Database error'}, status=500)
+        except Exception as e:
+            if len(args) > 0 and hasattr(args[0], 'META'):
+                request = args[0]
+                from django.shortcuts import render
+                return render(request, 'errors/db_error.html', {'error': str(e)}, status=500)
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+    return wrapper
 
 
 def check_auth(request):
@@ -106,6 +144,7 @@ def notifications_mark_read(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@rate_limit(max_requests=3, window=60)
 def request_code_api(request):
     data = json.loads(request.body)
     telegram_id = int(data.get('telegram_id', 0))
@@ -137,6 +176,7 @@ CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'S
 CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': 'сум', 'TON': 'TON', 'USDT': 'USDT', 'STARS': '⭐'}
 EXCHANGE_RATES = {'RUB': 1, 'USD': 90, 'EUR': 98, 'BYN': 29, 'UAH': 2.4, 'KZT': 0.19, 'UZS': 0.0073, 'TON': 280, 'USDT': 90, 'STARS': 0.02}
 
+@safe_db
 def dashboard_view(request):
     if not check_auth(request):
         return redirect('/usersite/login/')
@@ -233,6 +273,7 @@ def dashboard_view(request):
     })
 
 
+@safe_db
 def profile_view(request):
     if not check_auth(request):
         return redirect('/usersite/login/')
@@ -420,6 +461,24 @@ def assign_ticket(request, ticket_id):
     return JsonResponse({'success': False, 'error': 'Use admin panel for assignment'})
 
 
+@safe_db
+def transactions_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 50", (user_id,))
+        transactions = cur.fetchall()
+    except sqlite3.OperationalError:
+        transactions = []
+    conn.close()
+    return render(request, 'usersite/transactions.html', {
+        'transactions': [dict(t) for t in transactions],
+    })
+
+
 def withdraw_view(request):
     if not check_auth(request):
         return redirect('/usersite/login/')
@@ -439,6 +498,7 @@ def withdraw_view(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@rate_limit(max_requests=3, window=60)
 def withdraw_create_api(request):
     if not check_auth(request):
         return JsonResponse({'error': 'Unauthorized'}, status=401)

@@ -1,0 +1,60 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}История операций{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/dashboard/">Главная</a>
+    <span class="separator">/</span>
+    <span class="current">Операции</span>
+</div>
+
+<div class="card">
+    <h3>📊 История операций</h3>
+    <div class="table-responsive mt-3">
+        <table class="table-custom w-100">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Тип</th>
+                    <th>Сумма</th>
+                    <th>Валюта</th>
+                    <th>Описание</th>
+                    <th>Дата</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in transactions %}
+                <tr>
+                    <td>{{ t.id }}</td>
+                    <td>
+                        {% if t.type == 'deposit' %}💰 Пополнение
+                        {% elif t.type == 'withdrawal' %}💸 Вывод
+                        {% elif t.type == 'transfer' %}🔄 Перевод
+                        {% elif t.type == 'fee' %}💼 Комиссия
+                        {% elif t.type == 'referral' %}👥 Реферал
+                        {% elif t.type == 'promocode' %}🎫 Промокод
+                        {% else %}{{ t.type }}{% endif %}
+                    </td>
+                    <td style="{% if t.amount > 0 %}color:#00ff66{% else %}color:#ff4757{% endif %};font-weight:600;">
+                        {% if t.amount > 0 %}+{% endif %}{{ t.amount|floatformat:2 }}
+                    </td>
+                    <td>{{ t.currency }}</td>
+                    <td>{{ t.description|default:"—"|truncatechars:50 }}</td>
+                    <td>{{ t.created_at|date:"d.m.Y H:i" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-muted text-center py-4">Нет операций</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:24px; }
+.table-custom { width:100%; border-collapse:collapse; }
+.table-custom th { text-align:left; padding:12px 8px; color:var(--text-muted); font-weight:500; font-size:12px; border-bottom:1px solid var(--border); }
+.table-custom td { padding:12px 8px; border-bottom:1px solid var(--border); color:var(--text-secondary); }
+.table-custom tr:last-child td { border-bottom:none; }
+</style>
+{% endblock %}

@@ -1,7 +1,12 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.shortcuts import render
 from users import views
 from news import views as news_views
+
+
+handler404 = 'novix_admin.views.custom_404'
+handler500 = 'novix_admin.views.custom_500'
 
 urlpatterns = [
     # Админ-панель

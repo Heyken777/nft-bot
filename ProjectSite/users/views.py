@@ -168,7 +168,7 @@ def users_view(request):
 
     if search:
         cur.execute("""
-            SELECT user_id, username, balance_RUB AS balance, created_at, is_blocked, is_premium
+            SELECT user_id, username, balance_RUB AS balance, created_at, 0 AS is_blocked, is_premium
             FROM users WHERE username LIKE ? OR CAST(user_id AS TEXT) LIKE ?
             ORDER BY created_at DESC LIMIT ? OFFSET ?
         """, (f'%{search}%', f'%{search}%', per_page, offset))
@@ -176,7 +176,7 @@ def users_view(request):
                     (f'%{search}%', f'%{search}%'))
     else:
         cur.execute("""
-            SELECT user_id, username, balance_RUB AS balance, created_at, is_blocked, is_premium
+            SELECT user_id, username, balance_RUB AS balance, created_at, 0 AS is_blocked, is_premium
             FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?
         """, (per_page, offset))
         cur.execute("SELECT COUNT(*) FROM users")

@@ -645,6 +645,20 @@ class Database:
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, ach)
         
+        # Таблица истории транзакций
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                currency TEXT DEFAULT 'RUB',
+                type TEXT NOT NULL,
+                description TEXT,
+                related_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Таблица кодов авторизации
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS auth_codes (
@@ -722,6 +736,8 @@ class Database:
                 return False
             self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (new_balance, uid))
             self.conn.commit()
+            tx_type = 'deposit' if delta > 0 else 'withdrawal'
+            self.add_transaction(uid, delta, currency, tx_type, f"{'Пополнение' if delta > 0 else 'Списание'} баланса")
             return True
         except Exception as e:
             self.conn.rollback()
@@ -979,6 +995,13 @@ class Database:
         self.cursor.execute("UPDATE disputes SET status = 'resolved' WHERE id = ?", (did,))
         self.conn.commit()
 
+    def add_transaction(self, user_id: int, amount: float, currency: str, tx_type: str, description: str = None, related_id: int = None):
+        self.cursor.execute(
+            "INSERT INTO transactions (user_id, amount, currency, type, description, related_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, amount, currency, tx_type, description, related_id)
+        )
+        self.conn.commit()
+
     def add_notification(self, user_id: int, text: str):
         self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)", (user_id, "Уведомление", text))
         self.conn.commit()
@@ -1047,6 +1070,7 @@ class Database:
                 return False, 'Пользователь не найден'
             new_balance = (current[0] or 0) + promo['amount']
             self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (new_balance, user_id))
+            self.add_transaction(user_id, promo['amount'], 'RUB', 'promocode', f"Промокод {code}", related_id=0)
             
             # Начисляем 10% реферальных отчислений с пополнения по промокоду
             self.cursor.execute("SELECT referrer_id FROM friend_promo_activations WHERE user_id = ?", (user_id,))
