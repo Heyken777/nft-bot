@@ -36,7 +36,7 @@
                     <td><span class="{{ promo.status_class }}">{{ promo.status_label }}</span></td>
                     <td>
                         <button class="btn-primary btn-sm" onclick="editPromo('{{ promo.code|escapejs }}')"><i class="fas fa-edit"></i></button>
-                        <button class="btn-danger btn-sm" onclick="deletePromo('{{ promo.code|escapejs }}')"><i class="fas fa-trash"></i></button>
+                        <button class="btn-danger btn-sm" onclick="openDeleteModal('{{ promo.code|escapejs }}')"><i class="fas fa-trash"></i></button>
                      </td>
                 </tr>
                 {% empty %}
@@ -68,8 +68,20 @@
     </div>
 </div>
 
+<div id="deleteModal" class="modal-overlay" style="display:none;">
+    <div class="modal-window" style="max-width:400px;">
+        <h3 class="mb-3">Удалить промокод</h3>
+        <p class="text-cyan-300/70 mb-4">Вы уверены, что хотите удалить промокод <strong id="deleteCodeName"></strong>?</p>
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn-primary" onclick="document.getElementById('deleteModal').style.display='none'" style="background:rgba(255,255,255,0.1);">Отмена</button>
+            <button class="btn-danger" id="deleteConfirmBtn">Удалить</button>
+        </div>
+    </div>
+</div>
+
 <script>
 let editMode = false;
+let deleteCode = null;
 
 function toggleExpiry() {
     document.getElementById('expiryDaysContainer').style.display =
@@ -120,12 +132,18 @@ async function editPromo(id) {
     document.getElementById('promoModal').style.display = 'flex';
 }
 
-async function deletePromo(id) {
-    if(confirm('Удалить промокод?')) {
-        await fetch(`/api/promocodes/${encodeURIComponent(id)}/delete/`, {method: 'DELETE'});
-        showToast('Промокод удалён');
-        location.reload();
-    }
+function openDeleteModal(code) {
+    deleteCode = code;
+    document.getElementById('deleteCodeName').textContent = code;
+    document.getElementById('deleteModal').style.display = 'flex';
 }
+
+document.getElementById('deleteConfirmBtn').addEventListener('click', async function() {
+    if (!deleteCode) return;
+    await fetch(`/api/promocodes/${encodeURIComponent(deleteCode)}/delete/`, {method: 'DELETE'});
+    document.getElementById('deleteModal').style.display = 'none';
+    showToast('Промокод удалён');
+    location.reload();
+});
 </script>
 {% endblock %}

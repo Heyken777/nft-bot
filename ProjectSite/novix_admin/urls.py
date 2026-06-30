@@ -23,6 +23,8 @@ urlpatterns = [
     path('api/withdrawals/<int:req_id>/approve/', views.withdrawal_approve_api),
     path('api/withdrawals/<int:req_id>/reject/', views.withdrawal_reject_api),
     path('profile/', views.profile_view, name='profile'),
+    path('api/profile/update/', views.api_profile_update, name='api_profile_update'),
+    path('api/profile/change-password/', views.api_profile_change_password, name='api_profile_change_password'),
 
     # API: вход
     path('api/login/', views.api_login, name='api_login'),
@@ -33,7 +35,9 @@ urlpatterns = [
     path('api/users/<int:telegram_id>/grant-premium/', views.api_grant_premium),
     path('api/users/<int:telegram_id>/backup-balance/', views.api_backup_balance),
     path('api/users/<int:telegram_id>/restore-balance/', views.api_restore_balance),
+    path('api/users/search/', views.api_search_users, name='api_search_users'),
     path('api/users/export/', views.api_export_users),
+    path('api/deals/search/', views.api_search_deals, name='api_search_deals'),
 
     # API: промокоды (code — строка)
     path('api/promocodes/create/', views.api_create_promocode),

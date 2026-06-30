@@ -17,12 +17,10 @@
 
 {% if admin_data %}
 <div class="row g-4">
-    <!-- ЛЕВАЯ КОЛОНКА - АВАТАР И ОСНОВНАЯ ИНФОРМАЦИЯ -->
     <div class="col-xl-4 col-lg-5 col-md-12">
         <div class="stat-card text-center" style="position:relative; overflow:hidden;">
             <div style="position:absolute; top:-50%; left:-50%; width:200%; height:200%; background:radial-gradient(circle, rgba(0,255,255,0.05) 0%, transparent 70%); pointer-events:none;"></div>
             
-            <!-- АВАТАР -->
             <div class="avatar-wrapper" style="position:relative; width:min(140px, 35vw); height:min(140px, 35vw); margin:0 auto;">
                 <div class="profile-avatar" id="avatarDisplay" style="width:100%; height:100%; background:linear-gradient(135deg, #ff0066, #ff6600); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:clamp(2rem, 8vw, 3.5rem); font-weight:800; box-shadow:0 0 30px rgba(255,0,102,0.5);">
                     {% if admin_data.avatar and admin_data.avatar != '' %}
@@ -90,9 +88,7 @@
         </div>
     </div>
     
-    <!-- ПРАВАЯ КОЛОНКА - РЕДАКТИРОВАНИЕ И ЛОГИ -->
     <div class="col-xl-8 col-lg-7 col-md-12">
-        <!-- Форма редактирования -->
         <div class="stat-card mb-4">
             <h3 class="mb-4" style="font-size:clamp(1.1rem, 4vw, 1.5rem);"><i class="fas fa-user-edit text-cyan-300 me-2"></i> Редактирование профиля</h3>
             
@@ -142,7 +138,7 @@
                 </div>
                 <div id="rolesList" class="mt-3">
                     {% for role in admin_data.custom_roles %}
-                    <span class="custom-role-tag">{{ role }} <span class="role-tag-remove" onclick="removeRole('{{ role }}')"><i class="fas fa-times-circle"></i></span></span>
+                    <span class="custom-role-tag">{{ role }} <span class="role-tag-remove" onclick="openRemoveRoleModal('{{ role }}')"><i class="fas fa-times-circle"></i></span></span>
                     {% endfor %}
                 </div>
             </div>
@@ -150,12 +146,11 @@
             <div class="d-flex gap-3 mt-4 pt-3 border-top border-cyan-300/10 flex-wrap">
                 <button class="btn-primary flex-grow-1" onclick="saveProfile()"><i class="fas fa-save me-2"></i>Сохранить изменения</button>
                 {% if viewing_self %}
-                <button class="btn-primary" onclick="changePassword()" style="background:linear-gradient(135deg,#ff4757,#c0392b);"><i class="fas fa-key me-2"></i>Сменить пароль</button>
+                <button class="btn-primary" onclick="openPasswordModal()" style="background:linear-gradient(135deg,#ff4757,#c0392b);"><i class="fas fa-key me-2"></i>Сменить пароль</button>
                 {% endif %}
             </div>
         </div>
         
-        <!-- Статистика активности -->
         <div class="row g-4 mb-4">
             <div class="col-md-4 col-sm-6">
                 <div class="stat-card text-center">
@@ -183,7 +178,6 @@
             </div>
         </div>
         
-        <!-- Логи действий -->
         <div class="stat-card">
             <h3 class="mb-3" style="font-size:clamp(1rem, 4vw, 1.3rem);"><i class="fas fa-history text-cyan-300 me-2"></i> История действий</h3>
             <div class="table-responsive" style="max-height:400px; overflow-y:auto;">
@@ -210,6 +204,29 @@
     </div>
 </div>
 
+<div id="passwordModal" class="modal-overlay" style="display:none;">
+    <div class="modal-window" style="max-width:450px;">
+        <h3 class="mb-3">Сменить пароль</h3>
+        <label class="form-label">Новый UUID пароль (минимум 20 символов)</label>
+        <input type="password" id="newPasswordInput" class="form-control mb-3" placeholder="Введите новый пароль...">
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn-primary" onclick="document.getElementById('passwordModal').style.display='none'" style="background:rgba(255,255,255,0.1);">Отмена</button>
+            <button class="btn-primary" onclick="confirmPasswordChange()">Сменить</button>
+        </div>
+    </div>
+</div>
+
+<div id="removeRoleModal" class="modal-overlay" style="display:none;">
+    <div class="modal-window" style="max-width:400px;">
+        <h3 class="mb-3">Удалить роль</h3>
+        <p class="text-cyan-300/70 mb-4">Удалить роль "<span id="removeRoleName"></span>"?</p>
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn-primary" onclick="document.getElementById('removeRoleModal').style.display='none'" style="background:rgba(255,255,255,0.1);">Отмена</button>
+            <button class="btn-danger" onclick="confirmRemoveRole()">Удалить</button>
+        </div>
+    </div>
+</div>
+
 <script>
 const TOKEN = localStorage.getItem('admin_token');
 const ADMIN_NAME = "{{ request.session.admin|default:'Heyken' }}";
@@ -222,6 +239,7 @@ let currentRoles = [];
 {% endif %}
 
 let passwordVisible = false;
+let pendingRemoveRole = null;
 
 function togglePassword() {
     const input = document.getElementById('passwordDisplay');
@@ -234,10 +252,10 @@ function updateRolesList() {
     if (!container) return;
     container.innerHTML = '';
     if (!currentRoles || !currentRoles.length) return;
-    currentRoles.forEach((role, index) => {
+    currentRoles.forEach((role) => {
         const span = document.createElement('span');
         span.className = 'custom-role-tag';
-        span.innerHTML = `${role} <span class="role-tag-remove" onclick="removeRole('${role}')"><i class="fas fa-times-circle"></i></span>`;
+        span.innerHTML = `${role} <span class="role-tag-remove" onclick="openRemoveRoleModal('${role}')"><i class="fas fa-times-circle"></i></span>`;
         container.appendChild(span);
     });
 }
@@ -255,12 +273,20 @@ function addRole() {
     }
 }
 
-function removeRole(role) {
-    if(confirm(`Удалить роль "${role}"?`)) {
-        currentRoles = currentRoles.filter(r => r !== role);
+function openRemoveRoleModal(role) {
+    pendingRemoveRole = role;
+    document.getElementById('removeRoleName').textContent = role;
+    document.getElementById('removeRoleModal').style.display = 'flex';
+}
+
+function confirmRemoveRole() {
+    if (pendingRemoveRole) {
+        currentRoles = currentRoles.filter(r => r !== pendingRemoveRole);
         updateRolesList();
         showToast('✅ Роль удалена');
     }
+    document.getElementById('removeRoleModal').style.display = 'none';
+    pendingRemoveRole = null;
 }
 
 function showToast(msg, type = 'success') {
@@ -292,7 +318,7 @@ async function saveProfile() {
         });
         const result = await res.json();
         
-        if(result.success) {
+        if(result.success || result.status === 'success') {
             showToast('✅ Профиль сохранён');
             if(data.name !== VIEWING_USER && IS_SELF) {
                 localStorage.setItem('admin_username', data.name);
@@ -308,26 +334,35 @@ async function saveProfile() {
     }
 }
 
-async function changePassword() {
-    const newPassword = prompt('Введите новый UUID пароль (минимум 20 символов):');
-    if(newPassword && newPassword.length >= 20) {
-        const res = await fetch('/api/profile/change-password/', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({password: newPassword})
-        });
-        if(res.ok) {
-            showToast('✅ Пароль изменён');
-            document.getElementById('passwordDisplay').value = newPassword;
-        } else {
-            showToast('❌ Ошибка смены пароля', 'error');
-        }
-    } else if(newPassword && newPassword.length < 20) {
+function openPasswordModal() {
+    document.getElementById('newPasswordInput').value = '';
+    document.getElementById('passwordModal').style.display = 'flex';
+}
+
+async function confirmPasswordChange() {
+    const newPassword = document.getElementById('newPasswordInput').value;
+    if (!newPassword) {
+        showToast('❌ Введите новый пароль', 'error');
+        return;
+    }
+    if (newPassword.length < 20) {
         showToast('❌ Пароль слишком короткий (минимум 20 символов)', 'error');
+        return;
+    }
+    const res = await fetch('/api/profile/change-password/', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({password: newPassword})
+    });
+    if(res.ok) {
+        showToast('✅ Пароль изменён');
+        document.getElementById('passwordDisplay').value = newPassword;
+        document.getElementById('passwordModal').style.display = 'none';
+    } else {
+        showToast('❌ Ошибка смены пароля', 'error');
     }
 }
 
-// Загрузка аватара
 if(IS_SELF) {
     document.querySelector('.avatar-sticker')?.addEventListener('click', function(e) {
         e.stopPropagation();
@@ -365,7 +400,7 @@ if(IS_SELF) {
                 body: JSON.stringify({avatar: avatarData})
             });
             const result = await res.json();
-            if(result.success) {
+            if(result.success || result.status === 'success') {
                 showToast('✅ Аватар обновлён');
             } else {
                 showToast('❌ Ошибка загрузки аватара', 'error');
@@ -380,7 +415,6 @@ updateRolesList();
 </script>
 
 <style>
-/* Адаптивные стили */
 @media (max-width: 768px) {
     .stat-card { padding: 16px; }
     .role-input-container { flex-direction: column; }
@@ -388,13 +422,11 @@ updateRolesList();
     .btn-primary { padding: 8px 16px; font-size: 14px; }
     .table-custom th, .table-custom td { padding: 8px 10px; font-size: 12px; }
 }
-
 @media (max-width: 576px) {
     .d-flex.gap-3 { gap: 8px; }
     .stat-value { font-size: 1.3rem; }
     .custom-role-tag { font-size: 10px; padding: 4px 10px; }
 }
-
 .hidden-input { display: none; }
 .avatar-wrapper { position: relative; cursor: pointer; }
 .avatar-sticker { transition: transform 0.3s; }

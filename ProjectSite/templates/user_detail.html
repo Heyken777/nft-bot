@@ -53,8 +53,8 @@
                     <div class="badge-expired mb-2" style="font-size:1rem;">❌ Не активен</div>
                     {% endif %}
                     <div class="d-flex gap-2 mt-3 flex-wrap">
-                        <button class="btn-primary btn-sm" onclick="grantPremium()"><i class="fas fa-crown"></i> Выдать Premium</button>
-                        <button class="btn-danger btn-sm" onclick="removePremium()"><i class="fas fa-times"></i> Забрать Premium</button>
+                        <button class="btn-primary btn-sm" onclick="openPremiumModal()"><i class="fas fa-crown"></i> Выдать Premium</button>
+                        <button class="btn-danger btn-sm" onclick="openConfirmModal('Забрать Premium', 'Забрать Premium у пользователя?', 'removePremium')"><i class="fas fa-times"></i> Забрать Premium</button>
                     </div>
                 </div>
             </div>
@@ -88,8 +88,8 @@
                 <h3><i class="fas fa-exclamation-triangle text-warning"></i> Экстренное управление</h3>
             </div>
             <div class="d-flex gap-3 flex-wrap">
-                <button class="btn-danger btn-sm" onclick="backupBalance()"><i class="fas fa-trash-alt"></i> Забрать весь баланс (бэкап)</button>
-                <button class="btn-primary btn-sm" onclick="restoreBalance()"><i class="fas fa-undo"></i> Восстановить из бэкапа</button>
+                <button class="btn-danger btn-sm" onclick="openConfirmModal('Забрать баланс', 'Обнулить ВСЕ балансы пользователя? Состояние сохранится в бэкап.', 'backupBalance')"><i class="fas fa-trash-alt"></i> Забрать весь баланс (бэкап)</button>
+                <button class="btn-primary btn-sm" onclick="openConfirmModal('Восстановить баланс', 'Восстановить балансы из последнего бэкапа?', 'restoreBalance')"><i class="fas fa-undo"></i> Восстановить из бэкапа</button>
                 {% if latest_backup %}
                 <span class="badge-active">Бэкап от {{ latest_backup.backed_up_at|date:"d.m.Y H:i" }}</span>
                 {% endif %}
@@ -161,8 +161,34 @@
         </div>
     </div>
 </div>
+
+<div id="modalOverlay" class="modal-overlay" style="display:none;">
+    <div class="modal-window" style="max-width:450px;">
+        <h3 id="modalTitle" class="mb-3">Подтверждение</h3>
+        <p id="modalBody" class="text-cyan-300/70 mb-4"></p>
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn-primary" onclick="closeModal()" style="background:rgba(255,255,255,0.1);">Отмена</button>
+            <button id="modalConfirmBtn" class="btn-danger" onclick="">Подтвердить</button>
+        </div>
+    </div>
+</div>
+
+<div id="premiumModal" class="modal-overlay" style="display:none;">
+    <div class="modal-window" style="max-width:400px;">
+        <h3 class="mb-3">Выдать Premium</h3>
+        <label class="form-label">Количество дней</label>
+        <input type="number" id="premiumDays" class="form-control mb-2" value="30" min="1" placeholder="99999 = навсегда">
+        <div class="small text-cyan-300/50 mb-3">Введите 99999 для бессрочного Premium</div>
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn-primary" onclick="closeModal('premiumModal')" style="background:rgba(255,255,255,0.1);">Отмена</button>
+            <button class="btn-primary" onclick="confirmPremium()">Выдать</button>
+        </div>
+    </div>
+</div>
+
 <script>
 const USER_ID = {{ user.telegram_id }};
+let pendingAction = null;
 
 function getCSRF() {
     const m = document.cookie.match(/csrftoken=([^;]+)/);
@@ -178,6 +204,24 @@ async function api(url, body) {
     return res.json();
 }
 
+function openModal(title, body, btnText, actionFn) {
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalBody').textContent = body;
+    const btn = document.getElementById('modalConfirmBtn');
+    btn.textContent = btnText || 'Подтвердить';
+    pendingAction = actionFn;
+    document.getElementById('modalOverlay').style.display = 'flex';
+}
+
+function closeModal(id) {
+    document.getElementById(id || 'modalOverlay').style.display = 'none';
+    pendingAction = null;
+}
+
+function openConfirmModal(title, body, action) {
+    openModal(title, body, 'Подтвердить', action);
+}
+
 async function changeBalance(sign) {
     const currency = document.getElementById('balCurrency').value;
     const amount = parseFloat(document.getElementById('balAmount').value) * sign;
@@ -188,30 +232,33 @@ async function changeBalance(sign) {
     else { showToast('Ошибка', 'error'); }
 }
 
-async function grantPremium() {
-    const days = prompt('Введите количество дней Premium (99999 = навсегда):', '30');
-    if (!days) return;
-    const r = await api(`/api/users/${USER_ID}/grant-premium/`, {days: parseInt(days)});
+function openPremiumModal() {
+    document.getElementById('premiumDays').value = '30';
+    document.getElementById('premiumModal').style.display = 'flex';
+}
+
+async function confirmPremium() {
+    const days = parseInt(document.getElementById('premiumDays').value);
+    if (!days || days < 0) { showToast('Укажите количество дней', 'error'); return; }
+    closeModal('premiumModal');
+    const r = await api(`/api/users/${USER_ID}/grant-premium/`, {days});
     if (r.success) { showToast('Premium выдан'); setTimeout(() => location.reload(), 1500); }
     else { showToast('Ошибка', 'error'); }
 }
 
 async function removePremium() {
-    if (!confirm('Забрать Premium у пользователя?')) return;
     const r = await api(`/api/users/${USER_ID}/grant-premium/`, {days: 0});
     if (r.success) { showToast('Premium забран'); setTimeout(() => location.reload(), 1500); }
     else { showToast('Ошибка', 'error'); }
 }
 
 async function backupBalance() {
-    if (!confirm('Обнулить ВСЕ балансы пользователя? Состояние сохранится в бэкап.')) return;
     const r = await api(`/api/users/${USER_ID}/backup-balance/`, {});
     if (r.success) { showToast(r.message); setTimeout(() => location.reload(), 1500); }
     else { showToast('Ошибка', 'error'); }
 }
 
 async function restoreBalance() {
-    if (!confirm('Восстановить балансы из последнего бэкапа?')) return;
     const r = await api(`/api/users/${USER_ID}/restore-balance/`, {});
     if (r.success) { showToast(r.message); setTimeout(() => location.reload(), 1500); }
     else { showToast('Ошибка: ' + (r.error || 'нет бэкапа'), 'error'); }
@@ -225,13 +272,12 @@ async function sendMessage() {
     else { showToast('Ошибка', 'error'); }
 }
 
-function showToast(msg, type = 'success') {
-    const toast = document.createElement('div');
-    toast.className = 'toast-custom';
-    toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i> ${msg}`;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3500);
-}
+document.getElementById('modalConfirmBtn').addEventListener('click', function() {
+    if (pendingAction && typeof window[pendingAction] === 'function') {
+        window[pendingAction]();
+    }
+    closeModal();
+});
 </script>
 {% else %}
 <div class="stat-card text-center">

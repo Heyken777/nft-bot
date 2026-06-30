@@ -4,10 +4,10 @@
 {% block title %}Сделки{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <h1 class="gradient-text">📋 СДЕЛКИ <span class="small text-cyan-300/50">({{ total }})</span></h1>
+    <h1 class="gradient-text">📋 СДЕЛКИ <span class="small text-cyan-300/50" id="dealCount">({{ total }})</span></h1>
     <div class="d-flex gap-2">
-        <form method="get" class="d-flex gap-2 align-items-center">
-            <select name="status" class="form-control" style="width:auto;" onchange="this.form.submit()">
+        <div class="d-flex gap-2 align-items-center">
+            <select id="dealStatusFilter" class="form-control" style="width:auto;">
                 <option value="">Все статусы</option>
                 {% for s in statuses %}
                 <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
@@ -15,11 +15,10 @@
             </select>
             <div class="position-relative">
                 <i class="fas fa-search position-absolute" style="left:15px;top:12px;color:rgba(0,255,255,.5);"></i>
-                <input type="text" name="q" class="form-control ps-5" style="width:200px;" placeholder="ID или товар..." value="{{ search }}">
+                <input type="text" id="dealSearch" class="form-control ps-5" style="width:200px;" placeholder="ID или товар..." value="{{ search }}" autocomplete="off">
             </div>
-            <button class="btn-primary" type="submit"><i class="fas fa-search"></i></button>
             {% if search or status_filter %}<a href="/deals/" class="btn-primary" style="background:rgba(255,255,255,.1);"><i class="fas fa-times"></i></a>{% endif %}
-        </form>
+        </div>
     </div>
 </div>
 
@@ -38,7 +37,7 @@
                     <th>Дата</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="dealsTableBody">
                 {% for d in deals %}
                 <tr>
                     <td>{{ d.id }}</td>
@@ -60,7 +59,7 @@
                     <td>{{ d.created|date:"d.m H:i" }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="8" class="text-center text-cyan-300 py-4">✨ Сделок нет ✨</td></tr>
+                <tr><td colspan="8" class="text-center text-cyan-300 py-4" id="emptyDealRow">✨ Сделок нет ✨</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -82,4 +81,57 @@
     </ul>
 </nav>
 {% endif %}
+
+<script>
+let dealSearchTimer;
+
+function renderDealRow(d) {
+    const statusStyles = {
+        'completed': 'background:rgba(0,255,100,.15);color:#00ff66;',
+        'awaiting': 'background:rgba(255,193,7,.15);color:#ffc107;',
+        'cancelled': 'background:rgba(220,53,69,.15);color:#dc3545;',
+        'disputed': 'background:rgba(255,71,87,.15);color:#ff4757;'
+    };
+    const style = statusStyles[d.status] || 'background:rgba(13,110,253,.15);color:var(--accent);';
+    const date = d.created ? new Date(d.created).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
+    return `<tr>
+        <td>${d.id}</td>
+        <td>${(d.item || '').substring(0, 30)}</td>
+        <td>${Number(d.amount || 0).toFixed(2)}</td>
+        <td>${d.currency}</td>
+        <td><a href="/users/${d.seller}/">${d.seller}</a></td>
+        <td><a href="/users/${d.buyer}/">${d.buyer}</a></td>
+        <td><span class="badge-${d.status}" style="${style}padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;">${d.status}</span></td>
+        <td>${date}</td>
+    </tr>`;
+}
+
+function searchDeals() {
+    const q = document.getElementById('dealSearch').value.trim();
+    const status = document.getElementById('dealStatusFilter').value;
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (status) params.set('status', status);
+
+    fetch('/api/deals/search/?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('dealsTableBody');
+            const count = document.getElementById('dealCount');
+            count.textContent = '(' + data.total + ')';
+            if (!data.deals || data.deals.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-cyan-300 py-4">✨ Сделок нет ✨</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.deals.map(renderDealRow).join('');
+        });
+}
+
+document.getElementById('dealSearch').addEventListener('input', function() {
+    clearTimeout(dealSearchTimer);
+    dealSearchTimer = setTimeout(searchDeals, 300);
+});
+
+document.getElementById('dealStatusFilter').addEventListener('change', searchDeals);
+</script>
 {% endblock %}

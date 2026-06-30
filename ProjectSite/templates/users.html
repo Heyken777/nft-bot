@@ -4,16 +4,12 @@
 {% block title %}Пользователи{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <h1 class="gradient-text">👨‍🚀 ПОЛЬЗОВАТЕЛИ <span class="small text-cyan-300/50">({{ total }})</span></h1>
+    <h1 class="gradient-text">👨‍🚀 ПОЛЬЗОВАТЕЛИ <span class="small text-cyan-300/50" id="userCount">({{ total }})</span></h1>
     <div class="d-flex gap-2">
-        <form method="get" class="d-flex gap-2">
-            <div class="position-relative">
-                <i class="fas fa-search position-absolute" style="left:15px;top:12px;color:rgba(0,255,255,.5);"></i>
-                <input type="text" name="q" class="form-control ps-5" style="width:250px;" placeholder="Поиск по ID или имени..." value="{{ search }}">
-            </div>
-            <button class="btn-primary" type="submit"><i class="fas fa-search"></i></button>
-            {% if search %}<a href="/users/" class="btn-primary" style="background:rgba(255,255,255,.1);"><i class="fas fa-times"></i></a>{% endif %}
-        </form>
+        <div class="position-relative">
+            <i class="fas fa-search position-absolute" style="left:15px;top:12px;color:rgba(0,255,255,.5);"></i>
+            <input type="text" id="userSearch" class="form-control ps-5" style="width:250px;" placeholder="Поиск по ID или имени..." value="{{ search }}" autocomplete="off">
+        </div>
         <button class="btn-primary" onclick="window.location.href='/api/users/export/'"><i class="fas fa-download me-2"></i>Экспорт</button>
     </div>
 </div>
@@ -42,7 +38,7 @@
         </div>
     </div>
     {% empty %}
-    <div class="col-12 text-center py-5">
+    <div class="col-12 text-center py-5" id="emptyState">
         <i class="fas fa-user-astronaut" style="font-size:48px;color:rgba(0,255,255,.3);"></i>
         <p class="text-cyan-300/50 mt-3">{% if search %}Ничего не найдено{% else %}Пользователей нет{% endif %}</p>
     </div>
@@ -64,4 +60,44 @@
     </ul>
 </nav>
 {% endif %}
+
+<script>
+let searchTimer;
+
+document.getElementById('userSearch').addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    const q = this.value.trim();
+    searchTimer = setTimeout(() => {
+        fetch('/api/users/search/?q=' + encodeURIComponent(q))
+            .then(r => r.json())
+            .then(data => {
+                const container = document.getElementById('usersContainer');
+                const count = document.getElementById('userCount');
+                count.textContent = '(' + data.total + ')';
+                if (!data.users || data.users.length === 0) {
+                    container.innerHTML = '<div class="col-12 text-center py-5"><i class="fas fa-user-astronaut" style="font-size:48px;color:rgba(0,255,255,.3);"></i><p class="text-cyan-300/50 mt-3">' + (q ? 'Ничего не найдено' : 'Пользователей нет') + '</p></div>';
+                    return;
+                }
+                container.innerHTML = data.users.map(u => `
+                    <div class="col-lg-6 col-xl-4 user-card-item">
+                        <div class="user-card" onclick="window.location.href='/users/${u.telegram_id}/'">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="user-avatar" style="width:48px;height:48px;background:linear-gradient(135deg,#ff0066,#ff6600);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;">${u.avatar_letter || '?'}</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-semibold">${u.username || 'Без имени'}</div>
+                                    <div class="text-cyan-300 small">ID: ${u.telegram_id}</div>
+                                    <div class="text-cyan-300/50 small">${u.created_at ? new Date(u.created_at).toLocaleDateString('ru-RU') : '—'}</div>
+                                </div>
+                                <div class="text-end">
+                                    <div><span class="badge-active">💰 ${Number(u.balance || 0).toFixed(0)} ₽</span></div>
+                                    <div class="small mt-1"><span class="badge-active">✅ Активен</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            });
+    }, 300);
+});
+</script>
 {% endblock %}

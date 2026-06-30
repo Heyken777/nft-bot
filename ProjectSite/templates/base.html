@@ -229,8 +229,23 @@
         }
         
         .btn-danger {
-            background: linear-gradient(135deg, #ff4757, #c0392b);
-            box-shadow: 0 0 10px rgba(255, 71, 87, 0.3);
+            background: linear-gradient(135deg, #ff2d55, #c0392b, #e74c3c);
+            background-size: 200% 200%;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 14px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 0 15px rgba(255, 45, 85, 0.3);
+            text-shadow: 0 0 8px rgba(255, 45, 85, 0.5);
+        }
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 30px rgba(255, 45, 85, 0.6), 0 0 60px rgba(255, 45, 85, 0.3);
+            background-position: 100% 100%;
+            filter: brightness(1.1);
         }
         
         .btn-sm { padding: 6px 14px; font-size: 12px; }

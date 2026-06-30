@@ -62,6 +62,14 @@ def logout_view(request):
 
 # ===================== PAGES =====================
 
+PREMIUM_PRICES = {30: 299, 45: 419, 60: 559, 90: 799, 365: 2999}
+
+FX_RATES = {'RUB': 1, 'USD': 90, 'EUR': 95, 'BYN': 28, 'UAH': 2.3, 'KZT': 0.19, 'UZS': 0.0075, 'TON': 500, 'USDT': 90, 'STARS': 1.5}
+
+def _to_rub(amount, currency):
+    return amount * FX_RATES.get(currency, 1)
+
+
 @login_required(login_url='/')
 def dashboard_view(request):
     conn = get_db()
@@ -78,8 +86,64 @@ def dashboard_view(request):
     new_users_week = cur.fetchone()[0] or 0
     cur.execute("SELECT COUNT(*) FROM deals WHERE created >= date('now', '-30 days')")
     deals_month = cur.fetchone()[0] or 0
-    cur.execute("SELECT COALESCE(SUM(amount), 0) FROM deals WHERE status='completed'")
-    revenue = cur.fetchone()[0] or 0
+
+    # Чистая комиссия со сделок: SUM(amount * commission) по каждой завершённой сделке
+    cur.execute("""
+        SELECT COALESCE(SUM(amount * commission), 0)
+        FROM deals
+        WHERE status='completed' AND commission IS NOT NULL AND commission > 0
+    """)
+    commission_revenue_raw = cur.fetchone()[0] or 0
+
+    # Детализация комиссий по валютам для точного пересчёта
+    cur.execute("""
+        SELECT currency, COALESCE(SUM(amount * commission), 0) AS total
+        FROM deals
+        WHERE status='completed' AND commission IS NOT NULL AND commission > 0
+        GROUP BY currency
+    """)
+    commission_revenue_rub = 0
+    for row in cur.fetchall():
+        commission_revenue_rub += _to_rub(row['total'], row['currency'])
+
+    # Доход с Premium: считаем по всем premium-пользователям у которых есть длительность
+    cur.execute("""
+        SELECT premium_duration_days, COUNT(*) as cnt
+        FROM users
+        WHERE is_premium=1 AND premium_duration_days > 0
+        GROUP BY premium_duration_days
+    """)
+    premium_revenue_rub = 0
+    for row in cur.fetchall():
+        days = row['premium_duration_days']
+        cnt = row['cnt']
+        price_per_unit = PREMIUM_PRICES.get(days, 0)
+        if days >= 99999:
+            price_per_unit = PREMIUM_PRICES.get(365, 2999)
+        premium_revenue_rub += price_per_unit * cnt
+
+    # Комиссия за последние 7 дней (только чистый доход платформы)
+    cur.execute("""
+        SELECT COALESCE(SUM(amount * commission), 0)
+        FROM deals
+        WHERE status='completed' AND commission IS NOT NULL AND commission > 0
+            AND created >= date('now', '-7 days')
+    """)
+    commission_week_raw = cur.fetchone()[0] or 0
+
+    cur.execute("""
+        SELECT currency, COALESCE(SUM(amount * commission), 0) AS total
+        FROM deals
+        WHERE status='completed' AND commission IS NOT NULL AND commission > 0
+            AND created >= date('now', '-7 days')
+        GROUP BY currency
+    """)
+    commission_week_rub = 0
+    for row in cur.fetchall():
+        commission_week_rub += _to_rub(row['total'], row['currency'])
+
+    total_revenue_rub = commission_revenue_rub + premium_revenue_rub
+    revenue_week_rub = commission_week_rub
 
     cur.execute("SELECT COUNT(*) FROM deals WHERE status='completed'")
     completed_deals = cur.fetchone()[0] or 0
@@ -87,20 +151,23 @@ def dashboard_view(request):
     cancelled_deals = cur.fetchone()[0] or 0
     cur.execute("SELECT COUNT(*) FROM deals WHERE status='awaiting'")
     awaiting_deals = cur.fetchone()[0] or 0
-    cur.execute("SELECT COALESCE(SUM(amount), 0) FROM deals WHERE status='completed' AND created >= date('now', '-7 days')")
-    revenue_week = cur.fetchone()[0] or 0
 
-    # Данные для графиков за 7 дней
+    # Данные для графиков за 7 дней (только комиссия платформы)
     revenue_labels = []
     revenue_data = []
     users_labels = []
     users_data = []
     for i in range(6, -1, -1):
         day = (datetime.now() - timedelta(days=i)).strftime('%d.%m')
-        cur.execute("SELECT COALESCE(SUM(amount), 0) FROM deals WHERE status='completed' AND date(created) = date('now', ?)", (f'-{i} days',))
+        cur.execute("""
+            SELECT COALESCE(SUM(amount * commission), 0)
+            FROM deals
+            WHERE status='completed' AND commission IS NOT NULL AND commission > 0
+                AND date(created) = date('now', ?)
+        """, (f'-{i} days',))
         rev = cur.fetchone()[0] or 0
         revenue_labels.append(day)
-        revenue_data.append(rev)
+        revenue_data.append(round(rev, 2))
         cur.execute("SELECT COUNT(*) FROM users WHERE date(created_at) = date('now', ?)", (f'-{i} days',))
         usr = cur.fetchone()[0] or 0
         users_labels.append(day)
@@ -136,7 +203,11 @@ def dashboard_view(request):
         'admin_name': get_admin_name(request),
         'total_users': total_users,
         'active_subs': premium_users,
-        'revenue': revenue,
+        'revenue': round(total_revenue_rub, 2),
+        'revenue_detail': {
+            'commission': round(commission_revenue_rub, 2),
+            'premium': round(premium_revenue_rub, 2),
+        },
         'tickets_open': disputes,
         'new_users_week': new_users_week,
         'payments_month': deals_month,
@@ -144,7 +215,7 @@ def dashboard_view(request):
         'completed_deals': completed_deals,
         'cancelled_deals': cancelled_deals,
         'awaiting_deals': awaiting_deals,
-        'revenue_week': revenue_week,
+        'revenue_week': round(revenue_week_rub, 2),
         'revenue_labels': json.dumps(revenue_labels),
         'revenue_data': json.dumps(revenue_data),
         'users_labels': json.dumps(users_labels),
@@ -172,6 +243,7 @@ def users_view(request):
             FROM users WHERE username LIKE ? OR CAST(user_id AS TEXT) LIKE ?
             ORDER BY created_at DESC LIMIT ? OFFSET ?
         """, (f'%{search}%', f'%{search}%', per_page, offset))
+        rows = cur.fetchall()
         cur.execute("SELECT COUNT(*) FROM users WHERE username LIKE ? OR CAST(user_id AS TEXT) LIKE ?",
                     (f'%{search}%', f'%{search}%'))
     else:
@@ -179,9 +251,9 @@ def users_view(request):
             SELECT user_id, username, balance_RUB AS balance, created_at, 0 AS is_blocked, is_premium
             FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?
         """, (per_page, offset))
+        rows = cur.fetchall()
         cur.execute("SELECT COUNT(*) FROM users")
     total = cur.fetchone()[0] or 0
-    rows = cur.fetchall()
     conn.close()
     user_list = []
     for u in rows:
@@ -296,11 +368,10 @@ def deals_list_view(request):
         params.append(status_filter)
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
-    cur.execute(f"SELECT COUNT(*) FROM deals {where}", params)
-    total = cur.fetchone()[0] or 0
-
     cur.execute(f"SELECT * FROM deals {where} ORDER BY created DESC LIMIT ? OFFSET ?", params + [per_page, offset])
     deals = cur.fetchall()
+    cur.execute(f"SELECT COUNT(*) FROM deals {where}", params)
+    total = cur.fetchone()[0] or 0
     conn.close()
 
     statuses = ['awaiting', 'completed', 'cancelled', 'disputed']
@@ -380,7 +451,7 @@ def withdrawal_reject_api(request, req_id):
 def promocodes_view(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT rowid, * FROM promocodes ORDER BY created_at DESC")
+    cur.execute("SELECT rowid, * FROM promocodes WHERE active=1 ORDER BY created_at DESC")
     promos = cur.fetchall()
     conn.close()
     now = datetime.now()
@@ -492,6 +563,26 @@ def profile_view(request):
         'rating': min(100, len(logs)),
         'viewing_self': True,
     })
+
+
+# ===================== PROFILE API =====================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def api_profile_update(request):
+    data = json.loads(request.body)
+    name = data.get('name', '')
+    if name:
+        request.session['admin'] = name
+    return JsonResponse({'status': 'success', 'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def api_profile_change_password(request):
+    return JsonResponse({'success': True})
 
 
 # ===================== DISPUTES / ARBITRATION (Stage 5) =====================
@@ -687,7 +778,7 @@ def api_get_promocode(request, promo_code):
 def api_get_promocodes_list(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT rowid, * FROM promocodes ORDER BY created_at DESC")
+    cur.execute("SELECT rowid, * FROM promocodes WHERE active=1 ORDER BY created_at DESC")
     promos = cur.fetchall()
     conn.close()
     result = []
@@ -810,6 +901,60 @@ def api_clear_audit(request):
     log_admin_action(request, "Очистил журнал аудита")
     conn.close()
     return JsonResponse({'success': True})
+
+
+# ===================== AJAX SEARCH API =====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@login_required(login_url='/')
+def api_search_users(request):
+    q = request.GET.get('q', '').strip()
+    conn = get_db()
+    cur = conn.cursor()
+    if q:
+        cur.execute("""
+            SELECT user_id, username, balance_RUB AS balance, created_at, is_premium
+            FROM users WHERE username LIKE ? OR CAST(user_id AS TEXT) LIKE ?
+            ORDER BY created_at DESC LIMIT 50
+        """, (f'%{q}%', f'%{q}%'))
+    else:
+        cur.execute("""
+            SELECT user_id, username, balance_RUB AS balance, created_at, is_premium
+            FROM users ORDER BY created_at DESC LIMIT 50
+        """)
+    rows = cur.fetchall()
+    conn.close()
+    result = []
+    for u in rows:
+        d = dict(u)
+        d['telegram_id'] = d.pop('user_id')
+        d['avatar_letter'] = (d.get('username') or str(d['telegram_id']))[0].upper()
+        result.append(d)
+    return JsonResponse({'users': result, 'total': len(result)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@login_required(login_url='/')
+def api_search_deals(request):
+    q = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    conn = get_db()
+    cur = conn.cursor()
+    conditions = []
+    params = []
+    if q:
+        conditions.append("(CAST(id AS TEXT) LIKE ? OR item LIKE ?)")
+        params.extend([f'%{q}%', f'%{q}%'])
+    if status_filter:
+        conditions.append("status=?")
+        params.append(status_filter)
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    cur.execute(f"SELECT * FROM deals {where} ORDER BY created DESC LIMIT 50", params)
+    rows = cur.fetchall()
+    conn.close()
+    return JsonResponse({'deals': [dict(d) for d in rows], 'total': len(rows)})
 
 
 # ===================== API: OTHER =====================
