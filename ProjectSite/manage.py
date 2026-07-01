@@ -6,9 +6,6 @@ import sys
 
 def main():
     """Run administrative tasks."""
-    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if PROJECT_ROOT not in sys.path:
-        sys.path.insert(0, PROJECT_ROOT)
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'novix_admin.settings')
     try:
         from django.core.management import execute_from_command_line

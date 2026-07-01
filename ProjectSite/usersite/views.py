@@ -12,7 +12,7 @@ DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
 
 import sys
 sys.path.insert(0, os.path.join(BASE_DIR, '..'))
-from crypto import decrypt_value, is_encryption_enabled as _enc_enabled
+from users.crypto_utils import decrypt_value, is_encryption_enabled as _enc_enabled
 
 OWNER_TELEGRAM_ID = 1803437347
 

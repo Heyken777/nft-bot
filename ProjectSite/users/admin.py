@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.http import HttpRequest
 from .models import User
-from crypto import decrypt_value
+from .crypto_utils import decrypt_value
 
 OWNER_TELEGRAM_ID = 1803437347
 
