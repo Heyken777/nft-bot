@@ -44,6 +44,10 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.i18n import I18n, gettext
 from aiogram.utils.i18n.middleware import I18nMiddleware
 
+class ConstI18nMiddleware(I18nMiddleware):
+    async def get_locale(self, event, data):
+        return self.i18n.default_locale
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -69,8 +73,8 @@ dp = Dispatcher(storage=MemoryStorage())
 i18n = I18n(path="locales", default_locale="ru", domain="messages")
 
 # i18n middleware
-dp.message.middleware(I18nMiddleware(i18n=i18n))
-dp.callback_query.middleware(I18nMiddleware(i18n=i18n))
+dp.message.middleware(ConstI18nMiddleware(i18n=i18n))
+dp.callback_query.middleware(ConstI18nMiddleware(i18n=i18n))
 
 deal_lock = asyncio.Lock()
 ton_monitor_task = None
