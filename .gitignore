@@ -1,28 +1,55 @@
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+*.cert
+*.secret
+
 # Python
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+venv/
+.venv/
+.python-version
+
+# Database
 *.db
 *.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
 
 # IDE
 .vscode/
 .idea/
+.history/
+*.swp
+*.swo
+*.swn
 
 # OS
 .DS_Store
 Thumbs.db
+.directory
 
-# Other
+# Logs & temp
+*.log
+*.tmp
+*.temp
+*.pid
+
+# Project artifacts
 images/
+media/
+staticfiles/
 cloudflared.msi
 currency_cache.json
 setup_admin.py
-
-# Django / Project
-media/
-staticfiles/
-*.db-journal
-*.db-wal
-*.db-shm
 
