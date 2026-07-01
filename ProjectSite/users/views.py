@@ -1233,3 +1233,74 @@ def api_restore_balance(request, telegram_id):
     log_admin_action(request, f"Восстановил балансы пользователя {telegram_id} из бэкапа #{backup['id']}", target_id=telegram_id)
     conn.close()
     return JsonResponse({'success': True, 'message': 'Балансы восстановлены из бэкапа'})
+
+
+# ===================== REVIEW MODERATION =====================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def api_moderate_review(request, review_id):
+    conn = get_db()
+    cur = conn.cursor()
+    data = json.loads(request.body)
+    action = data.get('action', '')
+
+    if action == 'delete':
+        cur.execute("DELETE FROM reviews WHERE id = ?", (review_id,))
+        conn.commit()
+        conn.close()
+        log_admin_action(request, f"Удалил отзыв #{review_id}", target_id=0)
+        return JsonResponse({'success': True, 'message': 'Отзыв удалён'})
+
+    if action == 'moderate':
+        is_moderated = data.get('is_moderated', 1)
+        cur.execute("UPDATE reviews SET is_moderated = ?, moderated_at = datetime('now') WHERE id = ?",
+                    (is_moderated, review_id))
+        conn.commit()
+        conn.close()
+        log_admin_action(request, f"Промодерировал отзыв #{review_id}", target_id=0)
+        return JsonResponse({'success': True, 'message': 'Статус модерации обновлён'})
+
+    if action == 'edit':
+        rating = data.get('rating')
+        comment = data.get('comment')
+        sets = []
+        params = []
+        if rating is not None:
+            sets.append("rating = ?")
+            params.append(int(rating))
+        if comment is not None:
+            sets.append("comment = ?")
+            params.append(comment)
+        if not sets:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Нет данных для изменения'})
+        params.append(review_id)
+        cur.execute(f"UPDATE reviews SET {', '.join(sets)} WHERE id = ?", params)
+        conn.commit()
+        conn.close()
+        log_admin_action(request, f"Изменил отзыв #{review_id}", target_id=0)
+        return JsonResponse({'success': True, 'message': 'Отзыв изменён'})
+
+    conn.close()
+    return JsonResponse({'success': False, 'error': 'Неизвестное действие'})
+
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@login_required(login_url='/')
+def api_reported_reviews(request):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT r.*, d.item AS deal_item
+        FROM reviews r
+        LEFT JOIN deals d ON r.deal_id = d.id
+        WHERE r.reported = 1
+        ORDER BY r.created_at DESC
+    """)
+    reviews = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+    conn.close()
+    return JsonResponse({'reviews': reviews})

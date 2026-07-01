@@ -242,6 +242,21 @@ def dashboard_view(request):
     except:
         unread_notifications = 0
 
+    # Топ-10 верифицированных продавцов
+    cur.execute("""
+        SELECT u.user_id, u.username,
+               COALESCE(AVG(r.rating), 0) as avg_rating,
+               COUNT(r.id) as reviews_count,
+               (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') as completed_deals
+        FROM users u
+        LEFT JOIN reviews r ON r.reviewed_id = u.user_id
+        WHERE (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') > 0
+        GROUP BY u.user_id
+        ORDER BY avg_rating DESC, completed_deals DESC
+        LIMIT 10
+    """)
+    top_sellers = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+
     conn.close()
 
     is_premium = user_dict.get('is_premium', 0)
@@ -272,6 +287,7 @@ def dashboard_view(request):
         'open_tickets': open_tickets,
         'notifications': [dict(n) for n in notifications],
         'unread_notifications': unread_notifications,
+        'top_sellers': top_sellers,
         'bot_username': bot_username,
         'now': datetime.now(),
     })
@@ -546,3 +562,108 @@ def withdraw_create_api(request):
     conn.commit()
     conn.close()
     return JsonResponse({'success': True, 'message': 'Заявка создана, ожидайте подтверждения'})
+
+
+# ===================== REVIEWS =====================
+
+def reviews_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT r.*, d.item AS deal_item, u.username AS reviewer_name FROM reviews r "
+                "LEFT JOIN deals d ON r.deal_id = d.id "
+                "LEFT JOIN users u ON r.reviewer_id = u.user_id "
+                "WHERE r.reviewed_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
+    received = cur.fetchall()
+
+    cur.execute("SELECT r.*, d.item AS deal_item, u.username AS reviewed_name FROM reviews r "
+                "LEFT JOIN deals d ON r.deal_id = d.id "
+                "LEFT JOIN users u ON r.reviewed_id = u.user_id "
+                "WHERE r.reviewer_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
+    given = cur.fetchall()
+
+    cur.execute(
+        "SELECT AVG(rating) as avg_rating, COUNT(*) as total, "
+        "SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END) as positive "
+        "FROM reviews WHERE reviewed_id = ?", (user_id,))
+    stats_row = cur.fetchone()
+    avg_rating = round(stats_row[0] or 0, 1) if stats_row else 0
+    total = stats_row[1] or 0 if stats_row else 0
+    positive = stats_row[2] or 0 if stats_row else 0
+    positive_pct = round(positive / total * 100, 1) if total > 0 else 0
+
+    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    user = cur.fetchone()
+    conn.close()
+
+    return render(request, 'usersite/reviews.html', {
+        'user': dict(user) if user else {},
+        'received': [dict(r) for r in received],
+        'given': [dict(r) for r in given],
+        'avg_rating': avg_rating,
+        'total': total,
+        'positive_pct': positive_pct,
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def update_review_api(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    data = json.loads(request.body)
+    review_id = int(data.get('review_id', 0))
+    rating = data.get('rating')
+    comment = data.get('comment', '')
+
+    if rating is not None:
+        rating = int(rating)
+        if rating < 1 or rating > 5:
+            return JsonResponse({'success': False, 'error': 'Рейтинг от 1 до 5'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT reviewer_id FROM reviews WHERE id = ?", (review_id,))
+    row = cur.fetchone()
+    if not row or row[0] != user_id:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Отзыв не найден или это не ваш отзыв'})
+
+    sets = []
+    params = []
+    if rating is not None:
+        sets.append("rating = ?")
+        params.append(rating)
+    if comment is not None:
+        sets.append("comment = ?")
+        params.append(comment)
+    if not sets:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Нет данных для обновления'})
+    params.append(review_id)
+    cur.execute(f"UPDATE reviews SET {', '.join(sets)} WHERE id = ?", params)
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Отзыв обновлён'})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def report_review_api(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    data = json.loads(request.body)
+    review_id = int(data.get('review_id', 0))
+    reason = data.get('reason', '')
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE reviews SET reported = 1, report_reason = ? WHERE id = ?", (reason, review_id))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Жалоба отправлена администрации'})

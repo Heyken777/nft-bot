@@ -487,6 +487,15 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Миграции: добавляем колонки модерации, если их нет
+        self.add_column_if_not_exists("reviews", "is_moderated", "INTEGER DEFAULT 0")
+        self.add_column_if_not_exists("reviews", "moderated_by", "INTEGER")
+        self.add_column_if_not_exists("reviews", "moderated_at", "TIMESTAMP")
+        self.add_column_if_not_exists("reviews", "reported", "INTEGER DEFAULT 0")
+        self.add_column_if_not_exists("reviews", "report_reason", "TEXT")
+        # Защита от накруток: один отзыв строго на одну сделку от одного пользователя
+        self.cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_deal_user ON reviews(deal_id, reviewer_id)")
+        self.conn.commit()
         
         # Таблица споров
         self.cursor.execute("""
@@ -1550,6 +1559,133 @@ class Database:
             except Exception:
                 pass
         return row
+
+    # ========== REVIEWS ==========
+    def add_review(self, deal_id: int, reviewer_id: int, reviewed_id: int, rating: int, comment: str = None):
+        try:
+            self.cursor.execute(
+                "INSERT OR IGNORE INTO reviews (deal_id, reviewer_id, reviewed_id, rating, comment) VALUES (?, ?, ?, ?, ?)",
+                (deal_id, reviewer_id, reviewed_id, rating, comment)
+            )
+            self.conn.commit()
+            return self.cursor.lastrowid
+        except Exception as e:
+            logger.error(f"add_review error: {e}")
+            return None
+
+    def update_review(self, review_id: int, rating: int = None, comment: str = None):
+        sets = []
+        params = []
+        if rating is not None:
+            sets.append("rating = ?")
+            params.append(rating)
+        if comment is not None:
+            sets.append("comment = ?")
+            params.append(comment)
+        if not sets:
+            return False
+        params.append(review_id)
+        self.cursor.execute(f"UPDATE reviews SET {', '.join(sets)} WHERE id = ?", params)
+        self.conn.commit()
+        return self.cursor.rowcount > 0
+
+    def moderate_review(self, review_id: int, admin_id: int, is_moderated: int = 1):
+        self.cursor.execute(
+            "UPDATE reviews SET is_moderated = ?, moderated_by = ?, moderated_at = datetime('now') WHERE id = ?",
+            (is_moderated, admin_id, review_id)
+        )
+        self.conn.commit()
+        return self.cursor.rowcount > 0
+
+    def delete_review(self, review_id: int):
+        self.cursor.execute("DELETE FROM reviews WHERE id = ?", (review_id,))
+        self.conn.commit()
+        return self.cursor.rowcount > 0
+
+    def report_review(self, review_id: int, reason: str = None):
+        self.cursor.execute(
+            "UPDATE reviews SET reported = 1, report_reason = ? WHERE id = ?",
+            (reason, review_id)
+        )
+        self.conn.commit()
+        return self.cursor.rowcount > 0
+
+    def get_review(self, review_id: int) -> dict:
+        self.cursor.execute("SELECT * FROM reviews WHERE id = ?", (review_id,))
+        row = self.cursor.fetchone()
+        if row:
+            columns = [desc[0] for desc in self.cursor.description]
+            return dict(zip(columns, row))
+        return None
+
+    def get_reviews_given(self, user_id: int, limit: int = 50) -> list:
+        self.cursor.execute(
+            "SELECT r.*, d.item AS deal_item FROM reviews r "
+            "LEFT JOIN deals d ON r.deal_id = d.id "
+            "WHERE r.reviewer_id = ? ORDER BY r.created_at DESC LIMIT ?",
+            (user_id, limit)
+        )
+        return [dict(zip([desc[0] for desc in self.cursor.description], row)) for row in self.cursor.fetchall()]
+
+    def get_reviews_received(self, user_id: int, limit: int = 50) -> list:
+        self.cursor.execute(
+            "SELECT r.*, d.item AS deal_item FROM reviews r "
+            "LEFT JOIN deals d ON r.deal_id = d.id "
+            "WHERE r.reviewed_id = ? ORDER BY r.created_at DESC LIMIT ?",
+            (user_id, limit)
+        )
+        return [dict(zip([desc[0] for desc in self.cursor.description], row)) for row in self.cursor.fetchall()]
+
+    def get_review_stats(self, user_id: int) -> dict:
+        self.cursor.execute(
+            "SELECT AVG(rating) as avg_rating, COUNT(*) as total, "
+            "SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END) as positive "
+            "FROM reviews WHERE reviewed_id = ?", (user_id,))
+        row = self.cursor.fetchone()
+        columns = [desc[0] for desc in self.cursor.description]
+        stats = dict(zip(columns, row))
+        stats['avg_rating'] = round(stats['avg_rating'] or 0, 1)
+        stats['total'] = stats['total'] or 0
+        stats['positive'] = stats['positive'] or 0
+        stats['positive_pct'] = round(stats['positive'] / stats['total'] * 100, 1) if stats['total'] > 0 else 0
+        return stats
+
+    def get_top_sellers(self, limit: int = 10) -> list:
+        self.cursor.execute("""
+            SELECT u.user_id, u.username,
+                   COALESCE(AVG(r.rating), 0) as avg_rating,
+                   COUNT(r.id) as reviews_count,
+                   (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') as completed_deals
+            FROM users u
+            LEFT JOIN reviews r ON r.reviewed_id = u.user_id
+            GROUP BY u.user_id
+            HAVING completed_deals > 0
+            ORDER BY avg_rating DESC, completed_deals DESC
+            LIMIT ?
+        """, (limit,))
+        return [dict(zip([desc[0] for desc in self.cursor.description], row)) for row in self.cursor.fetchall()]
+
+    def has_reviewed(self, deal_id: int, reviewer_id: int) -> bool:
+        self.cursor.execute(
+            "SELECT 1 FROM reviews WHERE deal_id = ? AND reviewer_id = ?",
+            (deal_id, reviewer_id)
+        )
+        return self.cursor.fetchone() is not None
+
+    def get_reported_reviews(self) -> list:
+        self.cursor.execute(
+            "SELECT r.*, d.item AS deal_item FROM reviews r "
+            "LEFT JOIN deals d ON r.deal_id = d.id "
+            "WHERE r.reported = 1 ORDER BY r.created_at DESC"
+        )
+        return [dict(zip([desc[0] for desc in self.cursor.description], row)) for row in self.cursor.fetchall()]
+
+    def get_all_reviews(self, limit: int = 100) -> list:
+        self.cursor.execute(
+            "SELECT r.*, d.item AS deal_item FROM reviews r "
+            "LEFT JOIN deals d ON r.deal_id = d.id "
+            "ORDER BY r.created_at DESC LIMIT ?", (limit,))
+        return [dict(zip([desc[0] for desc in self.cursor.description], row)) for row in self.cursor.fetchall()]
 
     def get_stats(self):
         self.cursor.execute("SELECT COUNT(*) FROM users")
@@ -3121,6 +3257,57 @@ async def receive_cb(call: CallbackQuery):
             f"По сделке #{did} начислено {referral_bonus['reward']} RUB "
             f"(10% от сервисной комиссии)."
         )
+
+    # Предложение оценить партнёра после завершения сделки
+    await send_rating_prompt(seller_id, did, deal["buyer"])
+    await send_rating_prompt(call.from_user.id, did, seller_id)
+
+
+# ========== РЕЙТИНГ И ОТЗЫВЫ ==========
+
+def rating_kb(deal_id: int) -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(text=emoji, callback_data=f"rate_{deal_id}_{star}")
+        for star, emoji in [(1, "⭐1"), (2, "⭐2"), (3, "⭐3"), (4, "⭐4"), (5, "⭐5")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+
+
+async def send_rating_prompt(user_id: int, deal_id: int, partner_id: int):
+    if db.has_reviewed(deal_id, user_id):
+        return
+    text = (
+        f"📝 *Оцените партнёра по сделке #{deal_id}*\n\n"
+        f"Насколько вы довольны сотрудничеством?"
+    )
+    try:
+        await bot.send_message(user_id, text, parse_mode="Markdown", reply_markup=rating_kb(deal_id))
+    except Exception as e:
+        logger.warning(f"Не удалось отправить предложение оценки пользователю {user_id}: {e}")
+
+
+@dp.callback_query(lambda c: c.data.startswith("rate_"))
+async def review_cb(call: CallbackQuery):
+    parts = call.data.split("_")
+    deal_id = int(parts[1])
+    rating = int(parts[2])
+    reviewer_id = call.from_user.id
+    deal = db.get_deal(deal_id)
+    if not deal:
+        await call.answer("❌ Сделка не найдена", show_alert=True)
+        return
+    reviewed_id = deal["buyer"] if deal["seller"] == reviewer_id else deal["seller"]
+    if db.has_reviewed(deal_id, reviewer_id):
+        await call.answer("✅ Вы уже оценили эту сделку!", show_alert=True)
+        return
+    db.add_review(deal_id, reviewer_id, reviewed_id, rating)
+    await call.message.edit_reply_markup(reply_markup=None)
+    await call.answer(f"⭐ {rating}/5 — Спасибо за оценку!", show_alert=True)
+    await call.message.edit_text(
+        f"✅ *Спасибо за оценку!* ⭐{rating}/5\n\n"
+        f"Вы можете добавить текстовый отзыв на нашем сайте: http://93.115.101",
+        parse_mode="Markdown"
+    )
 
 # ========== СПОРЫ ==========
 @dp.callback_query(lambda c: c.data.startswith("dispute_"))
@@ -5645,6 +5832,10 @@ async def handle_confirm_receipt(request):
                 referral_bonus['referrer_id'],
                 f"👥 *Реферальный бонус*\n\nПо сделке #{did} начислено {referral_bonus['reward']} RUB (10% от сервисной комиссии)."
             ))
+
+        # Предложение оценки
+        asyncio.create_task(send_rating_prompt(seller_id, did, user_id))
+        asyncio.create_task(send_rating_prompt(user_id, did, seller_id))
 
         return JSONResponse(content={'success': True, 'deal_id': did, 'seller_amount': seller_amount, 'currency': currency})
     except Exception as e:

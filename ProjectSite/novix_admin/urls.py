@@ -58,6 +58,10 @@ urlpatterns = [
     path('api/disputes/<int:dispute_id>/', views.dispute_detail_api),
     path('api/disputes/<int:dispute_id>/resolve/', views.dispute_resolve_api),
 
+    # API: модерация отзывов
+    path('api/reviews/<int:review_id>/moderate/', views.api_moderate_review, name='api_moderate_review'),
+    path('api/reviews/reported/', views.api_reported_reviews, name='api_reported_reviews'),
+
     # Новости
     path('news/', news_views.news_list_view, name='news_list'),
     path('news/create/', news_views.news_create_view, name='news_create'),

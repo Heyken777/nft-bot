@@ -140,13 +140,20 @@
         <div class="stat-card mb-4">
             <h3 class="mb-3">⭐ Отзывы <span class="small text-cyan-300/50">(средний {{ avg_rating }})</span></h3>
             {% for r in reviews %}
-            <div class="p-2 mb-2" style="background:rgba(0,0,0,0.3);border-radius:10px;">
-                <div class="d-flex justify-content-between">
-                    <span>⭐ {{ r.rating }}/5</span>
-                    <span class="small text-cyan-300/50">{{ r.created_at|date:"d.m.Y" }}</span>
+            <div class="p-2 mb-2" style="background:rgba(0,0,0,0.3);border-radius:10px;" id="areview-{{ r.id }}">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <span>⭐ {{ r.rating }}/5</span>
+                        {% if r.reported %}<span class="badge badge-danger ms-2" style="font-size:10px;">🚩 Жалоба</span>{% endif %}
+                    </div>
+                    <div class="d-flex gap-1">
+                        <button class="btn-sm" style="background:rgba(255,193,7,.15);color:#ffc107;border:none;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;" onclick="editReview({{ r.id }})">✏️</button>
+                        <button class="btn-sm" style="background:rgba(255,71,87,.15);color:#ff4757;border:none;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;" onclick="deleteReview({{ r.id }})">🗑️</button>
+                    </div>
                 </div>
                 <div class="small text-cyan-300/50">Сделка #{{ r.deal_id }} · {{ r.deal_item|truncatechars:20 }}</div>
-                {% if r.comment %}<div class="small mt-1">"{{ r.comment }}"</div>{% endif %}
+                {% if r.comment %}<div class="small mt-1" id="acomment-{{ r.id }}">"{{ r.comment }}"</div>{% endif %}
+                <div class="small text-cyan-300/50 mt-1">От: @{{ r.reviewer_id }}</div>
             </div>
             {% empty %}<div class="text-cyan-300/50 text-center py-3">Нет отзывов</div>{% endfor %}
         </div>
@@ -278,6 +285,37 @@ document.getElementById('modalConfirmBtn').addEventListener('click', function() 
     }
     closeModal();
 });
+
+// Review moderation
+let pendingReviewAction = null;
+function editReview(id) {
+    const commentEl = document.getElementById('acomment-' + id);
+    const currentComment = commentEl ? commentEl.textContent.replace(/^"/, '').replace(/"$/, '').trim() : '';
+    openModal('✏️ Изменить отзыв #' + id,
+        'Новый текст отзыва:\n<textarea id="modComment" class="form-control" rows="2" style="margin-top:8px;">' + currentComment + '</textarea>',
+        'Сохранить',
+        function() {
+            const comment = document.getElementById('modComment').value;
+            api('/api/reviews/' + id + '/moderate/', {action:'edit', comment: comment}).then(r => {
+                if (r.success) { showToast('Отзыв изменён'); setTimeout(() => location.reload(), 1000); }
+                else { showToast('Ошибка', 'error'); }
+            });
+        }
+    );
+}
+
+function deleteReview(id) {
+    openModal('🗑️ Удалить отзыв #' + id,
+        'Вы уверены, что хотите удалить этот отзыв?',
+        'Удалить',
+        function() {
+            api('/api/reviews/' + id + '/moderate/', {action:'delete'}).then(r => {
+                if (r.success) { showToast('Отзыв удалён'); document.getElementById('areview-' + id).remove(); }
+                else { showToast('Ошибка', 'error'); }
+            });
+        }
+    );
+}
 </script>
 {% else %}
 <div class="stat-card text-center">

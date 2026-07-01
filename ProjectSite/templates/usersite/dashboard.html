@@ -34,6 +34,10 @@
 .badge-warning { background:rgba(255,193,7,.15); color:#ffc107; }
 .badge-danger { background:rgba(220,53,69,.15); color:#dc3545; }
 .badge-info { background:rgba(13,110,253,.15); color:var(--accent); }
+.table-custom { width:100%; border-collapse:collapse; }
+.table-custom th { text-align:left; padding:10px 8px; color:var(--text-muted); font-weight:500; font-size:12px; border-bottom:1px solid var(--border); }
+.table-custom td { padding:10px 8px; border-bottom:1px solid var(--border); color:var(--text-secondary); font-size:13px; }
+.table-custom tr:last-child td { border-bottom:none; }
 </style>
 {% endblock %}
 {% block content %}
@@ -156,6 +160,37 @@
         <div class="stat-label">Обращений</div>
     </div>
 </div>
+
+<!-- Топ-10 продавцов -->
+{% if top_sellers %}
+<div class="stat-card" style="text-align:left;padding:20px;margin-top:24px;">
+    <h4 style="font-size:1.1rem;font-weight:600;margin-bottom:16px;">🏆 Топ-10 верифицированных продавцов</h4>
+    <div class="table-responsive">
+        <table class="table-custom" style="width:100%;border-collapse:collapse;">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Продавец</th>
+                    <th>⭐ Рейтинг</th>
+                    <th>Отзывов</th>
+                    <th>Сделок</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in top_sellers %}
+                <tr>
+                    <td>{{ forloop.counter }}</td>
+                    <td>@{{ s.username|default:s.user_id }}</td>
+                    <td><span style="font-weight:700;color:var(--accent);">⭐ {{ s.avg_rating|floatformat:1 }}</span></td>
+                    <td>{{ s.reviews_count }}</td>
+                    <td>{{ s.completed_deals }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 {% endwith %}
 
 <script>

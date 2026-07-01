@@ -1,6 +1,32 @@
 from django.db import models
 
 
+class Review(models.Model):
+    id = models.AutoField(primary_key=True, db_column='id')
+    deal_id = models.IntegerField(verbose_name='ID сделки')
+    reviewer_id = models.BigIntegerField(verbose_name='Кто оставил (Telegram ID)')
+    reviewed_id = models.BigIntegerField(verbose_name='Кому оставили (Telegram ID)')
+    rating = models.IntegerField(verbose_name='Оценка (1-5)')
+    comment = models.TextField(null=True, blank=True, verbose_name='Текст отзыва')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата')
+    is_moderated = models.BooleanField(default=False, verbose_name='Промодерировано')
+    moderated_by = models.BigIntegerField(null=True, blank=True, verbose_name='Модератор (Telegram ID)')
+    moderated_at = models.DateTimeField(null=True, blank=True, verbose_name='Дата модерации')
+    reported = models.BooleanField(default=False, verbose_name='Пожаловались')
+    report_reason = models.TextField(null=True, blank=True, verbose_name='Причина жалобы')
+
+    class Meta:
+        managed = False
+        db_table = 'reviews'
+        unique_together = ('deal_id', 'reviewer_id')
+        verbose_name = 'Отзыв'
+        verbose_name_plural = 'Отзывы'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"#{self.id} deal:{self.deal_id} ⭐{self.rating}"
+
+
 class User(models.Model):
     telegram_id = models.BigIntegerField(
         primary_key=True, db_column='user_id',

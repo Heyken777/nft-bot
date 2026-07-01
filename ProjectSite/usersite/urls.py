@@ -26,4 +26,9 @@ urlpatterns = [
     path('api/tickets/<int:ticket_id>/close/', views.close_ticket),
     path('api/tickets/<int:ticket_id>/assign/', views.assign_ticket),
     path('api/tickets/<int:ticket_id>/status/', views.change_ticket_status),
+
+    # Отзывы
+    path('reviews/', views.reviews_view, name='user_reviews'),
+    path('api/reviews/update/', views.update_review_api, name='update_review'),
+    path('api/reviews/report/', views.report_review_api, name='report_review'),
 ]
