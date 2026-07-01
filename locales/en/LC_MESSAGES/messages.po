@@ -1,0 +1,51 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "💰 *Введите ID пользователя для зачисления:*"
+msgstr "💰 *Enter user ID to credit:*"
+
+msgid "💸 *Введите ID пользователя для списания:*"
+msgstr "💸 *Enter user ID to debit:*"
+
+msgid "📦 *Активные сделки*"
+msgstr "📦 *Active deals*"
+
+msgid "📭 Нет активных сделок"
+msgstr "📭 No active deals"
+
+msgid "⚠️ *Споры*"
+msgstr "⚠️ *Disputes*"
+
+msgid "⚠️ Нет открытых споров"
+msgstr "⚠️ No open disputes"
+
+msgid "📊 *Статистика бота*"
+msgstr "📊 *Bot statistics*"
+
+msgid "👥 Пользователей: *{users}*"
+msgstr "👥 Users: *{users}*"
+
+msgid "✅ Завершённых сделок: *{completed}*"
+msgstr "✅ Completed deals: *{completed}*"
+
+msgid "🔄 Активных сделок: *{active}*"
+msgstr "🔄 Active deals: *{active}*"
+
+msgid "⚠️ Споров: *{disputes}*"
+msgstr "⚠️ Disputes: *{disputes}*"
+
+msgid "⛔ Доступ запрещен"
+msgstr "⛔ Access denied"
+
+msgid "❌ Сумма должна быть больше 0"
+msgstr "❌ Amount must be greater than 0"
+
+msgid "❌ Введите ID числом"
+msgstr "❌ Enter ID as a number"
+
+msgid "❌ Введите число"
+msgstr "❌ Enter a number"

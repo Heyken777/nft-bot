@@ -8,8 +8,8 @@ load_dotenv(BASE_DIR.parent / '.env')
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-fallback-change-me')
 
-DEBUG = True
-ALLOWED_HOSTS = ['*']
+DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,93.115.101.179,methodology-identifies-number-dash.trycloudflare.com').split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -65,10 +65,38 @@ DATABASES = {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR.parent / 'novixgift.db',
         'OPTIONS': {
-            'timeout': 30,  # таймаут 30 сек — синхронный Django не блокирует асинхронный бот
+            'timeout': 30,
         },
     }
 }
+
+# WAL для SQLite
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'api.jwt_auth.JWTAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '10/minute',
+        'user': '60/minute',
+    },
+}
+
+from django.db.backends.signals import connection_created
+from django.dispatch import receiver
+@receiver(connection_created)
+def sqlite_connection_setup(sender, connection, **kwargs):
+    if connection.vendor == 'sqlite':
+        with connection.cursor() as c:
+            c.execute("PRAGMA journal_mode=WAL;")
+            c.execute("PRAGMA busy_timeout=5000;")
 
 AUTH_PASSWORD_VALIDATORS = []
 

@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path('login/', views.login_api, name='api_login'),
+    path('jwt-login/', views.jwt_login_api, name='api_jwt_login'),
     path('dashboard/', views.dashboard_api, name='api_dashboard'),
     path('users/', views.users_api, name='api_users'),
     path('broadcast/', views.broadcast_api, name='api_broadcast'),

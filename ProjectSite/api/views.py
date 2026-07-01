@@ -1,33 +1,56 @@
 import json, os, sqlite3
 from datetime import datetime, timedelta
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from django.contrib.auth import authenticate, login
+from .jwt_auth import create_jwt, decode_jwt, JWTAuthentication
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'novixgift.db')
 
 
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
     conn.row_factory = sqlite3.Row
     return conn
 
 
-@csrf_exempt
+class LoginRateThrottle(AnonRateThrottle):
+    rate = '5/minute'
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([LoginRateThrottle])
 def login_api(request):
-    if request.method == 'POST':
-        data = json.loads(request.body)
-        username = data.get('username')
-        password = data.get('password')
-        user = authenticate(request, username=username, password=password)
-        if user:
-            login(request, user)
-            return JsonResponse({'success': True, 'token': 'django-session', 'username': username, 'role': 'admin'})
-        return JsonResponse({'success': False, 'error': 'Неверные данные'}, status=401)
-    return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data = json.loads(request.body)
+    username = data.get('username')
+    password = data.get('password')
+    user = authenticate(request, username=username, password=password)
+    if user:
+        login(request, user)
+        token = create_jwt(user.id)
+        return Response({'success': True, 'token': token, 'username': username, 'role': 'admin'})
+    return Response({'success': False, 'error': 'Неверные данные'}, status=401)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([LoginRateThrottle])
+def jwt_login_api(request):
+    data = json.loads(request.body)
+    username = data.get('username')
+    password = data.get('password')
+    user = authenticate(request, username=username, password=password)
+    if user:
+        token = create_jwt(user.id)
+        return Response({'success': True, 'token': token, 'username': username, 'role': 'admin'})
+    return Response({'success': False, 'error': 'Неверные данные'}, status=401)
 
 
 @api_view(['GET'])

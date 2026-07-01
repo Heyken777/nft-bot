@@ -25,6 +25,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.errors import RateLimitExceeded
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -35,6 +40,13 @@ from aiogram.types import (
     CallbackQuery, FSInputFile, InputMediaPhoto
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.utils.i18n import I18n, gettext
+from aiogram.utils.i18n.middleware import I18nMiddleware
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+
+
 
 WEBAPP_URL = "http://93.115.101.179:9207"
 
@@ -66,9 +78,23 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-deal_lock = asyncio.Lock()  # CHANGED: глобальная блокировка для атомарных операций по сделкам/балансам в SQLite
-ton_monitor_task = None  # CHANGED: фоновая задача мониторинга входящих TON/USDT платежей
-db_batch_lock = asyncio.Lock()  # CHANGED: блокировка для массовых атомарных операций с БД
+# i18n middleware
+dp.message.middleware(I18nMiddleware(i18n=i18n))
+dp.callback_query.middleware(I18nMiddleware(i18n=i18n))
+
+deal_lock = asyncio.Lock()
+ton_monitor_task = None
+db_batch_lock = asyncio.Lock()
+
+# APScheduler
+scheduler = AsyncIOScheduler()
+
+# i18n
+i18n = I18n(path="locales", default_locale="ru", domain="messages")
+
+# Очередь фоновых задач
+task_queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+MAX_WORKERS = 5
 
 
 def quantize_amount(value, places: str = "0.000001") -> float:
@@ -352,7 +378,12 @@ def get_user_role(deals_count: int) -> str:
 class Database:
     def __init__(self):
         self.conn = sqlite3.connect("novixgift.db", check_same_thread=False)
+        self.conn.execute("PRAGMA journal_mode=WAL;")
+        self.conn.execute("PRAGMA busy_timeout=5000;")
         self.cursor = self.conn.cursor()
+        self.read_conn = sqlite3.connect("novixgift.db", check_same_thread=False)
+        self.read_conn.execute("PRAGMA busy_timeout=5000;")
+        self.read_cursor = self.read_conn.cursor()
         self.init()
 
     def add_column_if_not_exists(self, table_name: str, column_name: str, column_type: str):
@@ -1401,6 +1432,106 @@ try:
     if not db.cursor.fetchone():
         db.create_promocode('NOVIX2026', 50, 1, 365)
 except: pass
+
+# ========== ФОНОВЫЙ ВОРКЕР ЗАДАЧ ==========
+class TaskWorker:
+    def __init__(self, queue: asyncio.Queue, num_workers: int = MAX_WORKERS):
+        self.queue = queue
+        self.num_workers = num_workers
+        self._workers = []
+        self._running = False
+
+    async def _process(self, worker_id: int):
+        while self._running:
+            try:
+                task = await asyncio.wait_for(self.queue.get(), timeout=1.0)
+                fn, args, kwargs = task
+                try:
+                    await fn(*args, **kwargs)
+                except Exception as e:
+                    logger.error(f"[Worker {worker_id}] Task error: {e}")
+                finally:
+                    self.queue.task_done()
+            except asyncio.TimeoutError:
+                continue
+
+    def start(self):
+        self._running = True
+        self._workers = [
+            asyncio.create_task(self._process(i))
+            for i in range(self.num_workers)
+        ]
+        logger.info(f"TaskWorker: запущено {self.num_workers} воркеров")
+
+    async def stop(self):
+        self._running = False
+        for w in self._workers:
+            w.cancel()
+        await asyncio.gather(*self._workers, return_exceptions=True)
+        logger.info("TaskWorker: остановлен")
+
+    def enqueue(self, fn, *args, **kwargs):
+        self.queue.put_nowait((fn, args, kwargs))
+
+
+task_worker = TaskWorker(task_queue)
+
+
+# ========== ПЛАНИРОВЩИК ЗАДАЧ ==========
+async def check_premium_expiry():
+    """Автоматическая деактивация просроченных Premium-подписок."""
+    try:
+        db.cursor.execute(
+            "UPDATE users SET is_premium = 0, premium_until = NULL "
+            "WHERE is_premium = 1 AND premium_until IS NOT NULL "
+            "AND premium_until < datetime('now')"
+        )
+        if db.cursor.rowcount > 0:
+            db.cursor.execute(
+                "SELECT user_id FROM users WHERE is_premium = 0 "
+                "AND premium_until IS NOT NULL AND premium_until < datetime('now')"
+            )
+            expired = db.cursor.fetchall()
+            for (uid,) in expired:
+                asyncio.create_task(
+                    bot.send_message(
+                        uid,
+                        "⌛ Ваша Premium-подписка истекла.\n"
+                        "✨ Оформите новую в разделе Premium!"
+                    )
+                )
+            db.conn.commit()
+            logger.info(f"Деактивировано Premium: {db.cursor.rowcount} пользователей")
+    except Exception as e:
+        logger.error(f"check_premium_expiry error: {e}")
+
+
+async def auto_resolve_stale_disputes():
+    """Авто-разрешение спорів бездействия > 72ч."""
+    try:
+        db.cursor.execute(
+            "SELECT d.id, d.buyer, d.seller, d.amount, d.currency "
+            "FROM disputes ds JOIN deals d ON ds.deal_id = d.id "
+            "WHERE ds.status = 'pending' AND ds.created_at < datetime('now', '-72 hours')"
+        )
+        stale = db.cursor.fetchall()
+        for deal_id, buyer, seller, amount, currency in stale:
+            db.cursor.execute("UPDATE disputes SET status = 'resolved_buyer', resolved_at = datetime('now') WHERE deal_id = ?", (deal_id,))
+            db.cursor.execute("UPDATE deals SET status = 'completed', completed = datetime('now') WHERE id = ?", (deal_id,))
+            asyncio.create_task(bot.send_message(buyer, f"✅ Спор по сделке #{deal_id} автоматически решён в вашу пользу (тайм-аут 72ч)."))
+            asyncio.create_task(bot.send_message(seller, f"⚠️ Спор по сделке #{deal_id} автоматически решён в пользу покупателя (тайм-аут 72ч)."))
+        if stale:
+            db.conn.commit()
+            logger.info(f"Авто-разрешено споров: {len(stale)}")
+    except Exception as e:
+        logger.error(f"auto_resolve_stale_disputes error: {e}")
+
+
+def setup_scheduler():
+    scheduler.add_job(check_premium_expiry, IntervalTrigger(minutes=15), id="premium_expiry", replace_existing=True)
+    scheduler.add_job(auto_resolve_stale_disputes, IntervalTrigger(hours=1), id="stale_disputes", replace_existing=True)
+    scheduler.add_job(poll_ton_payments, IntervalTrigger(seconds=TON_POLL_INTERVAL_SECONDS), id="ton_poll", replace_existing=True)
+
 
 # ========== СОСТОЯНИЯ FSM ==========
 class CreateDealState(StatesGroup):
@@ -4978,88 +5109,84 @@ async def fetch_ton_transactions(address: str, limit: int = 50) -> list:
 
 
 async def poll_ton_payments():
-    while True:
-        try:
-            await asyncio.sleep(TON_POLL_INTERVAL_SECONDS)
-            if not TON_ESCROW_ADDRESS:
+    try:
+        if not TON_ESCROW_ADDRESS:
+            return
+
+        txs = await fetch_ton_transactions(TON_ESCROW_ADDRESS)
+        if not txs:
+            return
+
+        last_processed_tx = db.get_service_state("last_ton_tx_hash", "")
+
+        for tx in txs:
+            tx_hash = tx.get("hash", "")
+            if not tx_hash or tx_hash == last_processed_tx:
                 continue
 
-            txs = await fetch_ton_transactions(TON_ESCROW_ADDRESS)
-            if not txs:
+            in_msg = tx.get("in_msg", {})
+            if not in_msg:
                 continue
 
-            last_processed_tx = db.get_service_state("last_ton_tx_hash", "")
+            source = in_msg.get("source", "")
+            value_nano = int(in_msg.get("value", "0"))
+            value_ton = value_nano / 1e9
 
-            for tx in txs:
-                tx_hash = tx.get("hash", "")
-                if not tx_hash or tx_hash == last_processed_tx:
-                    continue
+            comment_hex = in_msg.get("msg_data", {}).get("body", "")
+            comment = ""
+            if comment_hex and len(comment_hex) > 8:
+                try:
+                    raw = bytes.fromhex(comment_hex[4:]) if len(comment_hex) > 4 else b""
+                    if raw:
+                        comment = raw.decode("utf-8", errors="ignore").strip("\x00").strip()
+                except Exception:
+                    comment = ""
 
-                in_msg = tx.get("in_msg", {})
-                if not in_msg:
-                    continue
+            async with deal_lock:
+                db.cursor.execute(
+                    "SELECT id, status, payment_comment, amount, buyer, currency, seller FROM deals "
+                    "WHERE status IN ('awaiting', 'payment_pending') AND payment_method = 'ton'"
+                )
+                pending = db.cursor.fetchall()
 
-                source = in_msg.get("source", "")
-                value_nano = int(in_msg.get("value", "0"))
-                value_ton = value_nano / 1e9
+                for deal_row in pending:
+                    deal_id = deal_row[0]
+                    deal_status = deal_row[1]
+                    deal_comment = deal_row[2] or ""
+                    deal_amount = float(deal_row[3] or 0)
+                    buyer_id = deal_row[4]
+                    currency = deal_row[5]
+                    seller_id = deal_row[6]
 
-                comment_hex = in_msg.get("msg_data", {}).get("body", "")
-                comment = ""
-                if comment_hex and len(comment_hex) > 8:
-                    try:
-                        raw = bytes.fromhex(comment_hex[4:]) if len(comment_hex) > 4 else b""
-                        if raw:
-                            comment = raw.decode("utf-8", errors="ignore").strip("\x00").strip()
-                    except Exception:
-                        comment = ""
+                    if comment != deal_comment:
+                        continue
+                    if currency == "TON" and abs(value_ton - deal_amount) > 0.01:
+                        continue
+                    tx_amount = value_ton if currency == "TON" else value_ton
 
-                async with deal_lock:
-                    db.cursor.execute(
-                        "SELECT id, status, payment_comment, amount, buyer, currency, seller FROM deals "
-                        "WHERE status IN ('awaiting', 'payment_pending') AND payment_method = 'ton'"
-                    )
-                    pending = db.cursor.fetchall()
+                    if db.has_ton_payment(tx_hash):
+                        continue
 
-                    for deal_row in pending:
-                        deal_id = deal_row[0]
-                        deal_status = deal_row[1]
-                        deal_comment = deal_row[2] or ""
-                        deal_amount = float(deal_row[3] or 0)
-                        buyer_id = deal_row[4]
-                        currency = deal_row[5]
-                        seller_id = deal_row[6]
+                    db.add_ton_payment(tx_hash, deal_id, buyer_id, currency, tx_amount, comment, source)
+                    db.mark_deal_paid_onchain(deal_id, tx_hash)
+                    db.set_service_state("last_ton_tx_hash", tx_hash)
+                    logger.info(f"TON payment confirmed: deal #{deal_id}, tx {tx_hash}")
 
-                        if comment != deal_comment:
-                            continue
-                        if currency == "TON" and abs(value_ton - deal_amount) > 0.01:
-                            continue
-                        tx_amount = value_ton if currency == "TON" else value_ton
-
-                        if db.has_ton_payment(tx_hash):
-                            continue
-
-                        db.add_ton_payment(tx_hash, deal_id, buyer_id, currency, tx_amount, comment, source)
-                        db.mark_deal_paid_onchain(deal_id, tx_hash)
-                        db.set_service_state("last_ton_tx_hash", tx_hash)
-                        logger.info(f"TON payment confirmed: deal #{deal_id}, tx {tx_hash}")
-
-                        if buyer_id:
-                            asyncio.create_task(notify_user(
-                                buyer_id,
-                                f"✅ *On-chain оплата подтверждена!*\n\nСделка #{deal_id}\nСумма: {tx_amount} {currency}"
-                            ))
+                    if buyer_id:
                         asyncio.create_task(notify_user(
-                            seller_id,
-                            f"💰 *Сделка #{deal_id} оплачена через блокчейн!*\n\nПередайте товар покупателю."
+                            buyer_id,
+                            f"✅ *On-chain оплата подтверждена!*\n\nСделка #{deal_id}\nСумма: {tx_amount} {currency}"
                         ))
-                        break
+                    asyncio.create_task(notify_user(
+                        seller_id,
+                        f"💰 *Сделка #{deal_id} оплачена через блокчейн!*\n\nПередайте товар покупателю."
+                    ))
+                    break
 
-        except asyncio.CancelledError:
-            logger.info("TON monitor cancelled")
-            break
-        except Exception as e:
-            logger.error(f"TON monitor error: {e}")
-            await asyncio.sleep(TON_POLL_INTERVAL_SECONDS)
+    except asyncio.CancelledError:
+        logger.info("TON monitor cancelled")
+    except Exception as e:
+        logger.error(f"TON monitor error: {e}")
 
 
 async def verify_ton_usdt_payment(deal_id: int, tx_hash: str) -> dict:
@@ -5485,23 +5612,28 @@ async def lifespan(app: FastAPI):
     await bot.delete_webhook(drop_pending_updates=True)
 
     polling_task = asyncio.create_task(dp.start_polling(bot))
-    ton_task = asyncio.create_task(poll_ton_payments())
+    setup_scheduler()
+    scheduler.start()
+    task_worker.start()
 
     yield
 
     polling_task.cancel()
-    ton_task.cancel()
+    scheduler.shutdown(wait=False)
+    await task_worker.stop()
     try:
         await polling_task
-    except:
-        pass
-    try:
-        await ton_task
     except:
         pass
     await bot.session.close()
 
 fastapi_app = FastAPI(title="Novix Gift Bot API", lifespan=lifespan)
+
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+fastapi_app.state.limiter = limiter
+fastapi_app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+fastapi_app.add_middleware(SlowAPIMiddleware)
 
 fastapi_app.add_middleware(
     CORSMiddleware,
