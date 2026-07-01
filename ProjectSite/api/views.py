@@ -1,9 +1,8 @@
 import json, os, sqlite3
 from datetime import datetime, timedelta
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from django.contrib.auth import authenticate, login
@@ -21,13 +20,8 @@ def get_db():
     return conn
 
 
-class LoginRateThrottle(AnonRateThrottle):
-    rate = '5/minute'
-
-
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([LoginRateThrottle])
 def login_api(request):
     data = json.loads(request.body)
     username = data.get('username')
@@ -42,7 +36,6 @@ def login_api(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([LoginRateThrottle])
 def jwt_login_api(request):
     data = json.loads(request.body)
     username = data.get('username')

@@ -18,27 +18,12 @@ OWNER_TELEGRAM_ID = 1803437347
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = sqlite3.connect(DB_PATH, timeout=40)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-_rate_limit_store = {}
 
-def rate_limit(max_requests=5, window=60):
-    def decorator(f):
-        def wrapped(request, *args, **kwargs):
-            ip = request.META.get('REMOTE_ADDR', 'unknown')
-            key = f"{ip}:{f.__name__}"
-            now = time.time()
-            _rate_limit_store.setdefault(key, [])
-            _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < window]
-            if len(_rate_limit_store[key]) >= max_requests:
-                return JsonResponse({'success': False, 'error': 'Слишком много запросов. Попробуйте позже.'}, status=429)
-            _rate_limit_store[key].append(now)
-            return f(request, *args, **kwargs)
-        return wrapped
-    return decorator
 
 
 def safe_db(func):
@@ -99,6 +84,7 @@ def telegram_auth_view(request):
         conn.close()
         if user:
             request.session['user_id'] = user['user_id']
+            request.session['telegram_id'] = user['user_id']
             request.session['username'] = user.get('username', str(user['user_id']))
             return redirect('/usersite/dashboard/')
 
@@ -110,7 +96,9 @@ def telegram_auth_view(request):
         if auth:
             user = get_or_create_user(auth['user_id'])
             request.session['user_id'] = user['user_id']
+            request.session['telegram_id'] = user['user_id']
             request.session['username'] = user.get('username', str(user['user_id']))
+            request.session.set_expiry(86400 * 7)
             if user['user_id'] == OWNER_TELEGRAM_ID:
                 from django.contrib.auth import login
                 from django.contrib.auth.models import User as DjangoUser
@@ -148,7 +136,6 @@ def notifications_mark_read(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@rate_limit(max_requests=3, window=60)
 def request_code_api(request):
     data = json.loads(request.body)
     raw = data.get('telegram_id', '').strip()
@@ -562,20 +549,36 @@ def withdraw_view(request):
     user_id = request.session.get('user_id')
     conn = get_db()
     cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    user = cur.fetchone()
+    balances = {}
+    total_rub = 0
+    for c in CURRENCIES:
+        val = float(user.get(f'balance_{c}', 0) or 0) if user else 0
+        if val > 0:
+            rate = EXCHANGE_RATES.get(c, 1)
+            rub_val = val * rate
+            balances[c] = {'amount': val, 'symbol': CURRENCY_SYMBOLS.get(c, c), 'rub_value': rub_val}
+            total_rub += rub_val
+    tier = (user and (user['premium_tier'] or 'free')) or 'free' if user else 'free'
+    commission_pct = TIER_COMMISSION.get(tier, 4)
+    net_rub = round(total_rub * (1 - commission_pct / 100), 2)
     cur.execute("SELECT * FROM withdrawal_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (user_id,))
     requests = cur.fetchall()
-    cur.execute("SELECT balance_RUB, balance_USD, balance_TON, balance_USDT FROM users WHERE user_id=?", (user_id,))
-    balances = cur.fetchone()
     conn.close()
     return render(request, 'usersite/withdraw.html', {
         'requests': [dict(r) for r in requests],
-        'balances': dict(balances) if balances else {},
+        'balances': balances,
+        'total_rub': round(total_rub, 2),
+        'tier': tier,
+        'tier_badge': TIER_BADGES.get(tier, '⬜ FREE'),
+        'commission_pct': commission_pct,
+        'net_rub': net_rub,
     })
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@rate_limit(max_requests=3, window=60)
 def withdraw_create_api(request):
     if not check_auth(request):
         return JsonResponse({'error': 'Unauthorized'}, status=401)
@@ -592,13 +595,29 @@ def withdraw_create_api(request):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT balance_RUB FROM users WHERE user_id=?", (user_id,))
-    row = cur.fetchone()
-    if not row or row[0] < amount:
+    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    user = cur.fetchone()
+    if not user:
         conn.close()
-        return JsonResponse({'success': False, 'error': 'Недостаточно средств'})
+        return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
 
-    cur.execute(
+    total_rub = 0
+    for c in CURRENCIES:
+        val = float(user.get(f'balance_{c}', 0) or 0)
+        total_rub += val * EXCHANGE_RATES.get(c, 1)
+
+    tier = user.get('premium_tier', 'free') or 'free'
+    commission_pct = TIER_COMMISSION.get(tier, 4)
+    net_rub = total_rub * (1 - commission_pct / 100)
+
+    if net_rub < amount:
+        conn.close()
+        return JsonResponse({
+            'success': False,
+            'error': f'Недостаточно средств. Доступно к выводу (чистыми): {round(net_rub, 2)} RUB'
+        })
+
+    conn.execute(
         "INSERT INTO withdrawal_requests (user_id, amount, wallet_type, wallet_address, status) VALUES (?, ?, ?, ?, 'pending')",
         (user_id, amount, wallet_type, wallet_address)
     )
