@@ -1,0 +1,156 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Премиум подписка{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/dashboard/">Главная</a>
+    <span class="separator">/</span>
+    <span class="current">Премиум</span>
+</div>
+
+<div class="card" style="max-width:640px;margin:0 auto;">
+    {% if step == '1' %}
+    <h2 style="margin-bottom:20px;">🏅 Выберите тариф</h2>
+    <form method="post">
+        {% csrf_token %}
+        <div style="display:flex;flex-direction:column;gap:12px;">
+            {% for t in tiers %}
+            <label class="tier-option">
+                <input type="radio" name="tier" value="{{ t.id }}" required>
+                <div class="tier-card">
+                    <div class="tier-name">{{ t.label }}</div>
+                    <div class="tier-meta">{{ t.price }} · комиссия {{ t.commission }}</div>
+                    <div class="tier-desc">{{ t.desc }}</div>
+                </div>
+            </label>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:24px;padding:12px;">Далее →</button>
+    </form>
+
+    {% elif step == '2' %}
+    <h2 style="margin-bottom:8px;">{{ tier_label }}</h2>
+    <p class="text-muted" style="margin-bottom:20px;">Выберите валюту для оплаты</p>
+    <form method="post">
+        {% csrf_token %}
+        <div class="currency-grid">
+            {% for c in currencies %}
+            <label class="cur-option">
+                <input type="radio" name="currency" value="{{ c.id }}" required>
+                <div class="cur-card">{{ c.symbol }} {{ c.name }}</div>
+            </label>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:24px;padding:12px;">Далее →</button>
+    </form>
+    <div style="margin-top:12px;text-align:center;">
+        <a href="/usersite/premium/?step=1" class="btn btn-outline" style="font-size:13px;">← Назад к тарифам</a>
+    </div>
+
+    {% elif step == '3' %}
+    <h2 style="margin-bottom:8px;">{{ tier_label }}</h2>
+    <p class="text-muted" style="margin-bottom:4px;">Валюта: <strong>{{ currency }}</strong></p>
+    <p style="margin-bottom:20px;">Выберите длительность:</p>
+    <form method="post">
+        {% csrf_token %}
+        <div style="display:flex;flex-direction:column;gap:12px;">
+            {% for d in durations %}
+            <label class="tier-option">
+                <input type="radio" name="days" value="{{ d.days }}" required>
+                <div class="tier-card" style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-weight:500;">{{ d.label }}</span>
+                    <span style="font-weight:700;color:var(--accent);">{{ d.price }} {{ d.currency }}</span>
+                </div>
+            </label>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:24px;padding:12px;">Далее →</button>
+    </form>
+    <div style="margin-top:12px;text-align:center;">
+        <a href="/usersite/premium/?step=2" class="btn btn-outline" style="font-size:13px;">← Назад к валютам</a>
+    </div>
+
+    {% elif step == 'confirm' %}
+    <h2 style="margin-bottom:20px;">✅ Подтверждение</h2>
+    <div class="order-summary">
+        <div class="order-row"><span>Тариф</span><span>{{ tier_badge }}</span></div>
+        <div class="order-row"><span>Валюта</span><span>{{ currency }}</span></div>
+        <div class="order-row"><span>Длительность</span><span>{{ days }} дней</span></div>
+        <div class="order-row" style="font-weight:700;font-size:16px;border-bottom:none;color:var(--accent);"><span>Сумма</span><span>{{ price }} (≈{{ total_rub }} RUB)</span></div>
+    </div>
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="pay">
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:24px;padding:12px;">💳 Оплатить</button>
+    </form>
+    <div style="margin-top:12px;text-align:center;">
+        <a href="/usersite/premium/?step=3" class="btn btn-outline" style="font-size:13px;">← Выбрать другую длительность</a>
+    </div>
+
+    {% elif step == 'success' %}
+    <div style="text-align:center;padding:40px 0;">
+        <div style="font-size:64px;margin-bottom:16px;">✅</div>
+        <h2 style="margin-bottom:12px;">Подписка активирована!</h2>
+        <p style="margin-bottom:8px;">🏅 <strong>{{ tier_badge }}</strong></p>
+        <p style="margin-bottom:8px;">📅 {{ days }} дней</p>
+        {% if cross_plan %}
+        <p style="margin-bottom:8px;">💰 Списано: {{ cross_plan }} (≈{{ total_rub }} RUB)</p>
+        {% else %}
+        <p style="margin-bottom:8px;">💰 Сумма: {{ price }}</p>
+        {% endif %}
+        <a href="/usersite/dashboard/" class="btn btn-primary" style="margin-top:24px;padding:12px 32px;">Вернуться на главную</a>
+    </div>
+
+    {% elif step == 'error' %}
+    <div style="text-align:center;padding:40px 0;">
+        <div style="font-size:64px;margin-bottom:16px;">❌</div>
+        <h2 style="margin-bottom:12px;color:var(--danger);">Ошибка</h2>
+        <p style="margin-bottom:24px;">{{ error }}</p>
+        <a href="/usersite/premium/?step=1" class="btn btn-primary" style="padding:12px 32px;">Попробовать снова</a>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.tier-option { cursor:pointer; }
+.tier-option input { display:none; }
+.tier-option input:checked + .tier-card { border-color:var(--accent); background:var(--accent-dim); }
+.tier-card {
+    background:var(--bg-card);
+    border:2px solid var(--border);
+    border-radius:var(--radius-sm);
+    padding:14px 18px;
+    transition:0.2s;
+}
+.tier-card:hover { border-color:var(--accent); }
+.tier-name { font-weight:600; font-size:15px; }
+.tier-meta { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+.tier-desc { font-size:11px; color:var(--text-muted); margin-top:2px; }
+.currency-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:10px; }
+.cur-option { cursor:pointer; }
+.cur-option input { display:none; }
+.cur-option input:checked + .cur-card { border-color:var(--accent); background:var(--accent-dim); }
+.cur-card {
+    background:var(--bg-card);
+    border:2px solid var(--border);
+    border-radius:var(--radius-sm);
+    padding:12px 10px;
+    text-align:center;
+    font-weight:500;
+    font-size:14px;
+    transition:0.2s;
+}
+.cur-card:hover { border-color:var(--accent); }
+.order-summary {
+    background:var(--bg-secondary);
+    border-radius:var(--radius-sm);
+    padding:16px 20px;
+}
+.order-row {
+    display:flex;justify-content:space-between;
+    padding:10px 0;
+    border-bottom:1px solid var(--border);
+    font-size:14px;
+}
+</style>
+{% endblock %}

@@ -160,6 +160,20 @@ def escape_md(text: str) -> str:
 def fmt_num(num: float) -> str:
     return f"{num:,.0f}".replace(",", " ")
 
+DURATION_OPTIONS = [(30, 1, 0), (90, 3, 5), (180, 6, 10), (365, 12, 20)]
+
+def calc_tier_price(tier: str, days: int) -> float:
+    price_month = TIER_CONFIG[tier]['price_month']
+    for d, m, disc in DURATION_OPTIONS:
+        if d == days:
+            return price_month * m * (1 - disc / 100)
+    return price_month * (days / 30)
+
+def fmt_price(value: float) -> str:
+    if value >= 100:
+        return f"{int(round(value))}"
+    return f"{value:.2f}".rstrip('0').rstrip('.') 
+
 def img_path(name: str) -> str:
     return os.path.join(IMAGES_PATH, name)
 
@@ -268,25 +282,44 @@ def card_currency_kb():
         [InlineKeyboardButton(text="🔙 Назад", callback_data="menu")]   
     ])
 
-def tier_currency_kb(tier: str):
+def tier_selection_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⭐ Premium", callback_data="prem_tier_premium")],
+        [InlineKeyboardButton(text="💎 Platinum", callback_data="prem_tier_platinum")],
+        [InlineKeyboardButton(text="👑 VIP-статус", callback_data="prem_tier_vip")],
+        [InlineKeyboardButton(text="⬅️ Назад в главное меню", callback_data="menu")],
+    ])
+
+def currency_selection_kb(tier: str):
     currencies = ["RUB", "USD", "EUR", "TON", "USDT", "STARS", "BYN", "UAH", "KZT", "UZS"]
     kb = []
     row = []
     for curr in currencies:
         info = CURRENCIES[curr]
         label = f"{info['symbol']} {info['name']}"
-        row.append(InlineKeyboardButton(text=label, callback_data=f"tier_cur_{tier}_{curr}"))
+        row.append(InlineKeyboardButton(text=label, callback_data=f"prem_cur_{tier}_{curr}"))
         if len(row) == 2:
             kb.append(row)
             row = []
     if row:
         kb.append(row)
-    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад к тарифам", callback_data="premium_tiers")])
+    kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
-
-def premium_currency_kb():
-    return tier_currency_kb("premium")
+def duration_kb(tier: str, currency: str):
+    rate = PREMIUM_RATES.get(currency, 1)
+    price_month = TIER_CONFIG[tier]['price_month']
+    kb = []
+    for days, months, discount in DURATION_OPTIONS:
+        total_rub = price_month * months * (1 - discount / 100)
+        price_in_currency = total_rub / rate if rate > 0 else total_rub
+        price_str = fmt_price(price_in_currency)
+        label_months = f"{months} мес." if months > 1 else "1 месяц"
+        kb.append([InlineKeyboardButton(text=f"[{label_months} — {price_str} {currency}]", callback_data=f"prem_dur_{tier}_{days}_{currency}")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад к валютам", callback_data=f"prem_tier_{tier}")])
+    kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def currency_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -1871,8 +1904,9 @@ class CreateDealState(StatesGroup):
     price = State()
 
 class BuyPremiumState(StatesGroup):
+    tier = State()
     currency = State()
-    days = State()
+    duration = State()
 
 class CardState(StatesGroup):
     waiting = State()
@@ -2631,9 +2665,7 @@ async def profile_cb(call: CallbackQuery):
     
     builder = InlineKeyboardBuilder()
     if tier == 'free':
-        builder.button(text="⭐ Купить Premium 299₽/мес", callback_data="buy_premium")
-        builder.button(text="💎 Купить Platinum 599₽/мес", callback_data="buy_platinum")
-        builder.button(text="👑 Купить VIP 1499₽/мес", callback_data="buy_vip")
+        builder.button(text="🏅 Premium подписка", callback_data="premium_tiers")
     else:
         builder.button(text="⬆️ Повысить тариф", callback_data="upgrade_tier")
     builder.button(text="🎫 Промокод", callback_data="activate_promo")
@@ -2653,43 +2685,110 @@ TIER_IMAGES = {
 TIER_LABELS = {'premium': '⭐ Premium', 'platinum': '💎 Platinum', 'vip': '👑 VIP'}
 
 
-async def _show_tier_currency(call: CallbackQuery, state: FSMContext, tier: str):
-    label = TIER_LABELS[tier]
+# ─── ШАГ 1: Выбор тарифа ───────────────────────────────────────────────
+
+@dp.callback_query(lambda c: c.data == "premium_tiers")
+async def premium_tiers_cb(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    text = (
+        "🏅 *Выберите тариф подписки:*\n\n"
+        "⬜ FREE — бесплатно, 4% комиссия\n"
+        "⭐ Premium — 299₽/мес, 2% комиссия, высокий приоритет\n"
+        "💎 Platinum — 599₽/мес, 1% комиссия, мгновенный приоритет\n"
+        "👑 VIP-статус — 1499₽/мес, 0% комиссия, личный менеджер"
+    )
+    img = list(TIER_IMAGES.values())[0]
+    if img_exists(img):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
+            reply_markup=tier_selection_kb()
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=tier_selection_kb())
+    await state.set_state(BuyPremiumState.tier)
+    await call.answer()
+
+
+@dp.callback_query(BuyPremiumState.tier, lambda c: c.data.startswith("prem_tier_"))
+async def prem_tier_cb(call: CallbackQuery, state: FSMContext):
+    tier = call.data.replace("prem_tier_", "")
+    if tier not in TIER_CONFIG or tier == 'free':
+        return
     await state.update_data(premium_tier=tier)
-    text = f"{label} подписка\n\nВыберите валюту для оплаты:"
+    text = f"{TIER_LABELS[tier]}\n\nВыберите валюту для оплаты:"
     img = TIER_IMAGES[tier]
     if img_exists(img):
         await call.message.edit_media(
             InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
-            reply_markup=tier_currency_kb(tier)
+            reply_markup=currency_selection_kb(tier)
         )
     else:
-        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=tier_currency_kb(tier))
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=currency_selection_kb(tier))
     await state.set_state(BuyPremiumState.currency)
+    await call.answer()
 
 
-async def _exec_tier_purchase(uid: int, tier: str, days: int, currency: str, call: CallbackQuery, state: FSMContext):
-    rates = PREMIUM_RATES
-    price_rub_value = TIER_CONFIG[tier]['price_month']
-    rate = rates.get(currency, 1)
-    price_in_currency = int(price_rub_value / rate) if rate > 0 else price_rub_value
+# ─── ШАГ 2: Выбор валюты ──────────────────────────────────────────────
+
+@dp.callback_query(BuyPremiumState.currency, lambda c: c.data.startswith("prem_cur_"))
+async def prem_currency_cb(call: CallbackQuery, state: FSMContext):
+    parts = call.data.split("_")
+    tier = parts[2]
+    currency = parts[3]
+    data = await state.get_data()
+    saved_tier = data.get('premium_tier', tier)
+    await state.update_data(currency=currency, premium_tier=saved_tier)
+    text = f"{TIER_LABELS[saved_tier]}\n\n💰 *Валюта:* {currency}\n\nВыберите длительность:"
+    img = TIER_IMAGES[saved_tier]
+    if img_exists(img):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
+            reply_markup=duration_kb(saved_tier, currency)
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=duration_kb(saved_tier, currency))
+    await state.set_state(BuyPremiumState.duration)
+    await call.answer()
+
+
+# ─── ШАГ 3: Выбор длительности + оплата ─────────────────────────────────
+
+@dp.callback_query(BuyPremiumState.duration, lambda c: c.data.startswith("prem_dur_"))
+async def prem_duration_cb(call: CallbackQuery, state: FSMContext):
+    parts = call.data.split("_")
+    tier = parts[2]
+    days = int(parts[3])
+    currency = parts[4]
+    uid = call.from_user.id
+    data = await state.get_data()
+    saved_tier = data.get('premium_tier', tier)
+
+    if currency not in PREMIUM_RATES or PREMIUM_RATES.get(currency, 0) <= 0:
+        await call.answer(f"❌ Валюта {currency} не поддерживается", show_alert=True)
+        return
+
+    total_rub = calc_tier_price(saved_tier, days)
+    rate = PREMIUM_RATES[currency]
+    price_in_currency = total_rub / rate if rate > 0 else total_rub
+    label = TIER_LABELS[saved_tier]
+    tier_badge = TIER_CONFIG[saved_tier]['badge']
+    commission_pct = int(TIER_CONFIG[saved_tier]['commission'] * 100)
     user_balance = db.get_balance(uid, currency)
-    label = TIER_LABELS[tier]
-    tier_label = TIER_CONFIG[tier]['badge']
-    commission_pct = int(TIER_CONFIG[tier]['commission'] * 100)
 
+    # Прямая оплата в выбранной валюте
     if user_balance >= price_in_currency:
         async with db_batch_lock:
             if db.update_balance(uid, currency, -price_in_currency):
-                db.set_premium_tier(uid, tier, days, 0)
+                db.set_premium_tier(uid, saved_tier, days, 0)
+
         text_success = (
             f"✅ *{label} подписка активирована!*\n\n"
-            f"🏅 Статус: {tier_label}\n"
+            f"🏅 Статус: {tier_badge}\n"
             f"📅 Длительность: {days} дней\n"
-            f"💰 Оплачено: {price_in_currency} {currency}\n"
+            f"💰 Оплачено: {fmt_price(price_in_currency)} {currency}\n"
             f"📊 Комиссия сделок: {commission_pct}%"
         )
-        img = TIER_IMAGES[tier]
+        img = TIER_IMAGES[saved_tier]
         if img_exists(img):
             await call.message.edit_media(
                 InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text_success, parse_mode="Markdown"),
@@ -2699,11 +2798,89 @@ async def _exec_tier_purchase(uid: int, tier: str, days: int, currency: str, cal
             await call.message.edit_text(text_success, parse_mode="Markdown", reply_markup=main_kb(uid in ADMIN_IDS))
         await state.clear()
         await call.answer()
-        return True
-    return False
+        return
+
+    # ─── Cross-currency fallback ─────────────────────────────────────
+    all_balances = {}
+    total_user_rub = 0
+    for curr in PREMIUM_RATES:
+        bal = db.get_balance(uid, curr)
+        all_balances[curr] = bal
+        if bal > 0:
+            cr = PREMIUM_RATES.get(curr, 0)
+            if cr > 0:
+                total_user_rub += bal * cr if curr != "RUB" else bal
+
+    if total_user_rub < total_rub:
+        await call.answer(
+            f"❌ Недостаточно средств!\n"
+            f"Нужно: {fmt_price(price_in_currency)} {currency} ({fmt_num(total_rub)} RUB)\n"
+            f"Ваш баланс: ~{fmt_num(total_user_rub)} RUB",
+            show_alert=True
+        )
+        return
+
+    deduction_plan = {}
+    remaining_rub = total_rub
+    for curr in ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]:
+        if remaining_rub <= 0:
+            break
+        bal = all_balances.get(curr, 0)
+        if bal <= 0:
+            continue
+        if curr == "RUB":
+            deduct = min(bal, remaining_rub)
+            deduction_plan[curr] = deduct
+            remaining_rub -= deduct
+        else:
+            cr = PREMIUM_RATES.get(curr, 0)
+            if cr <= 0:
+                continue
+            needed = remaining_rub / cr
+            if bal >= needed:
+                deduction_plan[curr] = round(needed, 6)
+                remaining_rub = 0
+            else:
+                deduction_plan[curr] = bal
+                remaining_rub -= bal * cr
+
+    if remaining_rub > 0:
+        await call.answer("❌ Не удалось составить план списания.", show_alert=True)
+        return
+
+    plan_parts = [f"{fmt_num(a)} {c}" for c, a in deduction_plan.items()]
+    await state.update_data(
+        premium_tier=saved_tier,
+        premium_days=days,
+        premium_price_rub=total_rub,
+        deduction_plan=deduction_plan
+    )
+
+    text = (
+        f"{label}\n\n"
+        f"💰 Недостаточно {currency}, но хватает общих активов.\n"
+        f"💳 *Списать:* {' + '.join(plan_parts)} (≈{fmt_num(total_rub)} RUB)\n"
+        f"🏅 *Тариф:* {tier_badge}\n\n"
+        f"Подтверждаете?"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, оплатить", callback_data=f"tier_confirm_cross_{saved_tier}_{days}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ])
+    img = TIER_IMAGES[saved_tier]
+    if img_exists(img):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
+            reply_markup=kb
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
 
 
-async def _exec_cross_currency(uid: int, tier: str, days: int, price_rub_value: int, deduction_plan: dict, call: CallbackQuery, state: FSMContext):
+# ─── Кросс-валютное подтверждение ──────────────────────────────────────
+
+async def _exec_cross_currency(uid: int, tier: str, days: int, price_rub_value: float, deduction_plan: dict, call: CallbackQuery, state: FSMContext):
     async with db_batch_lock:
         success = True
         deducted_summary = {}
@@ -2727,7 +2904,7 @@ async def _exec_cross_currency(uid: int, tier: str, days: int, price_rub_value: 
         f"✅ *{label} подписка активирована!*\n\n"
         f"🏅 Статус: {tier_label}\n"
         f"📅 Длительность: {days} дней\n"
-        f"💰 Списано с общего счета: {' + '.join(plan_parts)} (≈{price_rub_value} RUB)"
+        f"💰 Списано с общего счета: {' + '.join(plan_parts)} (≈{fmt_num(price_rub_value)} RUB)"
     )
     img = TIER_IMAGES[tier]
     if img_exists(img):
@@ -2740,190 +2917,6 @@ async def _exec_cross_currency(uid: int, tier: str, days: int, price_rub_value: 
     await state.clear()
     await call.answer()
     return True
-
-
-@dp.callback_query(lambda c: c.data == "premium_tiers")
-async def premium_tiers_cb(call: CallbackQuery, state: FSMContext):
-    text = "🏅 *Выберите тариф подписки:*\n\n"
-    tiers = []
-    for t, cfg in TIER_CONFIG.items():
-        if t == 'free':
-            continue
-        tiers.append(t)
-        text += f"{cfg['badge']} — *{cfg['price_month']}₽/мес*\n📊 Комиссия: {int(cfg['commission']*100)}%\n{cfg['priority']} приоритет\n\n"
-    text += "Нажмите на тариф, чтобы продолжить."
-    kb = [[InlineKeyboardButton(text=f"{TIER_CONFIG[t]['badge']} — {TIER_CONFIG[t]['price_month']}₽/мес", callback_data=f"buy_{t}")] for t in tiers]
-    kb.append([InlineKeyboardButton(text="⬅️ Назад в главное меню", callback_data="menu")])
-
-    img = list(TIER_IMAGES.values())[0]
-    if img_exists(img):
-        await call.message.edit_media(
-            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
-        )
-    else:
-        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-    await call.answer()
-
-@dp.callback_query(lambda c: c.data in ("buy_premium", "buy_platinum", "buy_vip"))
-async def buy_tier_cb(call: CallbackQuery, state: FSMContext):
-    tier = call.data.replace("buy_", "")
-    await _show_tier_currency(call, state, tier)
-
-
-@dp.callback_query(lambda c: c.data == "upgrade_tier")
-async def upgrade_tier_cb(call: CallbackQuery, state: FSMContext):
-    tier_info = db.get_tier_info(call.from_user.id)
-    current_tier = tier_info['tier']
-    text = "🏅 *Выберите новый тариф:*\n\n"
-    kb = []
-    for t, cfg in TIER_CONFIG.items():
-        if t == 'free' or t == current_tier:
-            continue
-        text += f"{cfg['badge']} — {cfg['price_month']}₽/мес — комиссия {int(cfg['commission']*100)}%\n"
-        kb.append([InlineKeyboardButton(text=f"{cfg['badge']} — {cfg['price_month']}₽/мес", callback_data=f"buy_{t}")])
-    if not kb:
-        text = "🏅 *Вы уже на максимальном тарифе!*"
-        kb.append([InlineKeyboardButton(text="🔙 В меню", callback_data="menu")])
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-    await call.answer()
-
-
-@dp.callback_query(BuyPremiumState.currency)
-async def tier_currency_cb(call: CallbackQuery, state: FSMContext):
-    if not call.data.startswith("tier_cur_"):
-        return
-    parts = call.data.split("_")
-    tier = parts[2]
-    currency = parts[3]
-    data = await state.get_data()
-    saved_tier = data.get('premium_tier', tier)
-    await state.update_data(currency=currency, premium_tier=saved_tier)
-
-    rates = PREMIUM_RATES
-    price_rub = TIER_CONFIG[saved_tier]['price_month']
-    label = TIER_LABELS[saved_tier]
-
-    rate = rates.get(currency, 1)
-    converted = int(price_rub / rate) if rate > 0 else price_rub
-    text = f"{label} подписка\n\n💰 Валюта оплаты: {currency}\n\n📅 Стоимость: {converted} {currency} (≈{price_rub} RUB) за 30 дней"
-    kb = [[InlineKeyboardButton(text=f"✅ Купить за {converted} {currency}", callback_data=f"tier_buy_{saved_tier}_30_{currency}")]]
-    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"buy_{saved_tier}")])
-    kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")])
-
-    img = TIER_IMAGES[saved_tier]
-    if img_exists(img):
-        await call.message.edit_media(
-            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
-        )
-    else:
-        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-    await state.set_state(BuyPremiumState.days)
-    await call.answer()
-
-
-@dp.callback_query(BuyPremiumState.days)
-async def tier_buy_cb(call: CallbackQuery, state: FSMContext):
-    if not call.data.startswith("tier_buy_"):
-        return
-    parts = call.data.split("_")
-    tier = parts[2]
-    days = int(parts[3])
-    currency = parts[4]
-    uid = call.from_user.id
-
-    rates = PREMIUM_RATES
-    if currency not in rates or rates.get(currency, 0) <= 0:
-        await call.answer(f"❌ Валюта {currency} не поддерживается", show_alert=True)
-        return
-
-    price_rub_value = TIER_CONFIG[tier]['price_month']
-    rate = rates[currency]
-    price_in_currency = int(price_rub_value / rate)
-    user_balance = db.get_balance(uid, currency)
-
-    # Прямая оплата
-    if user_balance >= price_in_currency:
-        await _exec_tier_purchase(uid, tier, days, currency, call, state)
-        return
-
-    # Cross-currency
-    all_balances = {}
-    total_rub = 0
-    for curr in rates.keys():
-        bal = db.get_balance(uid, curr)
-        all_balances[curr] = bal
-        if bal > 0:
-            cr = rates.get(curr, 0)
-            if cr > 0:
-                total_rub += bal * cr if curr != "RUB" else bal
-
-    if total_rub < price_rub_value:
-        await call.answer(
-            f"❌ Недостаточно средств!\nНужно: {price_rub_value} RUB\nВаш баланс: ~{fmt_num(total_rub)} RUB",
-            show_alert=True
-        )
-        return
-
-    deduction_plan = {}
-    remaining_rub = price_rub_value
-    for curr in ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]:
-        if remaining_rub <= 0:
-            break
-        bal = all_balances.get(curr, 0)
-        if bal <= 0:
-            continue
-        if curr == "RUB":
-            deduct = min(bal, remaining_rub)
-            deduction_plan[curr] = deduct
-            remaining_rub -= deduct
-        else:
-            cr = rates.get(curr, 0)
-            if cr <= 0:
-                continue
-            needed = remaining_rub / cr
-            if bal >= needed:
-                deduction_plan[curr] = round(needed, 6)
-                remaining_rub = 0
-            else:
-                deduction_plan[curr] = bal
-                remaining_rub -= bal * cr
-
-    if remaining_rub > 0:
-        await call.answer("❌ Не удалось составить план списания.", show_alert=True)
-        return
-
-    plan_parts = [f"{fmt_num(a)} {c}" for c, a in deduction_plan.items()]
-    label = TIER_LABELS[tier]
-    tier_badge = TIER_CONFIG[tier]['badge']
-    await state.update_data(
-        premium_tier=tier,
-        premium_days=days,
-        premium_price_rub=price_rub_value,
-        deduction_plan=deduction_plan
-    )
-
-    text = (
-        f"{label} подписка\n\n"
-        f"💰 Недостаточно {currency}, но хватает общих активов.\n"
-        f"💳 *Списать:* {' + '.join(plan_parts)} (≈{price_rub_value} RUB)\n"
-        f"🏅 *Тариф:* {tier_badge}\n\n"
-        f"Подтверждаете?"
-    )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Да, оплатить", callback_data=f"tier_confirm_cross_{tier}_{days}")],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
-    ])
-    img = TIER_IMAGES[tier]
-    if img_exists(img):
-        await call.message.edit_media(
-            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
-            reply_markup=kb
-        )
-    else:
-        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
-    await call.answer()
 
 
 @dp.callback_query(lambda c: c.data.startswith("tier_confirm_cross_"))
@@ -2942,6 +2935,36 @@ async def tier_confirm_cross_cb(call: CallbackQuery, state: FSMContext):
         return
 
     await _exec_cross_currency(uid, tier, days, price_rub_value, deduction_plan, call, state)
+
+
+# ─── Повышение тарифа (из уже оплаченного) ─────────────────────────────
+
+@dp.callback_query(lambda c: c.data == "upgrade_tier")
+async def upgrade_tier_cb(call: CallbackQuery, state: FSMContext):
+    tier_info = db.get_tier_info(call.from_user.id)
+    current_tier = tier_info['tier']
+    text = "🏅 *Выберите новый тариф:*\n\n"
+    kb = []
+    for t, cfg in TIER_CONFIG.items():
+        if t == 'free' or t == current_tier:
+            continue
+        text += f"{cfg['badge']} — {cfg['price_month']}₽/мес — комиссия {int(cfg['commission']*100)}%\n"
+        kb.append([InlineKeyboardButton(text=f"{cfg['badge']} — {cfg['price_month']}₽/мес", callback_data=f"prem_tier_{t}")])
+    if not kb:
+        text = "🏅 *Вы уже на максимальном тарифе!*"
+        kb.append([InlineKeyboardButton(text="🔙 В меню", callback_data="menu")])
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    else:
+        img = list(TIER_IMAGES.values())[0]
+        if img_exists(img):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+            )
+        else:
+            await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+        await state.set_state(BuyPremiumState.tier)
+    await call.answer()
 
 
 # ========== СОЗДАНИЕ СДЕЛКИ ==========

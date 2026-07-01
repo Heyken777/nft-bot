@@ -20,6 +20,9 @@ urlpatterns = [
     path('partnership/my/', news_views.partnership_my_view, name='partnership_my'),
     path('partnership/<int:partnership_id>/', news_views.partnership_user_detail_view, name='partnership_user_detail'),
 
+    # Premium wizard
+    path('premium/', views.premium_wizard_view, name='premium_wizard'),
+
     # API тикетов
     path('transactions/', views.transactions_view, name='transactions'),
     path('withdraw/', views.withdraw_view, name='withdraw'),

@@ -367,6 +367,236 @@ def user_profile_redirect(request, user_id):
     return redirect(f'/users/{user_id}/')
 
 
+PREMIUM_DURATIONS = [
+    (30, 1, 0),
+    (90, 3, 5),
+    (180, 6, 10),
+    (365, 12, 20),
+]
+
+def calc_tier_price_site(tier: str, days: int) -> float:
+    prices = {'premium': 299, 'platinum': 599, 'vip': 1499}
+    pm = prices.get(tier, 0)
+    for d, m, disc in PREMIUM_DURATIONS:
+        if d == days:
+            return pm * m * (1 - disc / 100)
+    return pm * (days / 30)
+
+TIER_BADGES_MAP = {'premium': '⭐ PREMIUM', 'platinum': '💎 PLATINUM', 'vip': '👑 VIP'}
+TIER_LABELS_SITE = {'premium': '⭐ Premium', 'platinum': '💎 Platinum', 'vip': '👑 VIP-статус'}
+
+@safe_db
+def premium_wizard_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    step = request.GET.get('step', '1')
+
+    # ─── Шаг 1: выбор тарифа ────────────────────────────────────────
+    if step == '1':
+        if request.method == 'POST':
+            tier = request.POST.get('tier')
+            if tier in ('premium', 'platinum', 'vip'):
+                request.session['wizard_tier'] = tier
+                return redirect('/usersite/premium/?step=2')
+        tiers = [
+            {'id': 'premium', 'label': '⭐ Premium', 'price': '299₽/мес', 'commission': '2%', 'desc': 'Высокий приоритет'},
+            {'id': 'platinum', 'label': '💎 Platinum', 'price': '599₽/мес', 'commission': '1%', 'desc': 'Мгновенный приоритет'},
+            {'id': 'vip', 'label': '👑 VIP-статус', 'price': '1499₽/мес', 'commission': '0%', 'desc': '24/7 Личный менеджер'},
+        ]
+        return render(request, 'usersite/premium_wizard.html', {'step': '1', 'tiers': tiers})
+
+    # ─── Шаг 2: выбор валюты ────────────────────────────────────────
+    wizard_tier = request.session.get('wizard_tier')
+    if not wizard_tier:
+        return redirect('/usersite/premium/?step=1')
+    if step == '2':
+        if request.method == 'POST':
+            currency = request.POST.get('currency')
+            if currency:
+                request.session['wizard_currency'] = currency
+                return redirect('/usersite/premium/?step=3')
+        currencies = [
+            {'id': 'RUB', 'symbol': '🇷🇺', 'name': 'RUB'},
+            {'id': 'USD', 'symbol': '🇺🇸', 'name': 'USD'},
+            {'id': 'EUR', 'symbol': '🇪🇺', 'name': 'EUR'},
+            {'id': 'TON', 'symbol': '💎', 'name': 'TON'},
+            {'id': 'USDT', 'symbol': '💵', 'name': 'USDT'},
+            {'id': 'STARS', 'symbol': '⭐', 'name': 'STARS'},
+            {'id': 'BYN', 'symbol': '🇧🇾', 'name': 'BYN'},
+            {'id': 'UAH', 'symbol': '🇺🇦', 'name': 'UAH'},
+            {'id': 'KZT', 'symbol': '🇰🇿', 'name': 'KZT'},
+            {'id': 'UZS', 'symbol': '🇺🇿', 'name': 'UZS'},
+        ]
+        return render(request, 'usersite/premium_wizard.html', {'step': '2', 'tier': wizard_tier, 'tier_label': TIER_LABELS_SITE.get(wizard_tier, wizard_tier), 'currencies': currencies})
+
+    # ─── Шаг 3: выбор длительности ──────────────────────────────────
+    wizard_currency = request.session.get('wizard_currency')
+    if not wizard_currency:
+        return redirect('/usersite/premium/?step=2')
+    if step == '3':
+        if request.method == 'POST':
+            days = request.POST.get('days')
+            if days:
+                request.session['wizard_days'] = int(days)
+                return redirect('/usersite/premium/?step=confirm')
+
+        rates = EXCHANGE_RATES
+        rate = rates.get(wizard_currency, 1)
+        price_month = {'premium': 299, 'platinum': 599, 'vip': 1499}.get(wizard_tier, 0)
+        durations = []
+        for days, months, discount in PREMIUM_DURATIONS:
+            total_rub = price_month * months * (1 - discount / 100)
+            price_in_currency = total_rub / rate if rate > 0 else total_rub
+            label_d = f"{months} мес." if months > 1 else "1 месяц"
+            if discount:
+                label_d += f" (-{discount}%)"
+            durations.append({'days': days, 'label': label_d, 'price': f"{price_in_currency:,.2f}".rstrip('0').rstrip('.'), 'currency': wizard_currency})
+        return render(request, 'usersite/premium_wizard.html', {'step': '3', 'tier': wizard_tier, 'tier_label': TIER_LABELS_SITE.get(wizard_tier, wizard_tier), 'currency': wizard_currency, 'durations': durations})
+
+    # ─── Подтверждение ──────────────────────────────────────────────
+    wizard_days = request.session.get('wizard_days')
+    if not all([wizard_tier, wizard_currency, wizard_days]):
+        return redirect('/usersite/premium/?step=1')
+
+    if step == 'confirm':
+        if request.method == 'POST':
+            action = request.POST.get('action')
+            if action == 'pay':
+                total_rub = calc_tier_price_site(wizard_tier, wizard_days)
+                rate = EXCHANGE_RATES.get(wizard_currency, 1)
+                price_in_currency = total_rub / rate if rate > 0 else total_rub
+
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+                user = cur.fetchone()
+                if not user:
+                    conn.close()
+                    return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': 'Пользователь не найден'})
+
+                # Проверяем баланс выбранной валюты
+                bal_col = f"balance_{wizard_currency}"
+                cur.execute(f"SELECT {bal_col} FROM users WHERE user_id=?", (user_id,))
+                current_bal = (cur.fetchone() or [0])[0] or 0
+
+                if current_bal >= price_in_currency:
+                    cur.execute("BEGIN IMMEDIATE")
+                    try:
+                        cur.execute(f"UPDATE users SET {bal_col} = {bal_col} - ? WHERE user_id=?", (price_in_currency, user_id))
+                        new_bal = current_bal - price_in_currency
+                        if new_bal < 0:
+                            conn.rollback()
+                            conn.close()
+                            return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': 'Недостаточно средств'})
+                        expires = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        cur.execute("""
+                            UPDATE users SET
+                                premium_tier = ?, is_premium = 1,
+                                premium_until = ?, premium_granted_by = ?,
+                                premium_granted_at = CURRENT_TIMESTAMP, premium_duration_days = ?
+                            WHERE user_id = ?
+                        """, (wizard_tier, expires, 0, wizard_days, user_id))
+                        conn.commit()
+                    except Exception as e:
+                        conn.rollback()
+                        conn.close()
+                        return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': f'Ошибка: {e}'})
+                    conn.close()
+
+                    # Очищаем сессию
+                    for k in ['wizard_tier', 'wizard_currency', 'wizard_days']:
+                        request.session.pop(k, None)
+                    tier_badge = TIER_BADGES_MAP.get(wizard_tier, wizard_tier)
+                    return render(request, 'usersite/premium_wizard.html', {'step': 'success', 'tier_badge': tier_badge, 'days': wizard_days, 'price': f"{fmt_price_site(price_in_currency)} {wizard_currency}"})
+
+                # Cross-currency fallback
+                total_user_rub = 0
+                balances = {}
+                for c in CURRENCIES:
+                    b = float(user.get(f'balance_{c}', 0) or 0)
+                    balances[c] = b
+                    r = EXCHANGE_RATES.get(c, 1)
+                    total_user_rub += b * r
+
+                if total_user_rub < total_rub:
+                    conn.close()
+                    return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': f'Недостаточно средств. Нужно ≈{total_rub:.0f} RUB, доступно ≈{total_user_rub:.0f} RUB'})
+
+                remaining_rub = total_rub
+                deduction_order = ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]
+                deduction_plan = {}
+                cur.execute("BEGIN IMMEDIATE")
+                try:
+                    for c in deduction_order:
+                        if remaining_rub <= 0:
+                            break
+                        bal = balances.get(c, 0)
+                        if bal <= 0:
+                            continue
+                        if c == "RUB":
+                            deduct = min(bal, remaining_rub)
+                            cur.execute("UPDATE users SET balance_RUB = balance_RUB - ? WHERE user_id=?", (deduct, user_id))
+                            deduction_plan[c] = deduct
+                            remaining_rub -= deduct
+                        else:
+                            cr = EXCHANGE_RATES.get(c, 1)
+                            if cr <= 0:
+                                continue
+                            needed = remaining_rub / cr
+                            if bal >= needed:
+                                cur.execute(f"UPDATE users SET balance_{c} = balance_{c} - ? WHERE user_id=?", (round(needed, 6), user_id))
+                                deduction_plan[c] = round(needed, 6)
+                                remaining_rub = 0
+                            else:
+                                cur.execute(f"UPDATE users SET balance_{c} = balance_{c} - ? WHERE user_id=?", (bal, user_id))
+                                deduction_plan[c] = bal
+                                remaining_rub -= bal * cr
+
+                    if remaining_rub > 0:
+                        conn.rollback()
+                        conn.close()
+                        return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': 'Ошибка списания'})
+
+                    expires = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    cur.execute("""
+                        UPDATE users SET
+                            premium_tier = ?, is_premium = 1,
+                            premium_until = ?, premium_granted_by = ?,
+                            premium_granted_at = CURRENT_TIMESTAMP, premium_duration_days = ?
+                        WHERE user_id = ?
+                    """, (wizard_tier, expires, 0, wizard_days, user_id))
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    conn.close()
+                    return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': f'Ошибка: {e}'})
+                conn.close()
+
+                for k in ['wizard_tier', 'wizard_currency', 'wizard_days']:
+                    request.session.pop(k, None)
+                tier_badge = TIER_BADGES_MAP.get(wizard_tier, wizard_tier)
+                plan_parts = [f"{fmt_price_site(a)} {c}" for c, a in deduction_plan.items()]
+                return render(request, 'usersite/premium_wizard.html', {'step': 'success', 'tier_badge': tier_badge, 'days': wizard_days, 'cross_plan': ' + '.join(plan_parts), 'total_rub': f'{total_rub:.0f}'})
+
+            return redirect('/usersite/premium/?step=1')
+
+        # GET — показываем подтверждение
+        total_rub = calc_tier_price_site(wizard_tier, wizard_days)
+        rate = EXCHANGE_RATES.get(wizard_currency, 1)
+        price_in_currency = total_rub / rate if rate > 0 else total_rub
+        tier_badge = TIER_BADGES_MAP.get(wizard_tier, wizard_tier)
+        return render(request, 'usersite/premium_wizard.html', {'step': 'confirm', 'tier': wizard_tier, 'tier_badge': tier_badge, 'tier_label': TIER_LABELS_SITE.get(wizard_tier, wizard_tier), 'currency': wizard_currency, 'days': wizard_days, 'price': f"{fmt_price_site(price_in_currency)} {wizard_currency}", 'total_rub': f'{total_rub:.0f}'})
+
+    return redirect('/usersite/premium/?step=1')
+
+
+def fmt_price_site(v: float) -> str:
+    if v >= 100:
+        return f"{int(round(v))}"
+    return f"{v:.2f}".rstrip('0').rstrip('.')
+
+
 # ============= TICKET PAGES =============
 
 def user_tickets_view(request):
