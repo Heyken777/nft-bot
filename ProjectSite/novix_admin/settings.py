@@ -65,7 +65,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR.parent / 'novixgift.db',
         'OPTIONS': {
-            'timeout': 30,
+            'timeout': 40,
         },
     }
 }
@@ -96,7 +96,8 @@ def sqlite_connection_setup(sender, connection, **kwargs):
     if connection.vendor == 'sqlite':
         with connection.cursor() as c:
             c.execute("PRAGMA journal_mode=WAL;")
-            c.execute("PRAGMA busy_timeout=5000;")
+            c.execute("PRAGMA synchronous=NORMAL;")
+            c.execute("PRAGMA busy_timeout=40000;")
 
 AUTH_PASSWORD_VALIDATORS = []
 

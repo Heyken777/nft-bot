@@ -199,7 +199,7 @@ def main_kb(is_admin: bool = False):
         [InlineKeyboardButton(text="💳 Карта", callback_data="set_card"),
         InlineKeyboardButton(text="📱 TON", callback_data="set_ton")],
         [InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
-        InlineKeyboardButton(text="⭐ Premium", callback_data="buy_premium")],
+        InlineKeyboardButton(text="⭐ Premium", callback_data="premium_tiers")],
         [InlineKeyboardButton(text="➕ Создать сделку", callback_data="create_deal"),
         InlineKeyboardButton(text="📋 Мои сделки", callback_data="my_deals")],
         [InlineKeyboardButton(text="👥 Рефералы", callback_data="referral")]
@@ -372,12 +372,15 @@ def get_user_role(deals_count: int) -> str:
 # ========== БАЗА ДАННЫХ ==========
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect("novixgift.db", check_same_thread=False)
+        self.conn = sqlite3.connect("novixgift.db", timeout=40.0, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL;")
-        self.conn.execute("PRAGMA busy_timeout=5000;")
+        self.conn.execute("PRAGMA synchronous=NORMAL;")
+        self.conn.execute("PRAGMA busy_timeout=40000;")
         self.cursor = self.conn.cursor()
-        self.read_conn = sqlite3.connect("novixgift.db", check_same_thread=False)
-        self.read_conn.execute("PRAGMA busy_timeout=5000;")
+        self.read_conn = sqlite3.connect("novixgift.db", timeout=40.0, check_same_thread=False)
+        self.read_conn.execute("PRAGMA journal_mode=WAL;")
+        self.read_conn.execute("PRAGMA synchronous=NORMAL;")
+        self.read_conn.execute("PRAGMA busy_timeout=40000;")
         self.read_cursor = self.read_conn.cursor()
         self.init()
 
@@ -2041,7 +2044,7 @@ async def start_cmd(msg: types.Message, state: FSMContext):
         [InlineKeyboardButton(text="💳 Карта", callback_data="set_card"),
         InlineKeyboardButton(text="📱 TON", callback_data="set_ton")],
         [InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
-        InlineKeyboardButton(text="⭐ Premium", callback_data="buy_premium")],
+        InlineKeyboardButton(text="⭐ Premium", callback_data="premium_tiers")],
         [InlineKeyboardButton(text="➕ Создать сделку", callback_data="create_deal"),
         InlineKeyboardButton(text="📋 Мои сделки", callback_data="my_deals")],
         [InlineKeyboardButton(text="👥 Рефералы", callback_data="referral")]
@@ -2738,6 +2741,29 @@ async def _exec_cross_currency(uid: int, tier: str, days: int, price_rub_value: 
     await call.answer()
     return True
 
+
+@dp.callback_query(lambda c: c.data == "premium_tiers")
+async def premium_tiers_cb(call: CallbackQuery, state: FSMContext):
+    text = "🏅 *Выберите тариф подписки:*\n\n"
+    tiers = []
+    for t, cfg in TIER_CONFIG.items():
+        if t == 'free':
+            continue
+        tiers.append(t)
+        text += f"{cfg['badge']} — *{cfg['price_month']}₽/мес*\n📊 Комиссия: {int(cfg['commission']*100)}%\n{cfg['priority']} приоритет\n\n"
+    text += "Нажмите на тариф, чтобы продолжить."
+    kb = [[InlineKeyboardButton(text=f"{TIER_CONFIG[t]['badge']} — {TIER_CONFIG[t]['price_month']}₽/мес", callback_data=f"buy_{t}")] for t in tiers]
+    kb.append([InlineKeyboardButton(text="⬅️ Назад в главное меню", callback_data="menu")])
+
+    img = list(TIER_IMAGES.values())[0]
+    if img_exists(img):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await call.answer()
 
 @dp.callback_query(lambda c: c.data in ("buy_premium", "buy_platinum", "buy_vip"))
 async def buy_tier_cb(call: CallbackQuery, state: FSMContext):
