@@ -6173,3 +6173,7 @@ if os.path.isdir(frontend_dir):
     fastapi_app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 else:
     logger.warning("Папка frontend/ не найдена — статические файлы не будут раздаваться")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("bot:fastapi_app", host="0.0.0.0", port=9207, reload=False)
