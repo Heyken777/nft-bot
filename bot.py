@@ -15,7 +15,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, List, Dict
 from bot_config import *
-from currency_api import currency_api
+from currency_api import currency_api, PREMIUM_RATES, PREMIUM_PRICES_RUB
 from crypto import encrypt_value, decrypt_value, is_encryption_enabled
 from aiohttp import ClientTimeout
 import qrcode
@@ -52,32 +52,11 @@ from apscheduler.triggers.interval import IntervalTrigger
 WEBAPP_URL = "http://93.115.101.179:9207"
 
 # ========== КОНФИГУРАЦИЯ PREMIUM ==========
-PREMIUM_RATES = {
-    "RUB": 1,
-    "USD": 73,
-    "EUR": 83,
-    "TON": 120,
-    "USDT": 73,
-    "STARS": 2,
-    "UAH": 1.6,
-    "KZT": 0.15,
-    "UZS": 0.0061,
-    "BYN": 26,
-}
-
-PREMIUM_PRICES_RUB = {
-    30: 299,
-    45: 419,
-    60: 559,
-    90: 799,
-    365: 2999
-}
-
 TIER_CONFIG = {
-    'free':     {'commission': 0.04, 'deal_limit': 5,    'priority': 'Обычный',     'price_month': 0,    'label': 'FREE',     'badge': '⬜ FREE'},
-    'premium':  {'commission': 0.02, 'deal_limit': None,  'priority': 'Высокий',     'price_month': 299,  'label': 'PREMIUM',  'badge': '⭐ PREMIUM'},
-    'platinum': {'commission': 0.01, 'deal_limit': None,  'priority': 'Мгновенный',  'price_month': 599,  'label': 'PLATINUM', 'badge': '💎 PLATINUM'},
-    'vip':      {'commission': 0.0,  'deal_limit': None,  'priority': '24/7 Личный', 'price_month': 1499, 'label': 'VIP',      'badge': '👑 VIP'},
+    'free':     {'commission': 0.04, 'deal_limit': None, 'priority': 'Обычный',     'price_month': 0,    'label': 'FREE',     'badge': '⬜ FREE'},
+    'premium':  {'commission': 0.02, 'deal_limit': None, 'priority': 'Высокий',     'price_month': 299,  'label': 'PREMIUM',  'badge': '⭐ PREMIUM'},
+    'platinum': {'commission': 0.01, 'deal_limit': None, 'priority': 'Мгновенный',  'price_month': 599,  'label': 'PLATINUM', 'badge': '💎 PLATINUM'},
+    'vip':      {'commission': 0.0,  'deal_limit': None, 'priority': '24/7 Личный', 'price_month': 1499, 'label': 'VIP',      'badge': '👑 VIP'},
 }
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -981,29 +960,15 @@ class Database:
     def get_tier_commission(self, tier: str) -> float:
         return TIER_CONFIG.get(tier, TIER_CONFIG['free'])['commission']
 
-    def get_tier_deal_limit(self, tier: str):
-        return TIER_CONFIG.get(tier, TIER_CONFIG['free'])['deal_limit']
-
     def get_tier_label(self, tier: str) -> str:
         return TIER_CONFIG.get(tier, TIER_CONFIG['free'])['badge']
 
     def get_monthly_deal_count(self, user_id: int) -> int:
-        self.cursor.execute("""
-            SELECT COUNT(*) FROM deals
-            WHERE (seller = ? OR buyer = ?)
-            AND created >= datetime('now', '-30 days')
-        """, (user_id, user_id))
-        return self.cursor.fetchone()[0] or 0
+        return 0
 
     def check_deal_limit(self, user_id: int) -> dict:
         tier = self.get_premium_tier(user_id)
-        limit = self.get_tier_deal_limit(tier)
-        if limit is None:
-            return {'allowed': True, 'tier': tier, 'limit': None, 'current': 0}
-        monthly = self.get_monthly_deal_count(user_id)
-        if monthly >= limit:
-            return {'allowed': False, 'tier': tier, 'limit': limit, 'current': monthly}
-        return {'allowed': True, 'tier': tier, 'limit': limit, 'current': monthly}
+        return {'allowed': True, 'tier': tier, 'limit': None, 'current': 0}
 
     def get_tier_info(self, user_id: int) -> dict:
         self.cursor.execute("""
@@ -2614,8 +2579,7 @@ async def profile_cb(call: CallbackQuery):
     if not balances:
         balances = "• 0 🇷🇺 (RUB)\n"
     
-    limit_check = db.check_deal_limit(call.from_user.id)
-    limit_str = f"{limit_check['current']}/{'∞' if limit_check['limit'] is None else limit_check['limit']}"
+    limit_str = "∞"
     
     if tier == 'free':
         tier_status = f"⬜ *FREE* — Комиссия {int(TIER_CONFIG['free']['commission']*100)}%"
@@ -3034,24 +2998,6 @@ async def deal_price_msg(msg: types.Message, state: FSMContext):
         await state.clear()
         return
     
-    # Проверка лимита сделок для бесплатного тарифа
-    limit_check = db.check_deal_limit(msg.from_user.id)
-    if not limit_check['allowed']:
-        tier_info = db.get_tier_info(msg.from_user.id)
-        await msg.answer(
-            f"⛔ *Достигнут лимит сделок*\n\n"
-            f"На вашем тарифе *{tier_info['label']}* — "
-            f"не более {limit_check['limit']} сделок в месяц.\n\n"
-            f"📊 Совершено: {limit_check['current']} из {limit_check['limit']}\n\n"
-            f"💎 *Апгрейдните тариф,* чтобы снять ограничение:\n"
-            f"/buy_premium — ⭐ Premium (299₽/мес)\n"
-            f"/buy_platinum — 💎 Platinum (599₽/мес)\n"
-            f"/buy_vip — 👑 VIP (1499₽/мес)",
-            parse_mode="Markdown"
-        )
-        await state.clear()
-        return
-
     import random
     deal_id = random.randint(100000, 999999)
     while db.get_deal(deal_id):
@@ -5336,17 +5282,6 @@ async def handle_create_deal(request):
         if not user:
             return JSONResponse(content={'success': False, 'error': 'User not found'}, status_code=404)
 
-        # Проверка лимита сделок
-        limit_check = db.check_deal_limit(user_id)
-        if not limit_check['allowed']:
-            return JSONResponse(content={
-                'success': False,
-                'error': 'monthly_limit',
-                'message': f'Лимит {limit_check["limit"]} сделок в месяц исчерпан. Апгрейдните тариф в боте.',
-                'current': limit_check['current'],
-                'limit': limit_check['limit']
-            }, status_code=403)
-        
         # Генерируем ID сделки
         import random
         deal_id = random.randint(100000, 999999)
