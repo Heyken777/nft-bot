@@ -3053,18 +3053,18 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
     action = call.data[6:]
 
     if action == "credit":
-        if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+        if img_exists("ЗАЧИСЛИТЬ.jpg"):
             await call.message.edit_media(
-                InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption="💰 *Введите ID пользователя для зачисления:*", parse_mode="Markdown"),
+                InputMediaPhoto(media=FSInputFile(img_path("ЗАЧИСЛИТЬ.jpg")), caption="💰 *Введите ID пользователя для зачисления:*", parse_mode="Markdown"),
                 reply_markup=admin_cancel_kb()
             )
         else:
             await call.message.edit_text("💰 *Введите ID пользователя для зачисления:*", parse_mode="Markdown", reply_markup=admin_cancel_kb())
         await state.set_state(AdminCreditState.uid)
     elif action == "debit":
-        if img_exists("ПОЛЬЗОВАТЕЛИ.jpg"):
+        if img_exists("СПИСАТЬ.jpg"):
             await call.message.edit_media(
-                InputMediaPhoto(media=FSInputFile(img_path("ПОЛЬЗОВАТЕЛИ.jpg")), caption="💸 *Введите ID пользователя для списания:*", parse_mode="Markdown"),
+                InputMediaPhoto(media=FSInputFile(img_path("СПИСАТЬ.jpg")), caption="💸 *Введите ID пользователя для списания:*", parse_mode="Markdown"),
                 reply_markup=admin_cancel_kb()
             )
         else:
@@ -3136,8 +3136,8 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
                 currency = d[6] if len(d) > 6 else "RUB"
                 emoji = {"awaiting": "⏳", "paid": "💰", "item_sent": "📦"}.get(status, "❓")
                 text += f"{emoji} #{d[0]} | {escape_md(d[3][:20])} | {fmt_num(d[4])} {currency} | {status}\n"
-        photo_path = img_path("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg")
-        if img_exists("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg"):
+        photo_path = img_path("АКТИВНЫЕ СДЕЛКИ.jpg")
+        if img_exists("АКТИВНЫЕ СДЕЛКИ.jpg"):
             await call.message.edit_media(
                 InputMediaPhoto(media=FSInputFile(photo_path), caption=text, parse_mode="Markdown"),
                 reply_markup=admin_kb()
@@ -3152,8 +3152,8 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
             text = "⚠️ *Споры*\n\n"
             for d in disputes:
                 text += f"📝 Спор #{d[0]} | Сделка #{d[1]} | {escape_md(d[3][:50])}\n✅ /resolve_{d[0]}\n\n"
-        photo_path = img_path("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg")
-        if img_exists("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg"):
+        photo_path = img_path("СПОРЫ.jpg")
+        if img_exists("СПОРЫ.jpg"):
             await call.message.edit_media(
                 InputMediaPhoto(media=FSInputFile(photo_path), caption=text, parse_mode="Markdown"),
                 reply_markup=admin_kb()
@@ -3193,8 +3193,8 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
             f"💰 *Балансы по валютам:*\n{detail_text}\n"
             f"💵 *Итого:* {fmt_num(total_rub)} RUB"
         )
-        photo_path = img_path("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg")
-        if img_exists("ПАНЕЛЬ АДМИНИСТРАТОРА.jpg"):
+        photo_path = img_path("СТАТИСТИКА.jpg")
+        if img_exists("СТАТИСТИКА.jpg"):
             await call.message.edit_media(
                 InputMediaPhoto(media=FSInputFile(photo_path), caption=text, parse_mode="Markdown"),
                 reply_markup=admin_kb()
