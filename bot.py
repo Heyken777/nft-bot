@@ -2403,7 +2403,7 @@ async def code_cmd(msg: types.Message):
     row = cur.fetchone()
     conn.close()
     if row:
-        await msg.answer(f"🔐 Ваш код для входа на сайт: <b>{row['code']}</b>\n\nДействителен 5 минут.")
+        await msg.answer(f"🔐 Ваш код для входа на сайт: <b>{row['code']}</b>\n\nДействителен 5 минут.", parse_mode="HTML")
     else:
         await msg.answer("❌ У вас нет активного кода. Запросите новый на сайте в разделе «Вход».")
 

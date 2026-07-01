@@ -1,12 +1,12 @@
 from django.urls import path
 from django.shortcuts import redirect
 from . import views
+from news import views as news_views
 
 urlpatterns = [
     path('', lambda request: redirect('/usersite/login/')),
     path('login/', views.user_login_view, name='user_login'),
     path('telegram-auth/', views.telegram_auth_view, name='telegram_auth'),
-    path('test-login/', views.test_login, name='test_login'),
     path('dashboard/', views.dashboard_view, name='user_dashboard'),
     path('profile/', views.profile_view, name='user_profile'),
     path('profile/<int:user_id>/', views.user_profile_redirect, name='user_profile_redirect'),
@@ -14,6 +14,11 @@ urlpatterns = [
     path('tickets/', views.user_tickets_view, name='user_tickets'),
     path('tickets/new/', views.user_ticket_new_view, name='user_ticket_new'),
     path('tickets/<int:ticket_id>/', views.user_ticket_detail_view, name='user_ticket_detail'),
+
+    # Сотрудничество (пользовательская часть)
+    path('partnership/', news_views.partnership_form_view, name='partnership_form'),
+    path('partnership/my/', news_views.partnership_my_view, name='partnership_my'),
+    path('partnership/<int:partnership_id>/', news_views.partnership_user_detail_view, name='partnership_user_detail'),
 
     # API тикетов
     path('transactions/', views.transactions_view, name='transactions'),

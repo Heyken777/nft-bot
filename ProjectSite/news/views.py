@@ -3,6 +3,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.contrib.admin.views.decorators import staff_member_required
 from django.utils import timezone
 import json
 from .models import News, Partnership, PartnershipMessage
@@ -71,6 +72,7 @@ def news_delete_view(request, news_id):
 
 # ============= СОТРУДНИЧЕСТВО (АДМИНКА) =============
 
+@staff_member_required(login_url='/')
 def partnership_list_view(request):
     """Список заявок на сотрудничество (админка)"""
     partnerships = Partnership.objects.all().order_by('-created_at')
@@ -79,6 +81,7 @@ def partnership_list_view(request):
         'partnerships': partnerships,
     })
 
+@staff_member_required(login_url='/')
 def partnership_detail_view(request, partnership_id):
     """Детальный просмотр заявки с чатом (админка)"""
     partnership = get_object_or_404(Partnership, id=partnership_id)
@@ -105,6 +108,7 @@ def partnership_detail_view(request, partnership_id):
         'messages': messages,
     })
 
+@staff_member_required(login_url='/')
 @csrf_exempt
 def partnership_update_status(request, partnership_id):
     """Обновление статуса заявки"""
@@ -138,6 +142,7 @@ def partnership_update_status(request, partnership_id):
     
     return JsonResponse({'success': True})
 
+@staff_member_required(login_url='/')
 @csrf_exempt
 def partnership_delete_view(request, partnership_id):
     """Удаление заявки"""

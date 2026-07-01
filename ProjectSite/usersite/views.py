@@ -151,29 +151,38 @@ def notifications_mark_read(request):
 @rate_limit(max_requests=3, window=60)
 def request_code_api(request):
     data = json.loads(request.body)
-    telegram_id = int(data.get('telegram_id', 0))
-    if not telegram_id:
-        return JsonResponse({'success': False, 'error': 'Invalid ID'}, status=400)
-    code = f"{random.randint(100000, 999999)}"
+    raw = data.get('telegram_id', '').strip()
+    if not raw:
+        return JsonResponse({'success': False, 'error': 'Введите Telegram ID или @username'}, status=400)
+
     conn = get_db()
     cur = conn.cursor()
+
+    if raw.lstrip('-').isdigit():
+        telegram_id = int(raw)
+        cur.execute("SELECT user_id FROM users WHERE user_id=?", (telegram_id,))
+    else:
+        username = raw.lstrip('@').strip()
+        cur.execute("SELECT user_id FROM users WHERE username=?", (username,))
+
+    user = cur.fetchone()
+    if not user:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
+
+    user_id = user['user_id']
+    code = f"{random.randint(100000, 999999)}"
     cur.execute(
         "INSERT INTO auth_codes (user_id, code, expires_at) VALUES (?, ?, datetime('now', '+5 minutes'))",
-        (telegram_id, code)
+        (user_id, code)
     )
     cur.execute(
         "INSERT INTO notifications (user_id, title, message) VALUES (?, 'Код авторизации', ?)",
-        (telegram_id, f"🔐 Ваш код для входа на сайт: <b>{code}</b>\nДействителен 5 минут.\n\nВведите его на странице входа или отправьте боту команду /code {telegram_id}")
+        (user_id, f"🔐 Ваш код для входа на сайт: <b>{code}</b>\nДействителен 5 минут.\n\nВведите его на странице входа или отправьте боту команду /code")
     )
     conn.commit()
     conn.close()
     return JsonResponse({'success': True, 'message': 'Код отправлен'})
-
-
-def test_login(request):
-    request.session['user_id'] = OWNER_TELEGRAM_ID
-    request.session['username'] = 'Arkadiex'
-    return redirect('/usersite/dashboard/')
 
 
 CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'STARS']

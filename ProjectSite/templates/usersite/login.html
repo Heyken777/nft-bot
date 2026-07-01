@@ -9,10 +9,10 @@
                 <i class="fas fa-shield-haltered"></i>
             </div>
             <h1>Вход в личный кабинет</h1>
-            <p class="text-muted mb-4">Введите Telegram ID, нажмите «Получить код» и проверьте бота</p>
+            <p class="text-muted mb-4">Введите ваш Telegram ID <strong>ИЛИ</strong> Telegram @username, нажмите «Получить код» и проверьте бота</p>
             <div class="mt-3">
-                <label class="form-label">Telegram ID</label>
-                <input type="text" id="telegramId" class="form-control mb-2" placeholder="Ваш Telegram ID" inputmode="numeric">
+                <label class="form-label">Telegram ID или @username</label>
+                <input type="text" id="telegramId" class="form-control mb-2" placeholder="Telegram ID или @username">
                 <button class="btn btn-primary w-100" id="requestCodeBtn" onclick="requestCode()">
                     <i class="fab fa-telegram me-2"></i> Получить код
                 </button>
@@ -33,8 +33,6 @@
                 <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-muted small">
                     <i class="fab fa-telegram"></i> @{{ bot_username }}
                 </a>
-                <span class="text-muted mx-2">|</span>
-                <a href="/usersite/test-login/" class="text-muted small">Тестовый вход</a>
             </div>
         </div>
     </div>
@@ -43,8 +41,8 @@
 <script>
 async function requestCode() {
     const userId = document.getElementById('telegramId').value.trim();
-    if (!userId || !/^\d+$/.test(userId)) {
-        showToast('Введите корректный Telegram ID', 'error'); return;
+    if (!userId) {
+        showToast('Введите Telegram ID или @username', 'error'); return;
     }
     const btn = document.getElementById('requestCodeBtn');
     btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
@@ -52,7 +50,7 @@ async function requestCode() {
         const res = await fetch('/usersite/api/request-code/', {
             method: 'POST',
             headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || ''},
-            body: JSON.stringify({telegram_id: parseInt(userId)})
+            body: JSON.stringify({telegram_id: userId})
         });
         const data = await res.json();
         if (data.success) {
