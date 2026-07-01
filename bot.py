@@ -65,6 +65,9 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# i18n
+i18n = I18n(path="locales", default_locale="ru", domain="messages")
+
 # i18n middleware
 dp.message.middleware(I18nMiddleware(i18n=i18n))
 dp.callback_query.middleware(I18nMiddleware(i18n=i18n))
@@ -75,9 +78,6 @@ db_batch_lock = asyncio.Lock()
 
 # APScheduler
 scheduler = AsyncIOScheduler()
-
-# i18n
-i18n = I18n(path="locales", default_locale="ru", domain="messages")
 
 # Очередь фоновых задач
 task_queue: asyncio.Queue = asyncio.Queue(maxsize=500)
