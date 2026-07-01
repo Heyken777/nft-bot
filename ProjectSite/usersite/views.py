@@ -10,6 +10,10 @@ from django.conf import settings
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
 
+import sys
+sys.path.insert(0, os.path.join(BASE_DIR, '..'))
+from crypto import decrypt_value, is_encryption_enabled as _enc_enabled
+
 OWNER_TELEGRAM_ID = 1803437347
 
 
@@ -470,12 +474,26 @@ def transactions_view(request):
     cur = conn.cursor()
     try:
         cur.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 50", (user_id,))
-        transactions = cur.fetchall()
+        rows = cur.fetchall()
     except sqlite3.OperationalError:
-        transactions = []
+        rows = []
     conn.close()
+    transactions = []
+    for t in rows:
+        row = dict(t)
+        enc = row.get('encrypted_meta') or ''
+        if enc and _enc_enabled():
+            try:
+                import json as _json
+                dec = decrypt_value(enc)
+                meta = _json.loads(dec)
+                row['amount'] = meta.get('amount', row.get('amount'))
+                row['description'] = meta.get('desc', row.get('description'))
+            except Exception:
+                pass
+        transactions.append(row)
     return render(request, 'usersite/transactions.html', {
-        'transactions': [dict(t) for t in transactions],
+        'transactions': transactions,
     })
 
 
