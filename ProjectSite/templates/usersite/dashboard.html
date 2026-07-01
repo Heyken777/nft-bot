@@ -47,7 +47,7 @@
         <div>
             <h1 style="font-size:1.8rem;font-weight:700;">
                 👋 {{ u.username|default:u.telegram_id }}
-                {% if premium_active %}<span class="badge badge-success">⭐ PREMIUM</span>{% endif %}
+                {% if tier_active %}<span class="badge {% if tier == 'vip' %}badge-danger{% elif tier == 'platinum' %}badge-info{% else %}badge-success{% endif %}">{{ tier_badge }}</span>{% endif %}
             </h1>
             <p class="text-muted" style="margin-top:4px;font-size:13px;">
                 ID: {{ u.telegram_id }} · 

@@ -179,6 +179,8 @@ def test_login(request):
 CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'STARS']
 CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': 'сум', 'TON': 'TON', 'USDT': 'USDT', 'STARS': '⭐'}
 EXCHANGE_RATES = {'RUB': 1, 'USD': 90, 'EUR': 98, 'BYN': 29, 'UAH': 2.4, 'KZT': 0.19, 'UZS': 0.0073, 'TON': 280, 'USDT': 90, 'STARS': 0.02}
+TIER_BADGES = {'free': '⬜ FREE', 'premium': '⭐ PREMIUM', 'platinum': '💎 PLATINUM', 'vip': '👑 VIP'}
+TIER_COMMISSION = {'free': 4, 'premium': 2, 'platinum': 1, 'vip': 0}
 
 @safe_db
 def dashboard_view(request):
@@ -259,16 +261,19 @@ def dashboard_view(request):
 
     conn.close()
 
-    is_premium = user_dict.get('is_premium', 0)
+    tier = user_dict.get('premium_tier', 'free') or 'free'
     premium_until = user_dict.get('premium_until', None)
-    premium_active = False
-    if is_premium and premium_until:
+    tier_active = tier != 'free'
+    if tier_active and premium_until:
         try:
-            premium_active = datetime.fromisoformat(premium_until.replace('Z', '')) > datetime.now()
+            tier_active = datetime.fromisoformat(premium_until.replace('Z', '')) > datetime.now()
         except:
-            premium_active = True
-    elif is_premium:
-        premium_active = True
+            pass
+    if not tier_active and tier != 'free':
+        tier = 'free'
+
+    tier_badge = TIER_BADGES.get(tier, '⬜ FREE')
+    tier_commission = TIER_COMMISSION.get(tier, 4)
 
     bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
 
@@ -281,7 +286,11 @@ def dashboard_view(request):
         'sales': sales,
         'total_earned': total_earned,
         'referrals_count': referrals_count,
-        'premium_active': premium_active,
+        'tier': tier,
+        'tier_badge': tier_badge,
+        'tier_commission': tier_commission,
+        'tier_active': tier_active,
+        'premium_until': premium_until,
         'active_deals': active_deals,
         'tickets_count': tickets_count,
         'open_tickets': open_tickets,
@@ -319,19 +328,22 @@ def profile_view(request):
 
     conn.close()
 
-    is_premium = user and user['is_premium']
+    tier = (user and (user['premium_tier'] or 'free')) or 'free'
     premium_until = user and user['premium_until']
-    premium_active = False
+    tier_active = tier != 'free'
     days_left = 0
-    if is_premium and premium_until:
+    if tier_active and premium_until:
         try:
             expiry = datetime.fromisoformat(premium_until.replace('Z', ''))
-            premium_active = expiry > datetime.now()
+            tier_active = expiry > datetime.now()
             days_left = max(0, (expiry - datetime.now()).days)
         except:
-            premium_active = True
-    elif is_premium:
-        premium_active = True
+            pass
+    if not tier_active and tier != 'free':
+        tier = 'free'
+
+    tier_badge = TIER_BADGES.get(tier, '⬜ FREE')
+    tier_commission = TIER_COMMISSION.get(tier, 4)
 
     bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
     return render(request, 'usersite/profile.html', {
@@ -340,7 +352,10 @@ def profile_view(request):
         'referrals': [dict(r) for r in referrals],
         'reviews': [dict(r) for r in reviews],
         'avg_rating': round(avg_rating, 1),
-        'premium_active': premium_active,
+        'tier': tier,
+        'tier_badge': tier_badge,
+        'tier_commission': tier_commission,
+        'tier_active': tier_active,
         'days_left': days_left,
         'bot_username': bot_username,
         'now': datetime.now(),
@@ -410,18 +425,37 @@ def create_ticket(request):
     user_type = request.POST.get('user_type', 'buyer')
     conn = get_db()
     cur = conn.cursor()
+
+    # VIP routing
+    cur.execute("SELECT premium_tier FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    tier = (row and row[0]) or 'free'
+    is_vip = tier == 'vip'
+    vip_tag = '[VIP] ' if is_vip else ''
+
     cur.execute(
         "INSERT INTO support_tickets (user_id, subject, category, user_type, order_number) VALUES (?,?,?,?,?)",
-        (user_id, subject, subject, user_type, order_number)
+        (user_id, f"{vip_tag}{subject}", subject, user_type, order_number)
     )
     ticket_id = cur.lastrowid
     cur.execute(
         "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'user',?,?)",
         (ticket_id, user_login or f'User {user_id}', message)
     )
+
+    if is_vip:
+        # VIP-тикет автоматом назначается на первого свободного админа
+        cur.execute("""
+            UPDATE support_tickets SET assigned_to = (
+                SELECT id FROM auth_user WHERE is_staff = 1 AND is_active = 1
+                AND id NOT IN (SELECT assigned_to FROM support_tickets WHERE status = 'open')
+                LIMIT 1
+            ), priority = 'high' WHERE id = ?
+        """, (ticket_id,))
+
     conn.commit()
     conn.close()
-    return JsonResponse({'success': True, 'ticket_id': ticket_id})
+    return JsonResponse({'success': True, 'ticket_id': ticket_id, 'vip': is_vip})
 
 
 @csrf_exempt

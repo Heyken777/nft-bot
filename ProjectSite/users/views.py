@@ -111,6 +111,9 @@ def logout_view(request):
 # ===================== PAGES =====================
 
 PREMIUM_PRICES = {30: 299, 45: 419, 60: 559, 90: 799, 365: 2999}
+TIER_BADGES = {'free': '⬜ Free', 'premium': '⭐ Premium', 'platinum': '💎 Platinum', 'vip': '👑 VIP'}
+TIER_PRICES = {'premium': 299, 'platinum': 599, 'vip': 1499}
+TIER_COMMISSIONS = {'free': 0.04, 'premium': 0.02, 'platinum': 0.01, 'vip': 0.0}
 
 FX_RATES = {'RUB': 1, 'USD': 90, 'EUR': 95, 'BYN': 28, 'UAH': 2.3, 'KZT': 0.19, 'UZS': 0.0075, 'TON': 500, 'USDT': 90, 'STARS': 1.5}
 
@@ -154,21 +157,27 @@ def dashboard_view(request):
     for row in cur.fetchall():
         commission_revenue_rub += _to_rub(row['total'], row['currency'])
 
-    # Доход с Premium: считаем по всем premium-пользователям у которых есть длительность
+    # Доход с подписок: считаем по premium_tier
     cur.execute("""
-        SELECT premium_duration_days, COUNT(*) as cnt
+        SELECT premium_tier, premium_duration_days, COUNT(*) as cnt
         FROM users
-        WHERE is_premium=1 AND premium_duration_days > 0
-        GROUP BY premium_duration_days
+        WHERE premium_tier != 'free' AND premium_duration_days > 0
+        GROUP BY premium_tier, premium_duration_days
     """)
     premium_revenue_rub = 0
+    tier_breakdown = {}
     for row in cur.fetchall():
+        tier = row['premium_tier'] or 'premium'
         days = row['premium_duration_days']
         cnt = row['cnt']
-        price_per_unit = PREMIUM_PRICES.get(days, 0)
+        price_month = TIER_PRICES.get(tier, 299)
         if days >= 99999:
-            price_per_unit = PREMIUM_PRICES.get(365, 2999)
-        premium_revenue_rub += price_per_unit * cnt
+            price_per_unit = price_month * 12
+        else:
+            price_per_unit = price_month * (days / 30)
+        revenue = int(price_per_unit * cnt)
+        premium_revenue_rub += revenue
+        tier_breakdown[tier] = tier_breakdown.get(tier, 0) + revenue
 
     # Комиссия за последние 7 дней (только чистый доход платформы)
     cur.execute("""
@@ -369,11 +378,14 @@ def user_detail_view(request, telegram_id):
     user_dict['balances'] = balances
     user_dict['total_rub'] = round(total_rub, 2)
 
-    premium_active = False
-    if user_dict.get('is_premium') and user_dict.get('premium_until'):
+    tier = user_dict.get('premium_tier', 'free') or 'free'
+    premium_until_raw = user_dict.get('premium_until')
+    premium_active = tier != 'free'
+    if premium_active and premium_until_raw:
         try:
-            premium_until = datetime.fromisoformat(user_dict['premium_until'].replace('Z',''))
-            premium_active = premium_until > datetime.now()
+            pe = datetime.fromisoformat(premium_until_raw.replace('Z',''))
+            if pe <= datetime.now():
+                premium_active = False
         except:
             pass
 
@@ -888,36 +900,39 @@ def api_send_message(request, telegram_id):
 @login_required(login_url='/')
 def api_grant_premium(request, telegram_id):
     data = json.loads(request.body)
+    tier = data.get('tier', 'free')
     days = int(data.get('days', 30))
     admin_name = get_admin_name(request)
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT premium_until FROM users WHERE user_id=?", (telegram_id,))
-    row = cur.fetchone()
-    current_expiry = datetime.now()
-    if row and row['premium_until']:
-        try:
-            current_expiry = datetime.fromisoformat(row['premium_until'].replace('Z', ''))
-        except (ValueError, TypeError, AttributeError):
-            current_expiry = datetime.now()
 
-    if days <= 0:
-        new_expiry = None
-        is_premium = 0
-        action = f"Забрал Premium у пользователя {telegram_id}"
-    elif days >= 99999:
-        new_expiry = '2099-12-31 23:59:59'
-        is_premium = 1
-        action = f"Выдал Premium навсегда пользователю {telegram_id}"
+    if tier == 'free' or days <= 0:
+        cur.execute(
+            "UPDATE users SET premium_tier='free', is_premium=0, premium_until=NULL, premium_granted_by=NULL, premium_granted_at=NULL, premium_duration_days=NULL WHERE user_id=?",
+            (telegram_id,)
+        )
+        action = f"Сбросил тариф на Free для пользователя {telegram_id}"
     else:
-        new_expiry = (current_expiry + timedelta(days=days)).isoformat()
-        is_premium = 1
-        action = f"Выдал Premium на {days} дней пользователю {telegram_id}"
+        if days >= 99999:
+            new_expiry = '2099-12-31 23:59:59'
+        else:
+            cur.execute("SELECT premium_until FROM users WHERE user_id=?", (telegram_id,))
+            row = cur.fetchone()
+            base = datetime.now()
+            if row and row['premium_until']:
+                try:
+                    base = datetime.fromisoformat(row['premium_until'].replace('Z', ''))
+                except:
+                    pass
+            new_expiry = (base + timedelta(days=days)).isoformat()
 
-    cur.execute(
-        "UPDATE users SET is_premium=?, premium_until=?, premium_granted_by=?, premium_granted_at=datetime('now'), premium_duration_days=? WHERE user_id=?",
-        (is_premium, new_expiry, request.user.id, days, telegram_id)
-    )
+        cur.execute(
+            "UPDATE users SET premium_tier=?, is_premium=1, premium_until=?, premium_granted_by=?, premium_granted_at=datetime('now'), premium_duration_days=? WHERE user_id=?",
+            (tier, new_expiry, request.user.id, days, telegram_id)
+        )
+        tier_label = TIER_BADGES.get(tier, tier)
+        action = f"Назначил тариф {tier_label} на {days} дн. пользователю {telegram_id}"
+
     conn.commit()
     log_admin_action(request, action, target_id=telegram_id)
     conn.close()

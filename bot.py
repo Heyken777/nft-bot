@@ -73,6 +73,13 @@ PREMIUM_PRICES_RUB = {
     365: 2999
 }
 
+TIER_CONFIG = {
+    'free':     {'commission': 0.04, 'deal_limit': 5,    'priority': 'Обычный',     'price_month': 0,    'label': 'FREE',     'badge': '⬜ FREE'},
+    'premium':  {'commission': 0.02, 'deal_limit': None,  'priority': 'Высокий',     'price_month': 299,  'label': 'PREMIUM',  'badge': '⭐ PREMIUM'},
+    'platinum': {'commission': 0.01, 'deal_limit': None,  'priority': 'Мгновенный',  'price_month': 599,  'label': 'PLATINUM', 'badge': '💎 PLATINUM'},
+    'vip':      {'commission': 0.0,  'deal_limit': None,  'priority': '24/7 Личный', 'price_month': 1499, 'label': 'VIP',      'badge': '👑 VIP'},
+}
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -278,14 +285,14 @@ def card_currency_kb():
         [InlineKeyboardButton(text="🔙 Назад", callback_data="menu")]   
     ])
 
-def premium_currency_kb():
+def tier_currency_kb(tier: str):
     currencies = ["RUB", "USD", "EUR", "TON", "USDT", "STARS", "BYN", "UAH", "KZT", "UZS"]
     kb = []
     row = []
     for curr in currencies:
         info = CURRENCIES[curr]
         label = f"{info['symbol']} {info['name']}"
-        row.append(InlineKeyboardButton(text=label, callback_data=f"premium_cur_{curr}"))
+        row.append(InlineKeyboardButton(text=label, callback_data=f"tier_cur_{tier}_{curr}"))
         if len(row) == 2:
             kb.append(row)
             row = []
@@ -293,6 +300,10 @@ def premium_currency_kb():
         kb.append(row)
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def premium_currency_kb():
+    return tier_currency_kb("premium")
 
 def currency_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -578,6 +589,13 @@ class Database:
             )
         """)
 
+        # Миграция: premium_tier вместо is_premium
+        added_tier = self.add_column_if_not_exists("users", "premium_tier", "TEXT DEFAULT 'free'")
+        if added_tier:
+            self.cursor.execute("UPDATE users SET premium_tier = 'premium' WHERE is_premium = 1 AND premium_tier = 'free'")
+            self.conn.commit()
+            logger.info("Миграция premium_tier: is_premium=1 → premium_tier='premium'")
+
         # Добавляем колонку encrypted_meta в transactions, если её нет
         self.add_column_if_not_exists("transactions", "encrypted_meta", "TEXT")
         
@@ -854,13 +872,12 @@ class Database:
         return d
 
     def get_user_commission(self, user_id: int, action: str = "deal") -> float:
-        is_premium = self.is_premium(user_id)
-        if is_premium:
-            return 0.0
+        tier = self.get_premium_tier(user_id)
         if action == "deal":
-            return COMMISSION_DEAL
-        else:
-            return COMMISSION_WITHDRAW
+            return self.get_tier_commission(tier)
+        # Withdraw commission по tier
+        withdraw_rates = {'free': 0.10, 'premium': 0.05, 'platinum': 0.03, 'vip': 0.0}
+        return withdraw_rates.get(tier, 0.10)
 
     def create_deal(self, seller, item, amount, commission, deal_id, currency="RUB", payment_method="internal", payment_comment=None, payment_address=None, payment_amount=None):
         allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
@@ -931,86 +948,144 @@ class Database:
         """)
         return self.cursor.fetchall()
 
-    def is_premium(self, uid):
-        self.cursor.execute("SELECT is_premium, premium_until FROM users WHERE user_id = ?", (uid,))
+    def get_premium_tier(self, uid):
+        self.cursor.execute("SELECT premium_tier, premium_until FROM users WHERE user_id = ?", (uid,))
         row = self.cursor.fetchone()
-        if row and row[0] == 1:
-            if row[1] is None:
-                return True
-            try:
-                # Поддерживаем оба формата даты
-                expires_str = str(row[1])
-                if '.' in expires_str:
-                    expires = datetime.strptime(expires_str, '%Y-%m-%d %H:%M:%S.%f')
-                else:
-                    expires = datetime.strptime(expires_str, '%Y-%m-%d %H:%M:%S')
-                if datetime.now() < expires:
-                    return True
-            except Exception as e:
-                logger.warning(f"is_premium parse error for {uid}: {e}")
-                return True  # Если не можем распарсить, считаем активным
-        return False    
+        if not row:
+            return 'free'
+        tier = row[0] or 'free'
+        if tier == 'free':
+            return 'free'
+        # Проверяем истечение срока
+        if row[1] is None:
+            return tier  # Бессрочный
+        try:
+            expires_str = str(row[1])
+            if '.' in expires_str:
+                expires = datetime.strptime(expires_str, '%Y-%m-%d %H:%M:%S.%f')
+            else:
+                expires = datetime.strptime(expires_str, '%Y-%m-%d %H:%M:%S')
+            if datetime.now() < expires:
+                return tier
+        except Exception as e:
+            logger.warning(f"get_premium_tier parse error for {uid}: {e}")
+            return tier
+        # Истекло — сбрасываем
+        self.cursor.execute("UPDATE users SET premium_tier = 'free', premium_until = NULL WHERE user_id = ?", (uid,))
+        self.conn.commit()
+        return 'free'
 
-    def get_premium_info(self, user_id: int) -> dict:
+    def is_premium(self, uid):
+        return self.get_premium_tier(uid) != 'free'
+
+    def get_tier_commission(self, tier: str) -> float:
+        return TIER_CONFIG.get(tier, TIER_CONFIG['free'])['commission']
+
+    def get_tier_deal_limit(self, tier: str):
+        return TIER_CONFIG.get(tier, TIER_CONFIG['free'])['deal_limit']
+
+    def get_tier_label(self, tier: str) -> str:
+        return TIER_CONFIG.get(tier, TIER_CONFIG['free'])['badge']
+
+    def get_monthly_deal_count(self, user_id: int) -> int:
         self.cursor.execute("""
-            SELECT is_premium, premium_until, premium_granted_by, premium_granted_at, premium_duration_days
+            SELECT COUNT(*) FROM deals
+            WHERE (seller = ? OR buyer = ?)
+            AND created >= datetime('now', '-30 days')
+        """, (user_id, user_id))
+        return self.cursor.fetchone()[0] or 0
+
+    def check_deal_limit(self, user_id: int) -> dict:
+        tier = self.get_premium_tier(user_id)
+        limit = self.get_tier_deal_limit(tier)
+        if limit is None:
+            return {'allowed': True, 'tier': tier, 'limit': None, 'current': 0}
+        monthly = self.get_monthly_deal_count(user_id)
+        if monthly >= limit:
+            return {'allowed': False, 'tier': tier, 'limit': limit, 'current': monthly}
+        return {'allowed': True, 'tier': tier, 'limit': limit, 'current': monthly}
+
+    def get_tier_info(self, user_id: int) -> dict:
+        self.cursor.execute("""
+            SELECT premium_tier, premium_until, premium_granted_by, premium_granted_at, premium_duration_days
             FROM users WHERE user_id = ?
         """, (user_id,))
         row = self.cursor.fetchone()
-        if row and row[0] == 1:
-            expires = row[1]
-            # Если есть микросекунды, обрезаем их
-            if expires and expires != "FOREVER" and expires is not None:
-                try:
-                    # Если дата с микросекундами
-                    if '.' in str(expires):
-                        # Оставляем только до секунд
-                        expires = str(expires).split('.')[0]
-                except:
-                    pass
-            return {
-                "active": True,
-                "expires": expires,
-                "granted_by": row[2],
-                "granted_at": row[3],
-                "duration_days": row[4]
-            }
-        return {"active": False}       
+        if not row:
+            return {"tier": "free", "active": False}
+        tier = row[0] or 'free'
+        expires = row[1]
+        active = tier != 'free'
+        if active and expires:
+            try:
+                es = str(expires)
+                if '.' in es:
+                    ed = datetime.strptime(es, '%Y-%m-%d %H:%M:%S.%f')
+                else:
+                    ed = datetime.strptime(es, '%Y-%m-%d %H:%M:%S')
+                if datetime.now() >= ed:
+                    active = False
+                    tier = 'free'
+            except:
+                pass
+        if expires and expires != "FOREVER":
+            try:
+                expires = str(expires).split('.')[0] if '.' in str(expires) else str(expires)
+            except:
+                pass
+        return {
+            "tier": tier,
+            "active": active,
+            "expires": expires if active else None,
+            "granted_by": row[2],
+            "granted_at": row[3],
+            "duration_days": row[4],
+            "commission": self.get_tier_commission(tier),
+            "label": self.get_tier_label(tier)
+        }
 
-    def set_premium(self, user_id: int, days: int, granted_by: int):
+    def set_premium_tier(self, user_id: int, tier: str, days: int, granted_by: int):
+        if tier not in TIER_CONFIG or tier == 'free':
+            self.cursor.execute("BEGIN IMMEDIATE")
+            try:
+                self.cursor.execute("""
+                    UPDATE users SET
+                        premium_tier = 'free',
+                        is_premium = 0,
+                        premium_until = NULL,
+                        premium_granted_by = NULL,
+                        premium_granted_at = NULL,
+                        premium_duration_days = NULL
+                    WHERE user_id = ?
+                """, (user_id,))
+                self.conn.commit()
+            except Exception as e:
+                self.conn.rollback()
+                logger.error(f"set_premium_tier(free) error: {e}")
+            return
         self.cursor.execute("BEGIN IMMEDIATE")
         try:
             expires = datetime.now() + timedelta(days=days)
             self.cursor.execute("""
                 UPDATE users SET
+                    premium_tier = ?,
                     is_premium = 1,
                     premium_until = ?,
                     premium_granted_by = ?,
                     premium_granted_at = CURRENT_TIMESTAMP,
                     premium_duration_days = ?
                 WHERE user_id = ?
-            """, (expires, granted_by, days, user_id))
+            """, (tier, expires, granted_by, days, user_id))
             self.conn.commit()
         except Exception as e:
             self.conn.rollback()
-            logger.error(f"set_premium error: {e}")
+            logger.error(f"set_premium_tier error: {e}")
+
+    def set_premium(self, user_id: int, days: int, granted_by: int):
+        self.set_premium_tier(user_id, 'premium', days, granted_by)
 
     def remove_premium(self, user_id: int):
-        self.cursor.execute("BEGIN IMMEDIATE")
-        try:
-            self.cursor.execute("""
-                UPDATE users SET
-                    is_premium = 0,
-                    premium_until = NULL,
-                    premium_granted_by = NULL,
-                    premium_granted_at = NULL,
-                    premium_duration_days = NULL
-                WHERE user_id = ?
-            """, (user_id,))
-            self.conn.commit()
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"remove_premium error: {e}")
+        self.set_premium_tier(user_id, 'free', 0, 0)
 
     def get_user_achievements(self, user_id: int) -> List[Tuple]:
         self.cursor.execute("""
@@ -2521,8 +2596,9 @@ async def profile_cb(call: CallbackQuery):
     ton = user.get('ton') or user.get('ton_wallet') or "не указан"
     card = user.get('card_details') or "не указана"
     
-    is_premium = db.is_premium(call.from_user.id)
-    premium_info = db.get_premium_info(call.from_user.id)
+    tier_info = db.get_tier_info(call.from_user.id)
+    tier = tier_info['tier']
+    tier_badge = tier_info['label']
     
     deals = db.get_user_deals(call.from_user.id)
     completed_deals = len([d for d in deals if (d[7] if len(d) > 7 else "") == "completed"]) if deals else 0
@@ -2538,32 +2614,29 @@ async def profile_cb(call: CallbackQuery):
     if not balances:
         balances = "• 0 🇷🇺 (RUB)\n"
     
-    # ===== ПАРСИМ ДАТУ С МИКРОСЕКУНДАМИ =====
-    if is_premium and premium_info.get("active"):
-        expires = premium_info.get("expires", "")
-        if expires and expires != "FOREVER" and expires is not None:
+    limit_check = db.check_deal_limit(call.from_user.id)
+    limit_str = f"{limit_check['current']}/{'∞' if limit_check['limit'] is None else limit_check['limit']}"
+    
+    if tier == 'free':
+        tier_status = f"⬜ *FREE* — Комиссия {int(TIER_CONFIG['free']['commission']*100)}%"
+    else:
+        expires = tier_info.get("expires", "")
+        if expires:
             try:
-                # Если дата с микросекундами
                 if '.' in str(expires):
                     exp_date = datetime.strptime(str(expires), '%Y-%m-%d %H:%M:%S.%f').strftime('%d.%m.%Y')
                 else:
                     exp_date = datetime.strptime(str(expires), '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y')
-                premium_status = f"✅ Активен до {exp_date}"
-            except Exception as e:
-                premium_status = f"✅ Активен до {expires}"
+                tier_status = f"✅ До {exp_date}"
+            except:
+                tier_status = f"✅ До {expires}"
         else:
-            premium_status = "✅ Активен (FOREVER)"
+            tier_status = "✅ Бессрочно"
         
-        # === ИСПРАВЛЕНИЕ: показываем username создателя ===
-        granted_by = premium_info.get("granted_by")
+        granted_by = tier_info.get("granted_by")
         if granted_by and granted_by != 0:
             creator = db.get_user_dict(granted_by)
-            if creator and creator.get('username'):
-                premium_status += f"\n👑 Выдал: @{creator.get('username')}"
-            else:
-                premium_status += f"\n👑 Выдал: `{granted_by}`"
-    else:
-        premium_status = "❌ Не активен"
+            tier_status += f"\n👑 Выдал: @{creator.get('username')}" if creator and creator.get('username') else f"\n👑 Выдал: `{granted_by}`"
     
     is_admin = call.from_user.id in ADMIN_IDS
     admin_badge = "👑 *Администратор*\n" if is_admin else ""
@@ -2574,65 +2647,180 @@ async def profile_cb(call: CallbackQuery):
         f"🆔 Ваш ID: `{user['user_id']}`\n"
         f"🔗 Username: @{escape_md(user['username'] or 'без username')}\n"
         f"🏆 Роль: {role}\n"
-        f"📊 Сделок завершено: {completed_deals}\n\n"
+        f"📊 Сделок: {completed_deals} завершено | {limit_str} за месяц\n\n"
         f"💼 *Баланс:*\n{balances}\n"
         f"💎 TON-кошелёк: {escape_md(ton)}\n\n"
         f"💳 Карта для вывода:\n{escape_md(card)}\n\n"
-        f"⭐ *Premium статус:* {premium_status}"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🏅 *Тариф:* {tier_badge}\n"
+        f"📊 Комиссия: {int(TIER_CONFIG[tier]['commission']*100)}%\n"
+        f"📌 Cтатус: {tier_status}\n"
+        f"━━━━━━━━━━━━━━━"
     )
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🎫 Активировать промокод", callback_data="activate_promo")
+    if tier == 'free':
+        builder.button(text="⭐ Купить Premium 299₽/мес", callback_data="buy_premium")
+        builder.button(text="💎 Купить Platinum 599₽/мес", callback_data="buy_platinum")
+        builder.button(text="👑 Купить VIP 1499₽/мес", callback_data="buy_vip")
+    else:
+        builder.button(text="⬆️ Повысить тариф", callback_data="upgrade_tier")
+    builder.button(text="🎫 Промокод", callback_data="activate_promo")
     builder.button(text="🔙 В меню", callback_data="menu")
     builder.adjust(1)
     
     await edit_or_new(call, text, builder.as_markup(), "ЛИЧНЫЙ КАБИНЕТ.jpg")
     await call.answer()
 
-# ========== PREMIUM ==========
-@dp.callback_query(lambda c: c.data == "buy_premium")
-async def buy_premium_cb(call: CallbackQuery, state: FSMContext):
-    text = "⭐ *Premium подписка*\n\nВыберите валюту для оплаты:"
-    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+# ========== МНОГОУРОВНЕВАЯ ПОДПИСКА (Premium / Platinum / VIP) ==========
+
+TIER_IMAGES = {
+    'premium': 'PREMIUM ПОДПИСКА.jpg',
+    'platinum': 'PREMIUM ПОДПИСКА.jpg',
+    'vip': 'PREMIUM ПОДПИСКА.jpg',
+}
+TIER_LABELS = {'premium': '⭐ Premium', 'platinum': '💎 Platinum', 'vip': '👑 VIP'}
+
+
+async def _show_tier_currency(call: CallbackQuery, state: FSMContext, tier: str):
+    label = TIER_LABELS[tier]
+    await state.update_data(premium_tier=tier)
+    text = f"{label} подписка\n\nВыберите валюту для оплаты:"
+    img = TIER_IMAGES[tier]
+    if img_exists(img):
         await call.message.edit_media(
-            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text, parse_mode="Markdown"),
-            reply_markup=premium_currency_kb()
+            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
+            reply_markup=tier_currency_kb(tier)
         )
     else:
-        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=premium_currency_kb())
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=tier_currency_kb(tier))
     await state.set_state(BuyPremiumState.currency)
+
+
+async def _exec_tier_purchase(uid: int, tier: str, days: int, currency: str, call: CallbackQuery, state: FSMContext):
+    rates = PREMIUM_RATES
+    price_rub_value = TIER_CONFIG[tier]['price_month']
+    rate = rates.get(currency, 1)
+    price_in_currency = int(price_rub_value / rate) if rate > 0 else price_rub_value
+    user_balance = db.get_balance(uid, currency)
+    label = TIER_LABELS[tier]
+    tier_label = TIER_CONFIG[tier]['badge']
+    commission_pct = int(TIER_CONFIG[tier]['commission'] * 100)
+
+    if user_balance >= price_in_currency:
+        async with db_batch_lock:
+            if db.update_balance(uid, currency, -price_in_currency):
+                db.set_premium_tier(uid, tier, days, 0)
+        text_success = (
+            f"✅ *{label} подписка активирована!*\n\n"
+            f"🏅 Статус: {tier_label}\n"
+            f"📅 Длительность: {days} дней\n"
+            f"💰 Оплачено: {price_in_currency} {currency}\n"
+            f"📊 Комиссия сделок: {commission_pct}%"
+        )
+        img = TIER_IMAGES[tier]
+        if img_exists(img):
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text_success, parse_mode="Markdown"),
+                reply_markup=main_kb(uid in ADMIN_IDS)
+            )
+        else:
+            await call.message.edit_text(text_success, parse_mode="Markdown", reply_markup=main_kb(uid in ADMIN_IDS))
+        await state.clear()
+        await call.answer()
+        return True
+    return False
+
+
+async def _exec_cross_currency(uid: int, tier: str, days: int, price_rub_value: int, deduction_plan: dict, call: CallbackQuery, state: FSMContext):
+    async with db_batch_lock:
+        success = True
+        deducted_summary = {}
+        for curr, amount in deduction_plan.items():
+            if not db.update_balance(uid, curr, -amount):
+                success = False
+                break
+            deducted_summary[curr] = amount
+        if not success:
+            for curr, amount in deducted_summary.items():
+                db.update_balance(uid, curr, amount)
+            await call.answer("❌ Ошибка при списании. Транзакция отменена.", show_alert=True)
+            await state.clear()
+            return False
+        db.set_premium_tier(uid, tier, days, 0)
+
+    label = TIER_LABELS[tier]
+    tier_label = TIER_CONFIG[tier]['badge']
+    plan_parts = [f"{fmt_num(a)} {c}" for c, a in deduction_plan.items()]
+    text_success = (
+        f"✅ *{label} подписка активирована!*\n\n"
+        f"🏅 Статус: {tier_label}\n"
+        f"📅 Длительность: {days} дней\n"
+        f"💰 Списано с общего счета: {' + '.join(plan_parts)} (≈{price_rub_value} RUB)"
+    )
+    img = TIER_IMAGES[tier]
+    if img_exists(img):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text_success, parse_mode="Markdown"),
+            reply_markup=main_kb(uid in ADMIN_IDS)
+        )
+    else:
+        await call.message.edit_text(text_success, parse_mode="Markdown", reply_markup=main_kb(uid in ADMIN_IDS))
+    await state.clear()
+    await call.answer()
+    return True
+
+
+@dp.callback_query(lambda c: c.data in ("buy_premium", "buy_platinum", "buy_vip"))
+async def buy_tier_cb(call: CallbackQuery, state: FSMContext):
+    tier = call.data.replace("buy_", "")
+    await _show_tier_currency(call, state, tier)
+
+
+@dp.callback_query(lambda c: c.data == "upgrade_tier")
+async def upgrade_tier_cb(call: CallbackQuery, state: FSMContext):
+    tier_info = db.get_tier_info(call.from_user.id)
+    current_tier = tier_info['tier']
+    text = "🏅 *Выберите новый тариф:*\n\n"
+    kb = []
+    for t, cfg in TIER_CONFIG.items():
+        if t == 'free' or t == current_tier:
+            continue
+        text += f"{cfg['badge']} — {cfg['price_month']}₽/мес — комиссия {int(cfg['commission']*100)}%\n"
+        kb.append([InlineKeyboardButton(text=f"{cfg['badge']} — {cfg['price_month']}₽/мес", callback_data=f"buy_{t}")])
+    if not kb:
+        text = "🏅 *Вы уже на максимальном тарифе!*"
+        kb.append([InlineKeyboardButton(text="🔙 В меню", callback_data="menu")])
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
     await call.answer()
 
+
 @dp.callback_query(BuyPremiumState.currency)
-async def premium_currency_cb(call: CallbackQuery, state: FSMContext):
-    if not call.data.startswith("premium_cur_"):
+async def tier_currency_cb(call: CallbackQuery, state: FSMContext):
+    if not call.data.startswith("tier_cur_"):
         return
-    
-    currency = call.data.replace("premium_cur_", "")
-    await state.update_data(currency=currency)
-    
-    # Используем единые курсы
+    parts = call.data.split("_")
+    tier = parts[2]
+    currency = parts[3]
+    data = await state.get_data()
+    saved_tier = data.get('premium_tier', tier)
+    await state.update_data(currency=currency, premium_tier=saved_tier)
+
     rates = PREMIUM_RATES
-    price_rub = PREMIUM_PRICES_RUB
-    
-    text = f"⭐ *Premium подписка*\n\n💰 Валюта оплаты: {currency}\n\nВыберите длительность:"
-    kb = []
-    
-    for days, rub_price in price_rub.items():
-        rate = rates.get(currency, 1)
-        converted = int(rub_price / rate) if rate > 0 else rub_price
-        label = "👑 FOREVER" if days == 365 else f"📅 {days} дней"
-        kb.append([InlineKeyboardButton(
-            text=f"{label} - {converted} {currency}",
-            callback_data=f"premium_buy_{days}_{currency}"
-        )])
-    
-    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="buy_premium")])
+    price_rub = TIER_CONFIG[saved_tier]['price_month']
+    label = TIER_LABELS[saved_tier]
+
+    rate = rates.get(currency, 1)
+    converted = int(price_rub / rate) if rate > 0 else price_rub
+    text = f"{label} подписка\n\n💰 Валюта оплаты: {currency}\n\n📅 Стоимость: {converted} {currency} (≈{price_rub} RUB) за 30 дней"
+    kb = [[InlineKeyboardButton(text=f"✅ Купить за {converted} {currency}", callback_data=f"tier_buy_{saved_tier}_30_{currency}")]]
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"buy_{saved_tier}")])
     kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")])
-    
-    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+
+    img = TIER_IMAGES[saved_tier]
+    if img_exists(img):
         await call.message.edit_media(
-            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text, parse_mode="Markdown"),
+            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
             reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
         )
     else:
@@ -2640,86 +2828,53 @@ async def premium_currency_cb(call: CallbackQuery, state: FSMContext):
     await state.set_state(BuyPremiumState.days)
     await call.answer()
 
+
 @dp.callback_query(BuyPremiumState.days)
-async def premium_buy_cb(call: CallbackQuery, state: FSMContext):
-    if not call.data.startswith("premium_buy_"):
+async def tier_buy_cb(call: CallbackQuery, state: FSMContext):
+    if not call.data.startswith("tier_buy_"):
         return
-    
     parts = call.data.split("_")
-    days = int(parts[2])
-    currency = parts[3]
-    
+    tier = parts[2]
+    days = int(parts[3])
+    currency = parts[4]
+    uid = call.from_user.id
+
     rates = PREMIUM_RATES
-    price_rub = PREMIUM_PRICES_RUB
-    
-    rate = rates.get(currency, 1)
-    if rate <= 0:
-        await call.answer(f"❌ Неизвестная валюта: {currency}", show_alert=True)
-        return
-    
-    if currency not in rates:
+    if currency not in rates or rates.get(currency, 0) <= 0:
         await call.answer(f"❌ Валюта {currency} не поддерживается", show_alert=True)
         return
-    
-    uid = call.from_user.id
-    price_in_currency = int(price_rub[days] / rate)
+
+    price_rub_value = TIER_CONFIG[tier]['price_month']
+    rate = rates[currency]
+    price_in_currency = int(price_rub_value / rate)
     user_balance = db.get_balance(uid, currency)
-    
-    days_label = "FOREVER" if days == 365 else f"{days} дней"
-    
-    # Если достаточно средств в выбранной валюте — оплачиваем напрямую
+
+    # Прямая оплата
     if user_balance >= price_in_currency:
-        async with db_batch_lock:
-            if db.update_balance(uid, currency, -price_in_currency):
-                db.set_premium(uid, days, 0)
-        
-        text_success = (
-            f"✅ *Premium подписка активирована!*\n\n"
-            f"📅 Длительность: {days_label}\n"
-            f"💰 Оплачено: {price_in_currency} {currency}\n"
-            f"✨ Комиссия при сделках и выводе: *0%*"
-        )
-        if img_exists("PREMIUM ПОДПИСКА.jpg"):
-            await call.message.edit_media(
-                InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text_success, parse_mode="Markdown"),
-                reply_markup=main_kb(uid in ADMIN_IDS)
-            )
-        else:
-            await call.message.edit_text(text_success, parse_mode="Markdown", reply_markup=main_kb(uid in ADMIN_IDS))
-        await state.clear()
-        await call.answer()
+        await _exec_tier_purchase(uid, tier, days, currency, call, state)
         return
-    
-    # Недостаточно средств в выбранной валюте — предлагаем "Общий счёт"
-    price_rub_value = price_rub[days]
-    
-    # Собираем все балансы пользователя
+
+    # Cross-currency
     all_balances = {}
     total_rub = 0
     for curr in rates.keys():
         bal = db.get_balance(uid, curr)
         all_balances[curr] = bal
         if bal > 0:
-            curr_rate = rates.get(curr, 0)
-            if curr_rate > 0:
-                total_rub += bal * curr_rate if curr != "RUB" else bal
-    
+            cr = rates.get(curr, 0)
+            if cr > 0:
+                total_rub += bal * cr if curr != "RUB" else bal
+
     if total_rub < price_rub_value:
         await call.answer(
-            f"❌ Недостаточно средств!\n\n"
-            f"💰 Нужно: {price_in_currency} {currency} (~{price_rub_value} RUB)\n"
-            f"💼 Ваш общий баланс: ~{fmt_num(total_rub)} RUB\n\n"
-            f"Пополните баланс и попробуйте снова.",
+            f"❌ Недостаточно средств!\nНужно: {price_rub_value} RUB\nВаш баланс: ~{fmt_num(total_rub)} RUB",
             show_alert=True
         )
         return
-    
-    # Составляем детализацию общего счета
+
     deduction_plan = {}
     remaining_rub = price_rub_value
-    
-    deduction_order = ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]
-    for curr in deduction_order:
+    for curr in ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]:
         if remaining_rub <= 0:
             break
         bal = all_balances.get(curr, 0)
@@ -2730,53 +2885,46 @@ async def premium_buy_cb(call: CallbackQuery, state: FSMContext):
             deduction_plan[curr] = deduct
             remaining_rub -= deduct
         else:
-            curr_rate = rates.get(curr, 0)
-            if curr_rate <= 0:
+            cr = rates.get(curr, 0)
+            if cr <= 0:
                 continue
-            needed_in_curr = remaining_rub / curr_rate
-            if bal >= needed_in_curr:
-                deduction_plan[curr] = round(needed_in_curr, 6)
+            needed = remaining_rub / cr
+            if bal >= needed:
+                deduction_plan[curr] = round(needed, 6)
                 remaining_rub = 0
             else:
                 deduction_plan[curr] = bal
-                remaining_rub -= bal * curr_rate
-    
+                remaining_rub -= bal * cr
+
     if remaining_rub > 0:
-        await call.answer("❌ Не удалось составить план списания. Попробуйте другую валюту.", show_alert=True)
+        await call.answer("❌ Не удалось составить план списания.", show_alert=True)
         return
-    
-    # Строим текст детализации
-    plan_parts = []
-    for curr, amount in deduction_plan.items():
-        plan_parts.append(f"{fmt_num(amount)} {CURRENCIES.get(curr, {}).get('symbol', curr)} ({curr})")
-    plan_str = " + ".join(plan_parts)
-    
+
+    plan_parts = [f"{fmt_num(a)} {c}" for c, a in deduction_plan.items()]
+    label = TIER_LABELS[tier]
+    tier_badge = TIER_CONFIG[tier]['badge']
     await state.update_data(
+        premium_tier=tier,
         premium_days=days,
         premium_price_rub=price_rub_value,
         deduction_plan=deduction_plan
     )
-    
+
     text = (
-        f"⭐ *Premium подписка*\n\n"
-        f"Вы выбрали оплату в *{currency}*.\n"
-        f"На вашем балансе недостаточно {currency}, "
-        f"но мы можем списать средства с ваших совокупных активов.\n\n"
-        f"💳 *Списать:* {plan_str}\n"
-        f"💰 *Эквивалент:* {price_rub_value} RUB\n"
-        f"📅 *Длительность:* {days_label}\n\n"
-        f"Подтверждаете списание?"
+        f"{label} подписка\n\n"
+        f"💰 Недостаточно {currency}, но хватает общих активов.\n"
+        f"💳 *Списать:* {' + '.join(plan_parts)} (≈{price_rub_value} RUB)\n"
+        f"🏅 *Тариф:* {tier_badge}\n\n"
+        f"Подтверждаете?"
     )
-    
-    # Добавляем название дня в callback_data
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Да, оплатить с общего счета", callback_data=f"premium_confirm_cross_{days}")],
-        [InlineKeyboardButton(text="❌ Нет, отмена", callback_data="cancel")]
+        [InlineKeyboardButton(text="✅ Да, оплатить", callback_data=f"tier_confirm_cross_{tier}_{days}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
     ])
-    
-    if img_exists("PREMIUM ПОДПИСКА.jpg"):
+    img = TIER_IMAGES[tier]
+    if img_exists(img):
         await call.message.edit_media(
-            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text, parse_mode="Markdown"),
+            InputMediaPhoto(media=FSInputFile(img_path(img)), caption=text, parse_mode="Markdown"),
             reply_markup=kb
         )
     else:
@@ -2784,61 +2932,23 @@ async def premium_buy_cb(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
 
-@dp.callback_query(lambda c: c.data.startswith("premium_confirm_cross_"))
-async def premium_confirm_cross_cb(call: CallbackQuery, state: FSMContext):
+@dp.callback_query(lambda c: c.data.startswith("tier_confirm_cross_"))
+async def tier_confirm_cross_cb(call: CallbackQuery, state: FSMContext):
+    parts = call.data.split("_")
+    tier = parts[3]
+    days = int(parts[4])
     uid = call.from_user.id
     data = await state.get_data()
-    
-    days = data.get("premium_days")
     price_rub_value = data.get("premium_price_rub")
     deduction_plan = data.get("deduction_plan")
-    
-    if not all([days, price_rub_value, deduction_plan]):
+
+    if not all([price_rub_value, deduction_plan]):
         await call.answer("❌ Сессия истекла. Начните заново.", show_alert=True)
         await state.clear()
         return
-    
-    # Атомарное списание с общего счета
-    async with db_batch_lock:
-        success = True
-        deducted_summary = {}
-        for curr, amount in deduction_plan.items():
-            if not db.update_balance(uid, curr, -amount):
-                success = False
-                break
-            deducted_summary[curr] = amount
-        
-        if not success:
-            # Откатываем уже списанное
-            for curr, amount in deducted_summary.items():
-                db.update_balance(uid, curr, amount)
-            await call.answer("❌ Ошибка при списании средств. Транзакция отменена.", show_alert=True)
-            await state.clear()
-            return
-        
-        db.set_premium(uid, days, 0)
-    
-    days_label = "FOREVER" if days == 365 else f"{days} дней"
-    plan_parts = []
-    for curr, amount in deduction_plan.items():
-        plan_parts.append(f"{fmt_num(amount)} {curr}")
-    
-    text_success = (
-        f"✅ *Premium подписка активирована!*\n\n"
-        f"📅 Длительность: {days_label}\n"
-        f"💰 Списано с общего счета: {' + '.join(plan_parts)} (эквивалент {price_rub_value} RUB)\n"
-        f"✨ Комиссия при сделках и выводе: *0%*"
-    )
-    if img_exists("PREMIUM ПОДПИСКА.jpg"):
-        await call.message.edit_media(
-            InputMediaPhoto(media=FSInputFile(img_path("PREMIUM ПОДПИСКА.jpg")), caption=text_success, parse_mode="Markdown"),
-            reply_markup=main_kb(uid in ADMIN_IDS)
-        )
-    else:
-        await call.message.edit_text(text_success, parse_mode="Markdown", reply_markup=main_kb(uid in ADMIN_IDS))
-    
-    await state.clear()
-    await call.answer()
+
+    await _exec_cross_currency(uid, tier, days, price_rub_value, deduction_plan, call, state)
+
 
 # ========== СОЗДАНИЕ СДЕЛКИ ==========
 @dp.callback_query(lambda c: c.data == "create_deal")
@@ -2924,6 +3034,24 @@ async def deal_price_msg(msg: types.Message, state: FSMContext):
         await state.clear()
         return
     
+    # Проверка лимита сделок для бесплатного тарифа
+    limit_check = db.check_deal_limit(msg.from_user.id)
+    if not limit_check['allowed']:
+        tier_info = db.get_tier_info(msg.from_user.id)
+        await msg.answer(
+            f"⛔ *Достигнут лимит сделок*\n\n"
+            f"На вашем тарифе *{tier_info['label']}* — "
+            f"не более {limit_check['limit']} сделок в месяц.\n\n"
+            f"📊 Совершено: {limit_check['current']} из {limit_check['limit']}\n\n"
+            f"💎 *Апгрейдните тариф,* чтобы снять ограничение:\n"
+            f"/buy_premium — ⭐ Premium (299₽/мес)\n"
+            f"/buy_platinum — 💎 Platinum (599₽/мес)\n"
+            f"/buy_vip — 👑 VIP (1499₽/мес)",
+            parse_mode="Markdown"
+        )
+        await state.clear()
+        return
+
     import random
     deal_id = random.randint(100000, 999999)
     while db.get_deal(deal_id):
@@ -5207,6 +5335,17 @@ async def handle_create_deal(request):
         user = db.get_user(user_id)
         if not user:
             return JSONResponse(content={'success': False, 'error': 'User not found'}, status_code=404)
+
+        # Проверка лимита сделок
+        limit_check = db.check_deal_limit(user_id)
+        if not limit_check['allowed']:
+            return JSONResponse(content={
+                'success': False,
+                'error': 'monthly_limit',
+                'message': f'Лимит {limit_check["limit"]} сделок в месяц исчерпан. Апгрейдните тариф в боте.',
+                'current': limit_check['current'],
+                'limit': limit_check['limit']
+            }, status_code=403)
         
         # Генерируем ID сделки
         import random
@@ -5358,6 +5497,10 @@ async def handle_buy_premium(request):
         if auth_user.get('id') != user_id:
             return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
+        tier = data.get('tier', 'premium')
+        if tier not in TIER_CONFIG or tier == 'free':
+            return JSONResponse(content={'success': False, 'error': 'Invalid tier'}, status_code=400)
+
         days = int(data.get('days', 30))
         
         if not user_id:
@@ -5367,15 +5510,8 @@ async def handle_buy_premium(request):
         if not user:
             return JSONResponse(content={'success': False, 'error': 'User not found'}, status_code=404)
         
-        if db.is_premium(user_id):
-            return JSONResponse(content={'success': False, 'error': 'Premium already active'})
-        
-        if days not in PREMIUM_PRICES:
-            return JSONResponse(content={'success': False, 'error': 'Invalid duration'}, status_code=400)
-        
-        price_rub = PREMIUM_PRICES[days]
-        
-        rates = await currency_api.fetch_rates("RUB")
+        price_rub = TIER_CONFIG[tier]['price_month']
+        rate = PREMIUM_RATES.get('RUB', 1)
         
         async with db_batch_lock:
             balances = {}
@@ -5387,14 +5523,14 @@ async def handle_buy_premium(request):
                 if curr == "RUB":
                     total_rub += amount
                 else:
-                    rate = rates.get(curr, 0)
-                    if rate > 0:
-                        total_rub += amount * rate
+                    r = PREMIUM_RATES.get(curr, 0)
+                    if r > 0:
+                        total_rub += amount * r
             
             if total_rub < price_rub:
                 return JSONResponse(content={
                     'success': False,
-                    'error': 'Недостаточно средств. Пополните баланс через поддержку.',
+                    'error': 'Недостаточно средств.',
                     'total_rub': round(total_rub, 2),
                     'price_rub': price_rub
                 })
@@ -5416,17 +5552,17 @@ async def handle_buy_premium(request):
                     deducted[curr] = deduct
                     remaining -= deduct
                 else:
-                    rate = rates.get(curr, 0)
-                    if rate <= 0:
+                    r = PREMIUM_RATES.get(curr, 0)
+                    if r <= 0:
                         continue
-                    needed = remaining / rate
+                    needed = remaining / r
                     if bal >= needed:
                         deduct_amount = needed
                         db.update_balance(user_id, curr, -deduct_amount)
                         deducted[curr] = round(deduct_amount, 2)
                         remaining = 0
                     else:
-                        rub_value = bal * rate
+                        rub_value = bal * r
                         db.update_balance(user_id, curr, -bal)
                         deducted[curr] = bal
                         remaining -= rub_value
@@ -5434,17 +5570,18 @@ async def handle_buy_premium(request):
             if remaining > 0:
                 return JSONResponse(content={'success': False, 'error': 'Transaction failed'}, status_code=500)
             
-            db.set_premium(user_id, days, 0)
+            db.set_premium_tier(user_id, tier, days, 0)
         
-        # Send notification
+        tier_badge = TIER_CONFIG[tier]['badge']
+        commission_pct = int(TIER_CONFIG[tier]['commission'] * 100)
         try:
             await bot.send_message(
                 user_id,
-                f"🎉 *Premium подписка активирована!*\n\n"
-                f"📅 Длительность: {days if days != 365 else '365'} дн.\n"
+                f"🎉 *{TIER_LABELS[tier]} подписка активирована!*\n\n"
+                f"🏅 Статус: {tier_badge}\n"
+                f"📅 Длительность: {days} дн.\n"
                 f"💰 Списано: {price_rub} RUB\n"
-                f"💱 Списанные валюты: {', '.join(f'{v:.2f} {k}' for k, v in deducted.items())}\n\n"
-                f"✨ Комиссия при сделках и выводе: 0%",
+                f"📊 Комиссия сделок: {commission_pct}%",
                 parse_mode="Markdown"
             )
         except:
