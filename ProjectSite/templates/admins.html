@@ -70,12 +70,13 @@
     <div class="modal-window" style="background: #1a1a2e; border: 1px solid rgba(0,255,255,0.3); border-radius: 28px; padding: 32px; max-width: 450px; width: 90%;">
         <h3 class="mb-3" style="color: #00ffcc;"><i class="fas fa-user-plus me-2"></i> Добавить администратора</h3>
         <input type="text" id="adminName" class="form-control mb-2" placeholder="Имя администратора" style="background: rgba(0,10,20,0.6); border: 1px solid rgba(0,255,255,0.3); border-radius: 12px; padding: 12px; color: white;">
-        <select id="adminRole" class="form-control mb-2" style="background: rgba(0,10,20,0.6); border: 1px solid rgba(0,255,255,0.3); border-radius: 12px; padding: 12px; color: white;">
-            <option value="Admin">Администратор</option>
-            <option value="Moderator">Модератор</option>
-            <option value="Support">Поддержка</option>
-        </select>
+        <input type="text" id="adminTelegramId" class="form-control mb-2" placeholder="Telegram ID" inputmode="numeric" style="background: rgba(0,10,20,0.6); border: 1px solid rgba(0,255,255,0.3); border-radius: 12px; padding: 12px; color: white;">
         <input type="text" id="adminTelegram" class="form-control mb-2" placeholder="Telegram @username" style="background: rgba(0,10,20,0.6); border: 1px solid rgba(0,255,255,0.3); border-radius: 12px; padding: 12px; color: white;">
+        <div class="d-flex gap-2 mt-3">
+            <button class="btn-primary" onclick="generatePassword()" style="flex:1; background: rgba(0,255,200,0.15); color: #00ffcc; font-size: 13px;">
+                <i class="fas fa-key me-1"></i> Сгенерировать UUID пароль
+            </button>
+        </div>
         <div class="d-flex gap-2 justify-content-end mt-3">
             <button class="btn-cancel" onclick="closeAddAdminModal()" style="background: rgba(255,255,255,0.1); border: none; padding: 10px 20px; border-radius: 12px; color: #a0aec0;">Отмена</button>
             <button class="btn-primary" onclick="createAdmin()">Создать</button>
@@ -87,26 +88,33 @@
 function openAddAdminModal() { document.getElementById('addAdminModal').style.display = 'flex'; }
 function closeAddAdminModal() { document.getElementById('addAdminModal').style.display = 'none'; }
 
+function generatePassword() {
+    const uuid = crypto.randomUUID();
+    alert(`Сгенерирован UUID пароль:\n\n${uuid}\n\nСкопируйте его. Пароль будет установлен при создании администратора.`);
+    window._generatedPassword = uuid;
+}
+
 async function createAdmin() {
-    const name = document.getElementById('adminName').value;
-    const role = document.getElementById('adminRole').value;
-    const telegram = document.getElementById('adminTelegram').value;
-    
+    const name = document.getElementById('adminName').value.trim();
+    const telegramId = document.getElementById('adminTelegramId').value.trim();
+    const telegram = document.getElementById('adminTelegram').value.trim();
+    const password = window._generatedPassword || '';
+
     if(!name) { showToast('Введите имя', 'error'); return; }
-    
+
     const res = await fetch('/api/admins/create/', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({username: name, role, telegram})
+        body: JSON.stringify({username: name, telegram_id: telegramId, telegram_username: telegram})
     });
     const data = await res.json();
-    
+
     if(data.success) {
-        alert(`✅ Администратор ${name} создан!\n\nПароль: ${data.password}\nСохраните его!`);
+        alert(`✅ Администратор ${name} создан!\n\nПароль: ${data.password}\nИмя пользователя: ${name}\nСохраните эти данные!`);
         closeAddAdminModal();
         location.reload();
     } else {
-        showToast('Ошибка создания', 'error');
+        showToast('Ошибка: ' + (data.error || 'Неизвестная'), 'error');
     }
 }
 
@@ -116,15 +124,21 @@ async function resetAdminPassword(username) {
         const data = await res.json();
         if(data.success) {
             alert(`Новый пароль для ${username}: ${data.new_password}`);
+        } else {
+            showToast('Ошибка сброса', 'error');
         }
     }
 }
 
 async function deleteAdmin(username) {
     if(confirm(`Удалить администратора ${username}?`)) {
-        await fetch(`/api/admins/${username}/delete/`, {method: 'DELETE'});
-        showToast('Администратор удалён');
-        location.reload();
+        const res = await fetch(`/api/admins/${username}/delete/`, {method: 'DELETE'});
+        if(res.ok) {
+            showToast('Администратор удалён');
+            location.reload();
+        } else {
+            showToast('Ошибка удаления', 'error');
+        }
     }
 }
 </script>

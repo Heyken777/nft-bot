@@ -10,6 +10,7 @@ from django.conf import settings
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
+OWNER_TELEGRAM_ID = 1803437347
 
 
 def get_db():
@@ -26,11 +27,16 @@ def get_admin_name(request):
 
 def log_admin_action(request, action: str, target_id=None, amount=None):
     admin_id = request.user.id if request.user.is_authenticated else 0
+    ip = _get_client_ip(request)
     conn = get_db()
     cur = conn.cursor()
+    try:
+        cur.execute("ALTER TABLE admin_logs ADD COLUMN ip_address TEXT")
+    except:
+        pass
     cur.execute(
-        "INSERT INTO admin_logs (admin_id, action, target_id, amount) VALUES (?, ?, ?, ?)",
-        (admin_id, action, target_id, amount)
+        "INSERT INTO admin_logs (admin_id, action, target_id, amount, ip_address) VALUES (?, ?, ?, ?, ?)",
+        (admin_id, action, target_id, amount, ip)
     )
     conn.commit()
     conn.close()
@@ -294,9 +300,12 @@ def users_view(request):
     per_page = 50
     offset = (page - 1) * per_page
 
+    balance_fields = ', '.join([f'balance_{c}' for c in CURRENCY_LIST])
+    columns = f'user_id, username, created_at, premium_tier, {balance_fields}'
+
     if search:
-        cur.execute("""
-            SELECT user_id, username, balance_RUB AS balance, created_at, 0 AS is_blocked, is_premium
+        cur.execute(f"""
+            SELECT {columns}
             FROM users WHERE username LIKE ? OR CAST(user_id AS TEXT) LIKE ?
             ORDER BY created_at DESC LIMIT ? OFFSET ?
         """, (f'%{search}%', f'%{search}%', per_page, offset))
@@ -304,8 +313,8 @@ def users_view(request):
         cur.execute("SELECT COUNT(*) FROM users WHERE username LIKE ? OR CAST(user_id AS TEXT) LIKE ?",
                     (f'%{search}%', f'%{search}%'))
     else:
-        cur.execute("""
-            SELECT user_id, username, balance_RUB AS balance, created_at, 0 AS is_blocked, is_premium
+        cur.execute(f"""
+            SELECT {columns}
             FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?
         """, (per_page, offset))
         rows = cur.fetchall()
@@ -319,6 +328,12 @@ def users_view(request):
         display = d.get('username') or str(d['telegram_id'])
         d['display_name'] = display
         d['avatar_letter'] = display[0].upper()
+        total_rub = 0
+        for c in CURRENCY_LIST:
+            total_rub += (d.get(f'balance_{c}', 0) or 0) * CURRENCY_RATES.get(c, 0)
+        d['total_rub'] = round(total_rub, 2)
+        tier = d.get('premium_tier', 'free') or 'free'
+        d['tier_display'] = TIER_BADGES.get(tier, '⬜ FREE')
         user_list.append(d)
     return render(request, 'users.html', {
         'active_page': 'users',
@@ -944,13 +959,26 @@ def api_grant_premium(request, telegram_id):
 @csrf_exempt
 @require_http_methods(["GET"])
 @login_required(login_url='/')
+@login_required(login_url='/')
 def api_get_audit_logs(request):
+    is_owner = request.user.id == OWNER_TELEGRAM_ID
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC LIMIT 100")
-    logs = cur.fetchall()
+    rows = cur.fetchall()
+    logs = []
+    for r in rows:
+        d = dict(r)
+        if d.get('admin_id'):
+            cur.execute("SELECT username FROM users WHERE user_id=?", (d['admin_id'],))
+            u = cur.fetchone()
+            d['admin_name'] = u['username'] if u else str(d['admin_id'])
+        else:
+            d['admin_name'] = '—'
+        d['ip_address'] = d.pop('ip_address', '—') or '—'
+        logs.append(d)
     conn.close()
-    return JsonResponse([dict(l) for l in logs], safe=False)
+    return JsonResponse({'logs': logs, 'is_owner': is_owner}, safe=False)
 
 
 @csrf_exempt
@@ -975,15 +1003,17 @@ def api_search_users(request):
     q = request.GET.get('q', '').strip()
     conn = get_db()
     cur = conn.cursor()
+    balance_fields = ', '.join([f'balance_{c}' for c in CURRENCY_LIST])
+    columns = f'user_id, username, created_at, premium_tier, {balance_fields}'
     if q:
-        cur.execute("""
-            SELECT user_id, username, balance_RUB AS balance, created_at, is_premium
+        cur.execute(f"""
+            SELECT {columns}
             FROM users WHERE username LIKE ? OR CAST(user_id AS TEXT) LIKE ?
             ORDER BY created_at DESC LIMIT 50
         """, (f'%{q}%', f'%{q}%'))
     else:
-        cur.execute("""
-            SELECT user_id, username, balance_RUB AS balance, created_at, is_premium
+        cur.execute(f"""
+            SELECT {columns}
             FROM users ORDER BY created_at DESC LIMIT 50
         """)
     rows = cur.fetchall()
@@ -993,6 +1023,12 @@ def api_search_users(request):
         d = dict(u)
         d['telegram_id'] = d.pop('user_id')
         d['avatar_letter'] = (d.get('username') or str(d['telegram_id']))[0].upper()
+        total_rub = 0
+        for c in CURRENCY_LIST:
+            total_rub += (d.get(f'balance_{c}', 0) or 0) * CURRENCY_RATES.get(c, 0)
+        d['total_rub'] = round(total_rub, 2)
+        tier = d.get('premium_tier', 'free') or 'free'
+        d['tier_display'] = TIER_BADGES.get(tier, '⬜ FREE')
         result.append(d)
     return JsonResponse({'users': result, 'total': len(result)})
 
@@ -1081,6 +1117,104 @@ def api_export_audit(request):
     for l in logs:
         writer.writerow([l['timestamp'], l['admin_id'], l['action'], l['target_id'], l['amount']])
     return response
+
+
+# ===================== AUDIT VIEW =====================
+
+@login_required(login_url='/')
+def audit_view(request):
+    if request.user.id != OWNER_TELEGRAM_ID:
+        return render(request, 'errors/403.html', status=403)
+    return render(request, 'audit.html', {'active_page': 'audit'})
+
+
+# ===================== ADMIN MANAGEMENT (OWNER ONLY) =====================
+
+@login_required(login_url='/')
+def admins_view(request):
+    if request.user.id != OWNER_TELEGRAM_ID:
+        return render(request, 'errors/403.html', status=403)
+    from django.contrib.auth.models import User as DjangoUser
+    admin_users = DjangoUser.objects.filter(is_staff=True).order_by('username')
+    admins_data = []
+    for u in admin_users:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM users WHERE user_id=?", (int(u.username.replace('tg_', '')) if u.username.startswith('tg_') else 0,))
+        tg_user = cur.fetchone()
+        conn.close()
+        admins_data.append({
+            'id': u.id,
+            'username': u.username,
+            'role': 'CEO' if u.id == 1 else 'Admin',
+            'telegram': f"User {tg_user['user_id']}" if tg_user else '—',
+        })
+    return render(request, 'admins.html', {'active_page': 'admins', 'admins': admins_data})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def api_create_admin(request):
+    if request.user.id != OWNER_TELEGRAM_ID:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+    import uuid
+    data = json.loads(request.body)
+    username = data.get('username', '').strip()
+    telegram_id = data.get('telegram_id', '').strip()
+    telegram_username = data.get('telegram_username', '').strip()
+    if not username:
+        return JsonResponse({'success': False, 'error': 'Введите имя'}, status=400)
+    from django.contrib.auth.models import User as DjangoUser
+    if DjangoUser.objects.filter(username=username).exists():
+        return JsonResponse({'success': False, 'error': 'Пользователь уже существует'}, status=400)
+    password = str(uuid.uuid4())[:12]
+    DjangoUser.objects.create_user(username=username, password=password, is_staff=True)
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+    except:
+        pass
+    if telegram_id and telegram_id.lstrip('-').isdigit():
+        cur.execute("UPDATE users SET is_admin=1 WHERE user_id=?", (int(telegram_id),))
+    conn.commit()
+    conn.close()
+    log_admin_action(request, f"Создал администратора {username} (tg: {telegram_username or telegram_id})")
+    return JsonResponse({'success': True, 'password': password})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/')
+def api_reset_admin_password(request, username):
+    if request.user.id != OWNER_TELEGRAM_ID:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+    import uuid
+    from django.contrib.auth.models import User as DjangoUser
+    try:
+        u = DjangoUser.objects.get(username=username)
+    except DjangoUser.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Не найден'}, status=404)
+    new_password = str(uuid.uuid4())[:12]
+    u.set_password(new_password)
+    u.save()
+    log_admin_action(request, f"Сбросил пароль администратора {username}")
+    return JsonResponse({'success': True, 'new_password': new_password})
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@login_required(login_url='/')
+def api_delete_admin(request, username):
+    if request.user.id != OWNER_TELEGRAM_ID:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+    if username.lower() == 'heyken':
+        return JsonResponse({'success': False, 'error': 'Нельзя удалить владельца'}, status=400)
+    from django.contrib.auth.models import User as DjangoUser
+    DjangoUser.objects.filter(username=username).delete()
+    log_admin_action(request, f"Удалил администратора {username}")
+    return JsonResponse({'success': True})
 
 
 # ===================== ADMIN TICKETS =====================

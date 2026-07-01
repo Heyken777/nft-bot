@@ -49,10 +49,17 @@ urlpatterns = [
         # API: рассылка
     path('api/broadcast/send/', views.api_broadcast_send),
 
-    # API: аудит
+    # Аудит
+    path('audit/', views.audit_view, name='audit'),
     path('api/audit/logs/', views.api_get_audit_logs),
     path('api/audit/clear/', views.api_clear_audit),
     path('api/audit/export/', views.api_export_audit),
+
+    # Администраторы (CEO only)
+    path('admins/', views.admins_view, name='admins'),
+    path('api/admins/create/', views.api_create_admin),
+    path('api/admins/<str:username>/reset-password/', views.api_reset_admin_password),
+    path('api/admins/<str:username>/delete/', views.api_delete_admin),
 
     # API: споры / арбитраж
     path('api/disputes/<int:dispute_id>/', views.dispute_detail_api),

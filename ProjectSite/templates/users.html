@@ -28,11 +28,8 @@
                     <div class="text-cyan-300/50 small">{{ user.created_at|date:"d.m.Y"|default:"—" }}</div>
                 </div>
                 <div class="text-end">
-                    <div><span class="badge-active">💰 {{ user.balance|floatformat:0 }} ₽</span></div>
-                    <div class="small mt-1">
-                        {% if user.is_blocked %}<span class="badge-expired">🔒 Заблокирован</span>
-                        {% else %}<span class="badge-active">✅ Активен</span>{% endif %}
-                    </div>
+                    <div><span class="badge-active">💰 {{ user.total_rub|floatformat:0 }} ₽</span></div>
+                    <div class="small mt-1">{{ user.tier_display|default:"⬜ FREE" }}</div>
                 </div>
             </div>
         </div>
@@ -89,8 +86,8 @@ document.getElementById('userSearch').addEventListener('input', function() {
                                     <div class="text-cyan-300/50 small">${u.created_at ? new Date(u.created_at).toLocaleDateString('ru-RU') : '—'}</div>
                                 </div>
                                 <div class="text-end">
-                                    <div><span class="badge-active">💰 ${Number(u.balance || 0).toFixed(0)} ₽</span></div>
-                                    <div class="small mt-1"><span class="badge-active">✅ Активен</span></div>
+                                    <div><span class="badge-active">💰 ${Number(u.total_rub || 0).toFixed(0)} ₽</span></div>
+                                    <div class="small mt-1">${u.tier_display || '⬜ FREE'}</div>
                                 </div>
                             </div>
                         </div>
