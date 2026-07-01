@@ -38,8 +38,54 @@ def log_admin_action(request, action: str, target_id=None, amount=None):
 
 # ===================== AUTH =====================
 
+def _get_client_ip(request):
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+
+def _is_ip_blocked(ip: str) -> bool:
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM login_attempts "
+            "WHERE ip_address = ? AND success = 0 "
+            "AND attempted_at > datetime('now', '-15 minutes')", (ip,))
+        blocked = cur.fetchone()[0] >= 5
+        conn.close()
+        return blocked
+    except Exception:
+        return False
+
+
+def _record_login_attempt(ip: str, success: bool):
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn.execute("INSERT INTO login_attempts (ip_address, success) VALUES (?, ?)", (ip, 1 if success else 0))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _clear_login_attempts(ip: str):
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn.execute("DELETE FROM login_attempts WHERE ip_address = ?", (ip,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def login_view(request):
     if request.method == 'POST':
+        ip = _get_client_ip(request)
+        if _is_ip_blocked(ip):
+            return JsonResponse({'success': False, 'error': '⛔ Слишком много попыток. Подождите 15 минут.'}, status=429)
+
         data = json.loads(request.body)
         username = data.get('username')
         password = data.get('password')
@@ -47,10 +93,12 @@ def login_view(request):
         if user:
             login(request, user)
             request.session['admin'] = username
+            _clear_login_attempts(ip)
             return JsonResponse({
                 'success': True, 'token': 'django-session',
                 'username': username, 'role': 'admin'
             })
+        _record_login_attempt(ip, False)
         return JsonResponse({'success': False, 'error': 'Неверные данные'}, status=401)
     return render(request, 'login.html')
 
@@ -963,6 +1011,10 @@ def api_search_deals(request):
 def api_login(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    ip = _get_client_ip(request)
+    if _is_ip_blocked(ip):
+        return JsonResponse({'success': False, 'error': '⛔ Слишком много попыток. Подождите 15 минут.'}, status=429)
+
     data = json.loads(request.body)
     username = data.get('username')
     password = data.get('password')
@@ -970,7 +1022,9 @@ def api_login(request):
     if user:
         login(request, user)
         request.session['admin'] = username
+        _clear_login_attempts(ip)
         return JsonResponse({'success': True, 'token': 'django-session', 'username': username, 'role': 'admin'})
+    _record_login_attempt(ip, False)
     return JsonResponse({'success': False, 'error': 'Неверные данные'}, status=401)
 
 

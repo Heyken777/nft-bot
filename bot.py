@@ -544,6 +544,33 @@ class Database:
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Таблица аудит-лога безопасности (v4.1)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS admin_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_id INTEGER,
+                action TEXT NOT NULL,
+                nonce TEXT,
+                target TEXT,
+                details TEXT,
+                ip_address TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Таблица блокировки по IP (брутфорс)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip_address TEXT NOT NULL,
+                success INTEGER DEFAULT 0,
+                attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Добавляем колонку encrypted_meta в transactions, если её нет
+        self.add_column_if_not_exists("transactions", "encrypted_meta", "TEXT")
         
         # Таблица достижений пользователей
         self.cursor.execute("""
@@ -1059,13 +1086,6 @@ class Database:
         self.cursor.execute("UPDATE disputes SET status = 'resolved' WHERE id = ?", (did,))
         self.conn.commit()
 
-    def add_transaction(self, user_id: int, amount: float, currency: str, tx_type: str, description: str = None, related_id: int = None):
-        self.cursor.execute(
-            "INSERT INTO transactions (user_id, amount, currency, type, description, related_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, amount, currency, tx_type, description, related_id)
-        )
-        self.conn.commit()
-
     def add_notification(self, user_id: int, text: str):
         self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)", (user_id, "Уведомление", text))
         self.conn.commit()
@@ -1474,6 +1494,62 @@ class Database:
         self.cursor.execute("DELETE FROM pending_verifications WHERE expires_at < datetime('now')")
         if self.cursor.rowcount > 0:
             self.conn.commit()
+
+    # ========== AUDIT LOG ==========
+    def add_audit_log(self, admin_id: int, action: str, target: str = None, details: str = None, ip_address: str = None, nonce: str = None):
+        self.cursor.execute(
+            "INSERT INTO admin_audit_log (admin_id, action, nonce, target, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)",
+            (admin_id, action, nonce, target, details, ip_address)
+        )
+        self.conn.commit()
+
+    def get_audit_logs(self, limit: int = 100):
+        self.cursor.execute("SELECT * FROM admin_audit_log ORDER BY created_at DESC LIMIT ?", (limit,))
+        return self.cursor.fetchall()
+
+    # ========== BRUTE FORCE PROTECTION ==========
+    def record_login_attempt(self, ip_address: str, success: bool):
+        self.cursor.execute(
+            "INSERT INTO login_attempts (ip_address, success) VALUES (?, ?)",
+            (ip_address, 1 if success else 0)
+        )
+        self.conn.commit()
+
+    def is_ip_blocked(self, ip_address: str) -> bool:
+        self.cursor.execute(
+            "SELECT COUNT(*) FROM login_attempts "
+            "WHERE ip_address = ? AND success = 0 "
+            "AND attempted_at > datetime('now', '-15 minutes')",
+            (ip_address,)
+        )
+        return self.cursor.fetchone()[0] >= 5
+
+    def clear_login_attempts(self, ip_address: str):
+        self.cursor.execute("DELETE FROM login_attempts WHERE ip_address = ?", (ip_address,))
+        self.conn.commit()
+
+    # ========== ENCRYPTED TRANSACTIONS ==========
+    def add_transaction(self, user_id: int, amount: float, currency: str, tx_type: str, description: str = None, related_id: int = None):
+        import json as _json
+        encrypted_meta = encrypt_value(_json.dumps({"amount": amount, "desc": description or ""}))
+        self.cursor.execute(
+            "INSERT INTO transactions (user_id, amount, currency, type, description, related_id, encrypted_meta) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, amount, currency, tx_type, description, related_id, encrypted_meta)
+        )
+        self.conn.commit()
+
+    def decrypt_transaction(self, row: dict) -> dict:
+        import json as _json
+        enc = row.get('encrypted_meta') or ''
+        if enc and is_encryption_enabled():
+            try:
+                dec = decrypt_value(enc)
+                meta = _json.loads(dec)
+                row['amount'] = meta.get('amount', row.get('amount'))
+                row['description'] = meta.get('desc', row.get('description'))
+            except Exception:
+                pass
+        return row
 
     def get_stats(self):
         self.cursor.execute("SELECT COUNT(*) FROM users")
@@ -3619,6 +3695,7 @@ async def admin_credit_amount(msg: types.Message, state: FSMContext):
         currency = data.get('currency', 'RUB')
         db.update_balance(uid, currency, amount)
         db.credit_referral_deposit_commission(uid, currency, amount)
+        db.add_audit_log(msg.from_user.id, "admin_credit", target=f"user_{uid}", details=f"+{amount} {currency}")
         await bot.send_message(uid, f"💰 Вам зачислено {fmt_num(amount)} {currency}!")
         await state.clear()
         await msg.answer(f"✅ Зачислено {fmt_num(amount)} {currency} пользователю `{uid}`", parse_mode="Markdown")
@@ -3663,6 +3740,7 @@ async def admin_debit_amount(msg: types.Message, state: FSMContext):
             await msg.answer(f"❌ Недостаточно средств. Баланс: {fmt_num(current_balance)} {currency}", reply_markup=admin_cancel_kb())
             return
         db.update_balance(uid, currency, -amount)
+        db.add_audit_log(msg.from_user.id, "admin_debit", target=f"user_{uid}", details=f"-{amount} {currency}")
         await msg.answer(f"✅ Списано {fmt_num(amount)} {currency} у {uid}")
         await state.clear()
         await bot.send_message(uid, f"💸 С вашего баланса списано {fmt_num(amount)} {currency}")
@@ -4784,6 +4862,7 @@ async def confirm_transaction_cb(call: CallbackQuery):
             currency = payload['currency']
             db.update_balance(user_id, currency, -amount)
             db.confirm_verification(nonce)
+            db.add_audit_log(user_id, "2fa_withdraw", details=f"{amount} {currency}", nonce=nonce)
             await call.message.edit_text(
                 f"✅ *Вывод подтверждён!*\nСписано: {amount} {currency}\n"
                 f"Ожидайте перевода от менеджера.",
@@ -4794,6 +4873,7 @@ async def confirm_transaction_cb(call: CallbackQuery):
             deal_id = payload['deal_id']
             db.upd_deal_status(deal_id, "completed")
             db.confirm_verification(nonce)
+            db.add_audit_log(user_id, "2fa_confirm_deal", target=f"deal_{deal_id}", nonce=nonce)
             await call.message.edit_text(f"✅ *Сделка #{deal_id} подтверждена!*", parse_mode="Markdown")
             await notify_user(user_id, f"✅ Сделка #{deal_id} завершена с 2FA-подтверждением.")
         else:
