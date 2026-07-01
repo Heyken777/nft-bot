@@ -7,7 +7,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(","))) if os.getenv("ADMIN_IDS") else []
 SECRET_KEY = os.getenv("SECRET_KEY")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "http://93.115.101.179:9207")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "")
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "@NovixProHelp")
 MANAGER_USERNAME = os.getenv("MANAGER_USERNAME", "@NovixProHelp")

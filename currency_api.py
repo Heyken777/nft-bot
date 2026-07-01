@@ -10,15 +10,15 @@ logger = logging.getLogger(__name__)
 
 PREMIUM_RATES = {
     "RUB": 1,
-    "USD": 73,
-    "EUR": 83,
+    "USD": 77.5,
+    "EUR": 88.1,
     "TON": 120,
-    "USDT": 73,
+    "USDT": 77.5,
     "STARS": 2,
-    "UAH": 1.6,
-    "KZT": 0.15,
-    "UZS": 0.0061,
-    "BYN": 26,
+    "UAH": 1.7,
+    "KZT": 0.16,
+    "UZS": 0.0065,
+    "BYN": 26.5,
 }
 
 PREMIUM_PRICES_RUB = {
