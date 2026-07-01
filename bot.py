@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, List, Dict
 from bot_config import *
 from currency_api import currency_api
+from crypto import encrypt_value, decrypt_value, is_encryption_enabled
 from aiohttp import ClientTimeout
 import qrcode
 
@@ -655,6 +656,19 @@ class Database:
             )
         """)
 
+        # Таблица 2FA-подтверждений транзакций
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pending_verifications (
+                nonce TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                action_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
+
         # Добавляем базовые достижения
         self.cursor.execute("DELETE FROM achievements_list")
         achievements = [
@@ -706,13 +720,6 @@ class Database:
     def get_user(self, uid):
         self.cursor.execute("SELECT * FROM users WHERE user_id = ?", (uid,))
         return self.cursor.fetchone()
-
-    def get_user_dict(self, uid):
-        user = self.get_user(uid)
-        if not user:
-            return None
-        col_names = [desc[0] for desc in self.cursor.description]
-        return dict(zip(col_names, user))
 
     def reg_user(self, uid, name):
         if not self.get_user(uid):
@@ -782,7 +789,8 @@ class Database:
         return balances
 
     def set_card(self, uid, card, currency="RUB"):
-        self.cursor.execute("UPDATE users SET card_details = ?, card_currency = ? WHERE user_id = ?", (card, currency, uid))
+        encrypted = encrypt_value(card)
+        self.cursor.execute("UPDATE users SET card_details = ?, card_currency = ? WHERE user_id = ?", (encrypted, currency, uid))
         self.conn.commit()
 
     def get_card_currency(self, uid):
@@ -791,8 +799,23 @@ class Database:
         return row[0] if row else "RUB"
 
     def set_ton(self, uid, ton):
-        self.cursor.execute("UPDATE users SET ton = ? WHERE user_id = ?", (ton, uid))
+        encrypted = encrypt_value(ton)
+        self.cursor.execute("UPDATE users SET ton = ? WHERE user_id = ?", (encrypted, uid))
         self.conn.commit()
+
+    def get_user_dict(self, uid):
+        user = self.get_user(uid)
+        if not user:
+            return None
+        col_names = [desc[0] for desc in self.cursor.description]
+        d = dict(zip(col_names, user))
+        if d.get('card_details'):
+            d['card_details'] = decrypt_value(d['card_details'])
+        if d.get('ton'):
+            d['ton'] = decrypt_value(d['ton'])
+        if d.get('ton_wallet'):
+            d['ton_wallet'] = decrypt_value(d['ton_wallet'])
+        return d
 
     def get_user_commission(self, user_id: int, action: str = "deal") -> float:
         is_premium = self.is_premium(user_id)
@@ -919,29 +942,39 @@ class Database:
         return {"active": False}       
 
     def set_premium(self, user_id: int, days: int, granted_by: int):
-        expires = datetime.now() + timedelta(days=days)
-        self.cursor.execute("""
-            UPDATE users SET
-                is_premium = 1,
-                premium_until = ?,
-                premium_granted_by = ?,
-                premium_granted_at = CURRENT_TIMESTAMP,
-                premium_duration_days = ?
-            WHERE user_id = ?
-        """, (expires, granted_by, days, user_id))
-        self.conn.commit()
+        self.cursor.execute("BEGIN IMMEDIATE")
+        try:
+            expires = datetime.now() + timedelta(days=days)
+            self.cursor.execute("""
+                UPDATE users SET
+                    is_premium = 1,
+                    premium_until = ?,
+                    premium_granted_by = ?,
+                    premium_granted_at = CURRENT_TIMESTAMP,
+                    premium_duration_days = ?
+                WHERE user_id = ?
+            """, (expires, granted_by, days, user_id))
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"set_premium error: {e}")
 
     def remove_premium(self, user_id: int):
-        self.cursor.execute("""
-            UPDATE users SET
-                is_premium = 0,
-                premium_until = NULL,
-                premium_granted_by = NULL,
-                premium_granted_at = NULL,
-                premium_duration_days = NULL
-            WHERE user_id = ?
-        """, (user_id,))
-        self.conn.commit()
+        self.cursor.execute("BEGIN IMMEDIATE")
+        try:
+            self.cursor.execute("""
+                UPDATE users SET
+                    is_premium = 0,
+                    premium_until = NULL,
+                    premium_granted_by = NULL,
+                    premium_granted_at = NULL,
+                    premium_duration_days = NULL
+                WHERE user_id = ?
+            """, (user_id,))
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"remove_premium error: {e}")
 
     def get_user_achievements(self, user_id: int) -> List[Tuple]:
         self.cursor.execute("""
@@ -1404,6 +1437,44 @@ class Database:
         self.cursor.execute("SELECT COALESCE(SUM(reward_amount), 0) FROM referral_deposit_log WHERE referrer_id = ?", (user_id,))
         return self.cursor.fetchone()[0]
 
+    # ========== 2FA ==========
+    def create_verification(self, user_id: int, action_type: str, payload: str) -> str:
+        """Создаёт одноразовый nonce для 2FA-подтверждения."""
+        import secrets as sec
+        nonce = sec.token_hex(16)
+        self.cursor.execute(
+            "INSERT OR REPLACE INTO pending_verifications (nonce, user_id, action_type, payload, expires_at) "
+            "VALUES (?, ?, ?, ?, datetime('now', '+10 minutes'))",
+            (nonce, user_id, action_type, payload)
+        )
+        self.conn.commit()
+        return nonce
+
+    def get_verification(self, nonce: str) -> Optional[dict]:
+        self.cursor.execute(
+            "SELECT * FROM pending_verifications WHERE nonce = ? AND status = 'pending' AND expires_at > datetime('now')",
+            (nonce,)
+        )
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        col_names = [desc[0] for desc in self.cursor.description]
+        return dict(zip(col_names, row))
+
+    def confirm_verification(self, nonce: str) -> bool:
+        """Помечает nonce как подтверждённый."""
+        self.cursor.execute("UPDATE pending_verifications SET status = 'confirmed' WHERE nonce = ? AND status = 'pending'", (nonce,))
+        if self.cursor.rowcount == 0:
+            return False
+        self.conn.commit()
+        return True
+
+    def expire_verifications(self):
+        """Очищает просроченные nonce."""
+        self.cursor.execute("DELETE FROM pending_verifications WHERE expires_at < datetime('now')")
+        if self.cursor.rowcount > 0:
+            self.conn.commit()
+
     def get_stats(self):
         self.cursor.execute("SELECT COUNT(*) FROM users")
         users = self.cursor.fetchone()[0]
@@ -1531,6 +1602,7 @@ def setup_scheduler():
     scheduler.add_job(check_premium_expiry, IntervalTrigger(minutes=15), id="premium_expiry", replace_existing=True)
     scheduler.add_job(auto_resolve_stale_disputes, IntervalTrigger(hours=1), id="stale_disputes", replace_existing=True)
     scheduler.add_job(poll_ton_payments, IntervalTrigger(seconds=TON_POLL_INTERVAL_SECONDS), id="ton_poll", replace_existing=True)
+    scheduler.add_job(db.expire_verifications, IntervalTrigger(minutes=5), id="expire_2fa", replace_existing=True)
 
 
 # ========== СОСТОЯНИЯ FSM ==========
@@ -4688,6 +4760,52 @@ async def dispute_decide_cb(call: CallbackQuery):
     )
     await call.answer("✅ Решение применено", show_alert=True)
 
+
+# ========== 2FA ==========
+@dp.callback_query(lambda c: c.data.startswith("confirm_tx_"))
+async def confirm_transaction_cb(call: CallbackQuery):
+    nonce = call.data.replace("confirm_tx_", "")
+    verification = db.get_verification(nonce)
+    if not verification:
+        await call.answer("⏰ Ссылка устарела или уже использована", show_alert=True)
+        return
+
+    user_id = verification['user_id']
+    if call.from_user.id != user_id:
+        await call.answer("⛔ Это не ваша транзакция", show_alert=True)
+        return
+
+    payload = json.loads(verification['payload'])
+    action = verification['action_type']
+
+    try:
+        if action == "withdraw":
+            amount = payload['amount']
+            currency = payload['currency']
+            db.update_balance(user_id, currency, -amount)
+            db.confirm_verification(nonce)
+            await call.message.edit_text(
+                f"✅ *Вывод подтверждён!*\nСписано: {amount} {currency}\n"
+                f"Ожидайте перевода от менеджера.",
+                parse_mode="Markdown"
+            )
+            await notify_user(user_id, f"💸 Вывод {amount} {currency} подтверждён через 2FA.")
+        elif action == "confirm_deal":
+            deal_id = payload['deal_id']
+            db.upd_deal_status(deal_id, "completed")
+            db.confirm_verification(nonce)
+            await call.message.edit_text(f"✅ *Сделка #{deal_id} подтверждена!*", parse_mode="Markdown")
+            await notify_user(user_id, f"✅ Сделка #{deal_id} завершена с 2FA-подтверждением.")
+        else:
+            await call.answer("❌ Неизвестный тип операции", show_alert=True)
+            return
+    except Exception as e:
+        logger.error(f"2FA confirm error: {e}")
+        await call.answer("❌ Ошибка подтверждения", show_alert=True)
+
+    await call.answer()
+
+
 def build_deal_payload(deal: dict, viewer_id: int) -> dict:
     payment_instructions = None
     if deal.get('payment_method') == 'ton' and deal.get('status') in ('payment_pending', 'paid'):
@@ -5602,6 +5720,41 @@ async def handle_activate_promo(request):
         return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 
+# ========== 2FA ENDPOINT ==========
+async def handle_2fa_request(request):
+    """Создаёт 2FA-запрос на подтверждение операции."""
+    auth_user = await get_authenticated_webapp_user(request)
+    if not auth_user:
+        return JSONResponse(content={'error': 'Unauthorized'}, status_code=401)
+    user_id = auth_user.get('id')
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'error': 'Invalid JSON'}, status_code=400)
+
+    action = data.get('action')
+    payload_data = data.get('payload', {})
+    allowed_actions = ['withdraw', 'confirm_deal']
+
+    if action not in allowed_actions:
+        return JSONResponse(content={'error': 'Invalid action'}, status_code=400)
+
+    nonce = db.create_verification(user_id, action, json.dumps(payload_data))
+
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔒 Подтвердить операцию", callback_data=f"confirm_tx_{nonce}")]
+    ])
+    await bot.send_message(
+        user_id,
+        f"🔐 *Требуется подтверждение операции*\n\n"
+        f"Тип: {action}\n"
+        f"Нажмите кнопку ниже, чтобы подтвердить.",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+    return JSONResponse(content={'success': True, 'nonce': nonce, 'message': 'Подтверждение отправлено в Telegram'})
+
+
 # ========== FASTAPI APP ==========
 
 @asynccontextmanager
@@ -5638,10 +5791,10 @@ fastapi_app.add_middleware(SlowAPIMiddleware)
 fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://heyken777.github.io",  # Ваш фронтенд на GitHub Pages
-        "https://methodology-identifies-number-dash.trycloudflare.com",  # Ваш туннель
-        "http://localhost:8000",  # Локальная разработка
-        "http://127.0.0.1:8000"  # Локальная разработка
+        "https://heyken777.github.io",
+        "http://93.115.101.179:9207",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -5666,6 +5819,7 @@ fastapi_app.add_api_route("/api/admin/resolve_dispute", handle_admin_resolve_dis
 fastapi_app.add_api_route("/api/pay_deal", handle_pay_deal, methods=["POST"])
 fastapi_app.add_api_route("/api/mark_sent", handle_mark_sent, methods=["POST"])
 fastapi_app.add_api_route("/api/confirm_receipt", handle_confirm_receipt, methods=["POST"])
+fastapi_app.add_api_route("/api/2fa/request", handle_2fa_request, methods=["POST"])
 
 frontend_dir = os.path.join(os.path.dirname(__file__), "frontend")
 if os.path.isdir(frontend_dir):

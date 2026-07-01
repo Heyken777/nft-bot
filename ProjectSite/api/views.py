@@ -7,6 +7,7 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from django.contrib.auth import authenticate, login
+from django.db import transaction
 from .jwt_auth import create_jwt, decode_jwt, JWTAuthentication
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'novixgift.db')
@@ -127,12 +128,18 @@ def create_promocode_api(request):
     if expiry_days:
         expires_at = (datetime.now() + timedelta(days=int(expiry_days))).isoformat()
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT OR REPLACE INTO promocodes (code, amount, max_uses, expires_at, active, created_by, created_at) VALUES (?, ?, ?, ?, 1, ?, datetime('now'))",
-        (code, amount, max_uses, expires_at, request.user.id)
-    )
-    conn.commit()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR REPLACE INTO promocodes (code, amount, max_uses, expires_at, active, created_by, created_at) VALUES (?, ?, ?, ?, 1, ?, datetime('now'))",
+            (code, amount, max_uses, expires_at, request.user.id)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return Response({'success': False, 'error': str(e)}, status=500)
     conn.close()
     return Response({'success': True, 'message': 'Промокод создан'})
 
@@ -164,12 +171,18 @@ def update_promocode_api(request, promo_code):
     if expiry_days:
         expires_at = (datetime.now() + timedelta(days=int(expiry_days))).isoformat()
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE promocodes SET amount=?, max_uses=?, expires_at=? WHERE code=? AND active=1",
-        (amount, max_uses, expires_at, promo_code)
-    )
-    conn.commit()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE promocodes SET amount=?, max_uses=?, expires_at=? WHERE code=? AND active=1",
+            (amount, max_uses, expires_at, promo_code)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return Response({'success': False, 'error': str(e)}, status=500)
     conn.close()
     return Response({'success': True, 'message': 'Промокод обновлён'})
 
@@ -178,12 +191,18 @@ def update_promocode_api(request, promo_code):
 @permission_classes([IsAuthenticated])
 def delete_promocode_api(request, promo_code):
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE promocodes SET active=0, deleted_by=?, deleted_at=datetime('now') WHERE code=?",
-        (request.user.id, promo_code)
-    )
-    conn.commit()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE promocodes SET active=0, deleted_by=?, deleted_at=datetime('now') WHERE code=?",
+            (request.user.id, promo_code)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return Response({'success': False, 'error': str(e)}, status=500)
     conn.close()
     return Response({'success': True, 'message': 'Промокод удалён'})
 
