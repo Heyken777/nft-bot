@@ -8,7 +8,7 @@ from django.views.decorators.http import require_http_methods
 from django.conf import settings
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, 'novixgift.db')
+DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
 
 import sys
 sys.path.insert(0, os.path.join(BASE_DIR, '..'))

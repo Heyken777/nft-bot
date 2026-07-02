@@ -2,7 +2,7 @@ import os, sqlite3
 from django.apps import AppConfig
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, 'novixgift.db')
+DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
 
 
 def ensure_tables():

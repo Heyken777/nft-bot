@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate, login as auth_login
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, 'novixgift.db')
+DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
 OWNER_TELEGRAM_ID = 1803437347
 
 
