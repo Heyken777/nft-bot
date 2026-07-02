@@ -608,11 +608,15 @@ def profile_view(request):
 @require_http_methods(["POST"])
 @login_required(login_url='/')
 def api_profile_update(request):
-    data = json.loads(request.body)
-    name = data.get('name', '')
-    if name:
-        request.session['admin'] = name
-    return JsonResponse({'status': 'success', 'success': True})
+    try:
+        data = json.loads(request.body)
+        name = data.get('name', '')
+        if name:
+            request.session['admin'] = name
+        return JsonResponse({'status': 'success', 'success': True, 'message': 'Данные успешно сохранены!'})
+    except Exception as e:
+        print(f"Ошибка сохранения профиля: {e}")
+        return JsonResponse({'status': 'error', 'success': False, 'message': f'Ошибка на бэкенде: {str(e)}'})
 
 
 @csrf_exempt
@@ -921,26 +925,29 @@ def api_grant_premium(request, telegram_id):
 @csrf_exempt
 @require_http_methods(["GET"])
 @login_required(login_url='/')
-@login_required(login_url='/')
 def api_get_audit_logs(request):
     is_owner = request.user.id == OWNER_TELEGRAM_ID
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC LIMIT 100")
-    rows = cur.fetchall()
-    logs = []
-    for r in rows:
-        d = dict(r)
-        if d.get('admin_id'):
-            cur.execute("SELECT username FROM users WHERE user_id=?", (d['admin_id'],))
-            u = cur.fetchone()
-            d['admin_name'] = u['username'] if u else str(d['admin_id'])
-        else:
-            d['admin_name'] = '—'
-        d['ip_address'] = d.pop('ip_address', '—') or '—'
-        logs.append(d)
-    conn.close()
-    return JsonResponse({'logs': logs, 'is_owner': is_owner}, safe=False)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC LIMIT 100")
+        rows = cur.fetchall()
+        logs = []
+        for r in rows:
+            d = dict(r)
+            if d.get('admin_id'):
+                cur.execute("SELECT username FROM users WHERE user_id=?", (d['admin_id'],))
+                u = cur.fetchone()
+                d['admin_name'] = u['username'] if u else str(d['admin_id'])
+            else:
+                d['admin_name'] = '—'
+            d['ip_address'] = d.pop('ip_address', '—') or '—'
+            logs.append(d)
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка API аудита: {e}")
+        logs = []
+    return JsonResponse({'logs': logs, 'is_owner': is_owner})
 
 
 @csrf_exempt
@@ -1080,8 +1087,27 @@ def api_export_audit(request):
 @login_required(login_url='/')
 def audit_view(request):
     if request.user.id != OWNER_TELEGRAM_ID:
-        return render(request, 'errors/403.html', status=403)
-    return render(request, 'audit.html', {'active_page': 'audit'})
+        from django.http import HttpResponse; return HttpResponse('Ошибка. Вернитесь на главную: http://93.115.101', status=403)
+    logs = []
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC LIMIT 100")
+        for r in cur.fetchall():
+            d = dict(r)
+            if d.get('admin_id'):
+                cur.execute("SELECT username FROM users WHERE user_id=?", (d['admin_id'],))
+                u = cur.fetchone()
+                d['admin_name'] = u['username'] if u else str(d['admin_id'])
+            else:
+                d['admin_name'] = '—'
+            d['ip_address'] = d.pop('ip_address', '—') or '—'
+            logs.append(d)
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка аудита: {e}")
+        logs = []
+    return render(request, 'audit.html', {'active_page': 'audit', 'logs': logs})
 
 
 # ===================== ADMIN MANAGEMENT (OWNER ONLY) =====================
@@ -1089,22 +1115,34 @@ def audit_view(request):
 @login_required(login_url='/')
 def admins_view(request):
     if request.user.id != OWNER_TELEGRAM_ID:
-        return render(request, 'errors/403.html', status=403)
-    from django.contrib.auth.models import User as DjangoUser
-    admin_users = DjangoUser.objects.filter(is_staff=True).order_by('username')
+        from django.http import HttpResponse; return HttpResponse('Ошибка. Вернитесь на главную: http://93.115.101', status=403)
     admins_data = []
-    for u in admin_users:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT user_id FROM users WHERE user_id=?", (int(u.username.replace('tg_', '')) if u.username.startswith('tg_') else 0,))
-        tg_user = cur.fetchone()
-        conn.close()
-        admins_data.append({
-            'id': u.id,
-            'username': u.username,
-            'role': 'CEO' if u.id == 1 else 'Admin',
-            'telegram': f"User {tg_user['user_id']}" if tg_user else '—',
-        })
+    try:
+        from django.contrib.auth.models import User as DjangoUser
+        admin_users = DjangoUser.objects.filter(is_staff=True).order_by('username')
+        for u in admin_users:
+            tg_link = '—'
+            try:
+                conn = get_db()
+                cur = conn.cursor()
+                tg_id_str = u.username.replace('tg_', '') if u.username.startswith('tg_') else ''
+                if tg_id_str and tg_id_str.lstrip('-').isdigit():
+                    cur.execute("SELECT user_id FROM users WHERE user_id=?", (int(tg_id_str),))
+                    tg_user = cur.fetchone()
+                    if tg_user:
+                        tg_link = f"User {tg_user['user_id']}"
+                conn.close()
+            except Exception:
+                pass
+            admins_data.append({
+                'id': u.id,
+                'username': u.username,
+                'role': 'CEO' if u.id == 1 else 'Admin',
+                'telegram': tg_link,
+            })
+    except Exception as e:
+        print(f"Ошибка загрузки администраторов: {e}")
+        admins_data = []
     return render(request, 'admins.html', {'active_page': 'admins', 'admins': admins_data})
 
 

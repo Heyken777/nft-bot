@@ -32,15 +32,13 @@ def safe_db(func):
             return func(*args, **kwargs)
         except sqlite3.Error as e:
             if len(args) > 0 and hasattr(args[0], 'META'):
-                request = args[0]
-                from django.shortcuts import render
-                return render(request, 'errors/db_error.html', {'error': str(e)}, status=500)
+                from django.http import HttpResponse
+                return HttpResponse('Ошибка. Вернитесь на главную: http://93.115.101', status=500)
             return JsonResponse({'success': False, 'error': 'Database error'}, status=500)
         except Exception as e:
             if len(args) > 0 and hasattr(args[0], 'META'):
-                request = args[0]
-                from django.shortcuts import render
-                return render(request, 'errors/db_error.html', {'error': str(e)}, status=500)
+                from django.http import HttpResponse
+                return HttpResponse('Ошибка. Вернитесь на главную: http://93.115.101', status=500)
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
     return wrapper
 

@@ -51,6 +51,7 @@ urlpatterns = [
 
     # Аудит
     path('audit/', views.audit_view, name='audit'),
+    path('api/audit/', views.api_get_audit_logs),
     path('api/audit/logs/', views.api_get_audit_logs),
     path('api/audit/clear/', views.api_clear_audit),
     path('api/audit/export/', views.api_export_audit),
