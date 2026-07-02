@@ -36,8 +36,14 @@
         .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:1000;align-items:center;justify-content:center}
         .modal.active{display:flex}
         .modal-content{background:rgba(15,15,25,0.75);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:20px;padding:32px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.6)}
-        .toast{position:fixed;bottom:20px;right:20px;padding:14px 24px;border-radius:12px;color:#fff;font-weight:500;z-index:2000;animation:slideIn 0.3s ease;background:rgba(255,0,102,0.85);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 32px rgba(0,0,0,0.4)}
-        @keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+        :root{--toast-s:#2ed573;--toast-e:#ff4757}
+        .toast-glass{position:fixed;top:24px;right:24px;padding:16px 24px;border-radius:14px;color:#fff;font-weight:500;font-size:14px;z-index:9999;display:flex;align-items:center;gap:10px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid;box-shadow:0 8px 40px rgba(0,0,0,0.5);animation:toastIn 0.35s ease;max-width:420px}
+        .toast-glass.success{background:rgba(46,213,115,0.18);border-color:rgba(46,213,115,0.35)}
+        .toast-glass.error{background:rgba(255,71,87,0.18);border-color:rgba(255,71,87,0.35)}
+        .toast-glass.info{background:rgba(0,163,255,0.18);border-color:rgba(0,163,255,0.35)}
+        .toast-glass i{font-size:18px}
+        @keyframes toastIn{from{opacity:0;transform:translateX(60px) scale(0.92)}to{opacity:1;transform:translateX(0) scale(1)}}
+        @keyframes toastOut{from{opacity:1;transform:translateX(0) scale(1)}to{opacity:0;transform:translateX(60px) scale(0.92)}}
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -78,11 +84,12 @@
             window.location.href = '/login';
         }
 
-        function showToast(msg) {
-            const t = document.createElement('div');
-            t.className = 'toast'; t.innerText = msg;
-            document.body.appendChild(t);
-            setTimeout(() => t.remove(), 3000);
+        function showToast(message, type = 'success') {
+            const el = document.createElement('div');
+            el.className = 'toast-glass ' + type;
+            el.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i> ${message}`;
+            document.body.appendChild(el);
+            setTimeout(() => { el.style.animation = 'toastOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 3200);
         }
 
         function navigate(page) {
@@ -194,12 +201,10 @@
 }
 
         function changeBalance(userId) {
-            const amount = prompt('Сумма (+ для начисления, - для списания):');
-            if(amount) {
-                api(`/api/users/${userId}/balance`, 'POST', {amount: parseFloat(amount), reason: 'Ручное изменение'});
-                showToast('Баланс обновлён');
-                navigate('users');
-            }
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `<div class="modal-content"><h3>Изменить баланс</h3><p style="color:#8892a4;margin-bottom:12px;">Сумма (+ начисление, - списание)</p><input class="form-control" id="balAmount" type="number" step="0.01" placeholder="0.00"><div style="display:flex;gap:8px;margin-top:16px;"><button class="btn btn-primary" onclick="const v=document.getElementById('balAmount').value;if(v){api('/api/users/${userId}/balance','POST',{amount:parseFloat(v),reason:'Ручное изменение'}).then(()=>{showToast('Баланс обновлён');document.querySelector('.modal.active').remove();navigate('users');});}">Применить</button><button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button></div></div>`;
+            document.body.appendChild(modal);
         }
 
         function subscriptions(c) { c.innerHTML = '<h1>Подписки</h1><p>Загрузка...</p>'; }
@@ -548,19 +553,16 @@ window.saveAdminEdit = async function() {
 }
 
         function addAdmin() {
-            const name = prompt('Имя нового администратора:');
-            const role = prompt('Роль (Admin):', 'Admin');
-            if(name) {
-                api('/api/admins', 'POST', {name, role}).then(data => {
-                    alert(`UUID пароль: ${data.uuid}\nЗапишите его!`);
-                    navigate('admins');
-                });
-            }
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `<div class="modal-content"><h3>Добавить администратора</h3><input class="form-control" id="newAdminName" placeholder="Имя"><select class="form-control" id="newAdminRole"><option value="Admin">Admin</option><option value="Moderator">Moderator</option><option value="Support">Support</option><option value="CEO">CEO</option></select><div style="display:flex;gap:8px;margin-top:16px;"><button class="btn btn-primary" onclick="const n=document.getElementById('newAdminName').value.trim();const r=document.getElementById('newAdminRole').value;if(n){api('/api/admins','POST',{name:n,role:r}).then(d=>{document.querySelector('.modal.active').remove();showToast('Создан: '+n+' | Пароль: '+d.uuid,'info');navigator.clipboard.writeText(d.uuid).catch(()=>{});navigate('admins');});}">Создать</button><button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button></div></div>`;
+            document.body.appendChild(modal);
         }
 
         async function resetUUID(name) {
             const data = await api(`/api/admins/${name}/reset-uuid`, 'POST');
-            alert(`Новый UUID для ${name}: ${data.new_uuid}`);
+            navigator.clipboard.writeText(data.new_uuid).catch(() => {});
+            showToast('Пароль скопирован в буфер обмена', 'info');
         }
 
         async function profile(c) {

@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate, login as auth_login
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
+DB_PATH = os.path.join(BASE_DIR, 'novixgift.db')
 OWNER_TELEGRAM_ID = 1803437347
 
 
@@ -132,6 +132,7 @@ def _to_rub(amount, currency):
 @session_required
 def dashboard_view(request):
     ctx = {}
+    ceo = request.session.get('telegram_id') == OWNER_TELEGRAM_ID
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -653,7 +654,10 @@ def api_profile_update(request):
         conn = get_db()
         cur = conn.cursor()
         if tid:
-            cur.execute("UPDATE users SET username=? WHERE user_id=?", (name or 'Arkadiex', tid))
+            if tid == OWNER_TELEGRAM_ID:
+                cur.execute("UPDATE users SET username=? WHERE user_id=?", (name or 'Arkadiex', tid))
+            else:
+                cur.execute("UPDATE users SET username=? WHERE user_id=?", (name, tid))
             conn.commit()
         conn.close()
         if name:

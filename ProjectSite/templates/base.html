@@ -12,6 +12,14 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
         
+        :root { --toast-success: #2ed573; --toast-error: #ff4757; }
+        .toast-glass { position:fixed; top:24px; right:24px; padding:16px 24px; border-radius:14px; color:#fff; font-weight:500; font-size:14px; z-index:9999; display:flex; align-items:center; gap:10px; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid; box-shadow:0 8px 40px rgba(0,0,0,0.5); animation:toastIn 0.35s ease; max-width:420px; }
+        .toast-glass.success { background:rgba(46,213,115,0.18); border-color:rgba(46,213,115,0.35); }
+        .toast-glass.error { background:rgba(255,71,87,0.18); border-color:rgba(255,71,87,0.35); }
+        .toast-glass i { font-size:18px; }
+        @keyframes toastIn { from { opacity:0; transform:translateX(60px) scale(0.92); } to { opacity:1; transform:translateX(0) scale(1); } }
+        @keyframes toastOut { from { opacity:1; transform:translateX(0) scale(1); } to { opacity:0; transform:translateX(60px) scale(0.92); } }
+        
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
@@ -153,6 +161,13 @@
         }
         
         .sidebar a i { width: 24px; text-align: center; }
+        .sidebar-user { display:flex; align-items:center; gap:12px; padding:16px; margin-bottom:24px; background:rgba(255,255,255,0.04); border-radius:14px; border:1px solid rgba(255,255,255,0.06); }
+        .sidebar-user .avatar { width:44px; height:44px; border-radius:50%; background:linear-gradient(135deg,#ff0066,#ff6600); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:18px; flex-shrink:0; }
+        .sidebar-user .info { flex:1; min-width:0; }
+        .sidebar-user .name { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .sidebar-user .role { font-size:11px; }
+        .role-ceo { color:#d4af37; }
+        .role-admin { color:#00a3ff; }
         
         .sidebar a:hover, .sidebar a.active {
             background: rgba(255, 0, 102, 0.15);
@@ -514,6 +529,19 @@ code {
     <div class="sidebar">
         <h2>NovixGift</h2>
         <div class="sidebar-version">✦ ESCROW PANEL v1.0 ✦</div>
+        <div class="sidebar-user">
+            <div class="avatar">{{ user_name|default:"A"|first }}</div>
+            <div class="info">
+                <div class="name">{{ user_name|default:admin_name|default:"Admin" }}</div>
+                <div class="role {% if is_ceo %}role-ceo{% else %}role-admin{% endif %}">
+                    {% if is_ceo %}
+                    👑 CEO / Владелец
+                    {% else %}
+                    🔹 Администратор
+                    {% endif %}
+                </div>
+            </div>
+        </div>
         <a href="/dashboard/" class="{% if active_page == 'dashboard' %}active{% endif %}">
             <i class="fas fa-tachometer-alt"></i> Дашборд
         </a>
@@ -582,11 +610,11 @@ code {
         }
         
         function showToast(message, type = 'success') {
-            const toast = document.createElement('div');
-            toast.className = 'toast-custom';
-            toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i> ${message}`;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3500);
+            const el = document.createElement('div');
+            el.className = 'toast-glass ' + type;
+            el.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${message}`;
+            document.body.appendChild(el);
+            setTimeout(() => { el.style.animation = 'toastOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 3200);
         }
         
         function logout() {
