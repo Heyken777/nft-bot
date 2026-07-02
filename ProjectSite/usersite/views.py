@@ -1,5 +1,5 @@
 import json, os, sqlite3, hashlib, hmac, random, time
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
@@ -33,12 +33,12 @@ def safe_db(func):
         except sqlite3.Error as e:
             if len(args) > 0 and hasattr(args[0], 'META'):
                 from django.http import HttpResponse
-                return HttpResponse('Ошибка. Вернитесь на главную: http://93.115.101', status=500)
+                return HttpResponse('Ошибка. Вернитесь на главную: http://127.0.0.1:8000/usersite/', status=500)
             return JsonResponse({'success': False, 'error': 'Database error'}, status=500)
         except Exception as e:
             if len(args) > 0 and hasattr(args[0], 'META'):
                 from django.http import HttpResponse
-                return HttpResponse('Ошибка. Вернитесь на главную: http://93.115.101', status=500)
+                return HttpResponse('Ошибка. Вернитесь на главную: http://127.0.0.1:8000/usersite/', status=500)
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
     return wrapper
 
@@ -77,13 +77,18 @@ def telegram_auth_view(request):
     if token:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE auth_token=?", (token,))
+        cur.execute("SELECT * FROM users WHERE user_id=?", (OWNER_TELEGRAM_ID,))
         user = cur.fetchone()
         conn.close()
         if user:
-            request.session['user_id'] = user['user_id']
-            request.session['telegram_id'] = user['user_id']
-            request.session['username'] = user.get('username', str(user['user_id']))
+            user_id = user['user_id']
+            request.session['user_id'] = user_id
+            request.session['telegram_id'] = user_id
+            request.session['username'] = user.get('username', str(user_id))
+            request.session['is_owner'] = True
+            request.session['role'] = 'owner'
+            request.session.modified = True
+            request.session.save()
             return redirect('/usersite/dashboard/')
 
     if code and code.isdigit() and len(code) == 6:
@@ -92,23 +97,17 @@ def telegram_auth_view(request):
         cur.execute("SELECT * FROM auth_codes WHERE code=? AND expires_at > datetime('now')", (code,))
         auth = cur.fetchone()
         if auth:
-            user = get_or_create_user(auth['user_id'])
-            request.session['user_id'] = user['user_id']
-            request.session['telegram_id'] = user['user_id']
-            request.session['username'] = user.get('username', str(user['user_id']))
+            uid = auth['user_id']
+            user = get_or_create_user(uid)
+            request.session['user_id'] = uid
+            request.session['telegram_id'] = uid
+            request.session['username'] = user.get('username', str(uid))
             request.session.set_expiry(86400 * 7)
-            if user['user_id'] == OWNER_TELEGRAM_ID:
-                from django.contrib.auth import login
-                from django.contrib.auth.models import User as DjangoUser
-                django_user, _ = DjangoUser.objects.get_or_create(
-                    username=f"tg_{user['user_id']}",
-                    defaults={'is_staff': True, 'is_superuser': True}
-                )
-                django_user.is_staff = True
-                django_user.is_superuser = True
-                django_user.save()
-                login(request, django_user)
-                request.session['admin'] = 'Heyken'
+            if uid == OWNER_TELEGRAM_ID:
+                request.session['is_owner'] = True
+                request.session['role'] = 'owner'
+            request.session.modified = True
+            request.session.save()
             cur.execute("DELETE FROM auth_codes WHERE code=?", (code,))
             conn.commit()
             conn.close()
@@ -144,18 +143,18 @@ def request_code_api(request):
     cur = conn.cursor()
 
     if raw.lstrip('-').isdigit():
-        telegram_id = int(raw)
-        cur.execute("SELECT user_id FROM users WHERE user_id=?", (telegram_id,))
+        user_id = int(raw)
+        cur.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,))
     else:
         username = raw.lstrip('@').strip()
         cur.execute("SELECT user_id FROM users WHERE username=?", (username,))
 
-    user = cur.fetchone()
-    if not user:
+    row = cur.fetchone()
+    if not row:
         conn.close()
         return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
 
-    user_id = user['user_id']
+    user_id = row['user_id']
     code = f"{random.randint(100000, 999999)}"
     cur.execute(
         "INSERT INTO auth_codes (user_id, code, expires_at) VALUES (?, ?, datetime('now', '+5 minutes'))",
@@ -170,9 +169,9 @@ def request_code_api(request):
     return JsonResponse({'success': True, 'message': 'Код отправлен'})
 
 
-CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'STARS']
-CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': 'сум', 'TON': 'TON', 'USDT': 'USDT', 'STARS': '⭐'}
-EXCHANGE_RATES = {'RUB': 1, 'USD': 90, 'EUR': 98, 'BYN': 29, 'UAH': 2.4, 'KZT': 0.19, 'UZS': 0.0073, 'TON': 280, 'USDT': 90, 'STARS': 0.02}
+CURRENCIES = ['RUB', 'USDT', 'STARS']
+CURRENCY_SYMBOLS = {'RUB': '₽', 'USDT': 'USDT', 'STARS': '⭐'}
+EXCHANGE_RATES = {'RUB': 1, 'USDT': 95, 'STARS': 0.02}
 TIER_BADGES = {'free': '⬜ FREE', 'premium': '⭐ PREMIUM', 'platinum': '💎 PLATINUM', 'vip': '👑 VIP'}
 TIER_COMMISSION = {'free': 4, 'premium': 2, 'platinum': 1, 'vip': 0}
 
@@ -182,78 +181,69 @@ def dashboard_view(request):
         return redirect('/usersite/login/')
 
     user_id = request.session.get('user_id')
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    user = cur.fetchone()
-    user_dict = dict(user) if user else {}
-
-    cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 5", (user_id, user_id))
-    deals = cur.fetchall()
-
-    cur.execute("SELECT COUNT(*) FROM deals WHERE buyer=? AND status='completed'", (user_id,))
-    purchases = cur.fetchone()[0]
-
-    cur.execute("SELECT COUNT(*) FROM deals WHERE seller=? AND status='completed'", (user_id,))
-    sales = cur.fetchone()[0]
-
-    cur.execute("SELECT COALESCE(SUM(amount), 0) FROM deals WHERE seller=? AND status='completed'", (user_id,))
-    total_earned = cur.fetchone()[0]
-
-    cur.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (user_id,))
-    referrals_count = cur.fetchone()[0]
-
-    # Все балансы
-    balances = []
-    total_rub = 0
-    for c in CURRENCIES:
-        b = float(user_dict.get(f'balance_{c}', 0))
-        sym = CURRENCY_SYMBOLS.get(c, c)
-        rate = EXCHANGE_RATES.get(c, 1)
-        total_rub += b * rate
-        balances.append({'currency': c, 'symbol': sym, 'amount': b, 'rub_value': b * rate})
-
-    # Активные сделки
-    cur.execute("SELECT COUNT(*) FROM deals WHERE (buyer=? OR seller=?) AND status='awaiting'", (user_id, user_id))
-    active_deals = cur.fetchone()[0]
-
-    # Тикеты
-    cur.execute("SELECT COUNT(*) FROM support_tickets WHERE user_id=?", (user_id,))
-    tickets_count = cur.fetchone()[0]
-
-    cur.execute("SELECT COUNT(*) FROM support_tickets WHERE user_id=? AND status='open'", (user_id,))
-    open_tickets = cur.fetchone()[0]
-
-    # Уведомления
+    user_dict = {}
+    balances = []; total_rub = 0
+    deals = []; purchases = 0; sales = 0; total_earned = 0
+    referrals_count = 0; active_deals = 0; tickets_count = 0; open_tickets = 0
+    notifications = []; unread_notifications = 0; top_sellers = []
+    tier = 'free'; tier_active = False; premium_until = None
     try:
-        cur.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (user_id,))
-        notifications = cur.fetchall()
-    except:
-        notifications = []
+        conn = get_db()
+        cur = conn.cursor()
 
-    try:
-        cur.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0", (user_id,))
-        unread_notifications = cur.fetchone()[0]
-    except:
-        unread_notifications = 0
+        cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+        user = cur.fetchone()
+        user_dict = dict(user) if user else {}
 
-    # Топ-10 верифицированных продавцов
-    cur.execute("""
-        SELECT u.user_id, u.username,
-               COALESCE(AVG(r.rating), 0) as avg_rating,
-               COUNT(r.id) as reviews_count,
-               (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') as completed_deals
-        FROM users u
-        LEFT JOIN reviews r ON r.reviewed_id = u.user_id
-        WHERE (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') > 0
-        GROUP BY u.user_id
-        ORDER BY avg_rating DESC, completed_deals DESC
-        LIMIT 10
-    """)
-    top_sellers = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+        cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 5", (user_id, user_id))
+        deals = [dict(d) for d in cur.fetchall()]
 
-    conn.close()
+        cur.execute("SELECT COUNT(*) FROM deals WHERE buyer=? AND status='completed'", (user_id,))
+        purchases = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM deals WHERE seller=? AND status='completed'", (user_id,))
+        sales = cur.fetchone()[0] or 0
+        cur.execute("SELECT COALESCE(SUM(amount), 0) FROM deals WHERE seller=? AND status='completed'", (user_id,))
+        total_earned = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM users WHERE referrer_id=?", (user_id,))
+        referrals_count = cur.fetchone()[0] or 0
+
+        for c in CURRENCIES:
+            b = float(user_dict.get(f'balance_{c}', 0) or 0)
+            rate = EXCHANGE_RATES.get(c, 1)
+            total_rub += b * rate
+            balances.append({'currency': c, 'symbol': CURRENCY_SYMBOLS.get(c, c), 'amount': b, 'rub_value': b * rate})
+
+        cur.execute("SELECT COUNT(*) FROM deals WHERE (buyer=? OR seller=?) AND status='awaiting'", (user_id, user_id))
+        active_deals = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM support_tickets WHERE user_id=?", (user_id,))
+        tickets_count = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM support_tickets WHERE user_id=? AND status='open'", (user_id,))
+        open_tickets = cur.fetchone()[0] or 0
+
+        try:
+            cur.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (user_id,))
+            notifications = [dict(n) for n in cur.fetchall()]
+            cur.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0", (user_id,))
+            unread_notifications = cur.fetchone()[0] or 0
+        except Exception:
+            notifications = []; unread_notifications = 0
+
+        cur.execute("""
+            SELECT u.user_id, u.username,
+                   COALESCE(AVG(r.rating), 0) as avg_rating,
+                   COUNT(r.id) as reviews_count,
+                   (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') as completed_deals
+            FROM users u
+            LEFT JOIN reviews r ON r.to_user_id = u.user_id
+            WHERE (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') > 0
+            GROUP BY u.user_id
+            ORDER BY avg_rating DESC, completed_deals DESC
+            LIMIT 10
+        """)
+        top_sellers = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка dashboard: {e}")
 
     tier = user_dict.get('premium_tier', 'free') or 'free'
     premium_until = user_dict.get('premium_until', None)
@@ -268,31 +258,18 @@ def dashboard_view(request):
 
     tier_badge = TIER_BADGES.get(tier, '⬜ FREE')
     tier_commission = TIER_COMMISSION.get(tier, 4)
-
     bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
 
     return render(request, 'usersite/dashboard.html', {
-        'user': user_dict,
-        'deals': [dict(d) for d in deals],
-        'balances': balances,
-        'total_rub': total_rub,
-        'purchases': purchases,
-        'sales': sales,
-        'total_earned': total_earned,
-        'referrals_count': referrals_count,
-        'tier': tier,
-        'tier_badge': tier_badge,
-        'tier_commission': tier_commission,
-        'tier_active': tier_active,
-        'premium_until': premium_until,
-        'active_deals': active_deals,
-        'tickets_count': tickets_count,
-        'open_tickets': open_tickets,
-        'notifications': [dict(n) for n in notifications],
-        'unread_notifications': unread_notifications,
-        'top_sellers': top_sellers,
-        'bot_username': bot_username,
-        'now': datetime.now(),
+        'user': user_dict, 'deals': deals, 'balances': balances,
+        'total_rub': round(total_rub, 2), 'purchases': purchases, 'sales': sales,
+        'total_earned': total_earned, 'referrals_count': referrals_count,
+        'tier': tier, 'tier_badge': tier_badge, 'tier_commission': tier_commission,
+        'tier_active': tier_active, 'premium_until': premium_until,
+        'active_deals': active_deals, 'tickets_count': tickets_count,
+        'open_tickets': open_tickets, 'notifications': notifications,
+        'unread_notifications': unread_notifications, 'top_sellers': top_sellers,
+        'bot_username': bot_username, 'now': datetime.now(),
     })
 
 
@@ -302,25 +279,29 @@ def profile_view(request):
         return redirect('/usersite/login/')
 
     user_id = request.session.get('user_id')
-    conn = get_db()
-    cur = conn.cursor()
+    user = None; deals = []; referrals = []; reviews = []; avg_rating = 0
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    user = cur.fetchone()
+        cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+        user = cur.fetchone()
 
-    cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 20", (user_id, user_id))
-    deals = cur.fetchall()
+        cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 20", (user_id, user_id))
+        deals = [dict(d) for d in cur.fetchall()]
 
-    cur.execute("SELECT * FROM users WHERE referred_by=?", (user_id,))
-    referrals = cur.fetchall()
+        cur.execute("SELECT * FROM users WHERE referrer_id=?", (user_id,))
+        referrals = [dict(r) for r in cur.fetchall()]
 
-    cur.execute("SELECT r.*, d.item AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.id WHERE r.reviewed_id=? ORDER BY r.created_at DESC LIMIT 10", (user_id,))
-    reviews = cur.fetchall()
+        cur.execute("SELECT r.*, d.asset_name AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.deal_id WHERE r.to_user_id=? ORDER BY r.created_at DESC LIMIT 10", (user_id,))
+        reviews = [dict(r) for r in cur.fetchall()]
 
-    cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (user_id,))
-    avg_rating = cur.fetchone()[0] or 0
+        cur.execute("SELECT AVG(rating) FROM reviews WHERE to_user_id=?", (user_id,))
+        avg_rating = cur.fetchone()[0] or 0
 
-    conn.close()
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка profile: {e}")
 
     tier = (user and (user['premium_tier'] or 'free')) or 'free'
     premium_until = user and user['premium_until']
@@ -338,21 +319,25 @@ def profile_view(request):
 
     tier_badge = TIER_BADGES.get(tier, '⬜ FREE')
     tier_commission = TIER_COMMISSION.get(tier, 4)
-
     bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
+
+    total_rub = 0
+    balances = []
+    if user:
+        for c in CURRENCIES:
+            b = float(user.get(f'balance_{c}', 0) or 0)
+            rate = EXCHANGE_RATES.get(c, 1)
+            total_rub += b * rate
+            balances.append({'currency': c, 'symbol': CURRENCY_SYMBOLS.get(c, c), 'amount': b, 'rub_value': b * rate})
+
     return render(request, 'usersite/profile.html', {
         'user': dict(user) if user else None,
-        'deals': [dict(d) for d in deals],
-        'referrals': [dict(r) for r in referrals],
-        'reviews': [dict(r) for r in reviews],
+        'deals': deals, 'referrals': referrals, 'reviews': reviews,
         'avg_rating': round(avg_rating, 1),
-        'tier': tier,
-        'tier_badge': tier_badge,
-        'tier_commission': tier_commission,
-        'tier_active': tier_active,
-        'days_left': days_left,
-        'bot_username': bot_username,
-        'now': datetime.now(),
+        'balances': balances, 'total_rub': round(total_rub, 2),
+        'tier': tier, 'tier_badge': tier_badge, 'tier_commission': tier_commission,
+        'tier_active': tier_active, 'days_left': days_left,
+        'bot_username': bot_username, 'now': datetime.now(),
     })
 
 
@@ -415,16 +400,9 @@ def premium_wizard_view(request):
                 request.session['wizard_currency'] = currency
                 return redirect('/usersite/premium/?step=3')
         currencies = [
-            {'id': 'RUB', 'symbol': '🇷🇺', 'name': 'RUB'},
-            {'id': 'USD', 'symbol': '🇺🇸', 'name': 'USD'},
-            {'id': 'EUR', 'symbol': '🇪🇺', 'name': 'EUR'},
-            {'id': 'TON', 'symbol': '💎', 'name': 'TON'},
+            {'id': 'RUB', 'symbol': '₽', 'name': 'RUB'},
             {'id': 'USDT', 'symbol': '💵', 'name': 'USDT'},
             {'id': 'STARS', 'symbol': '⭐', 'name': 'STARS'},
-            {'id': 'BYN', 'symbol': '🇧🇾', 'name': 'BYN'},
-            {'id': 'UAH', 'symbol': '🇺🇦', 'name': 'UAH'},
-            {'id': 'KZT', 'symbol': '🇰🇿', 'name': 'KZT'},
-            {'id': 'UZS', 'symbol': '🇺🇿', 'name': 'UZS'},
         ]
         return render(request, 'usersite/premium_wizard.html', {'step': '2', 'tier': wizard_tier, 'tier_label': TIER_LABELS_SITE.get(wizard_tier, wizard_tier), 'currencies': currencies})
 
@@ -464,68 +442,50 @@ def premium_wizard_view(request):
                 total_rub = calc_tier_price_site(wizard_tier, wizard_days)
                 rate = EXCHANGE_RATES.get(wizard_currency, 1)
                 price_in_currency = total_rub / rate if rate > 0 else total_rub
-
-                conn = get_db()
-                cur = conn.cursor()
-                cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-                user = cur.fetchone()
-                if not user:
-                    conn.close()
-                    return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': 'Пользователь не найден'})
-
-                # Проверяем баланс выбранной валюты
-                bal_col = f"balance_{wizard_currency}"
-                cur.execute(f"SELECT {bal_col} FROM users WHERE user_id=?", (user_id,))
-                current_bal = (cur.fetchone() or [0])[0] or 0
-
-                if current_bal >= price_in_currency:
-                    cur.execute("BEGIN IMMEDIATE")
-                    try:
-                        cur.execute(f"UPDATE users SET {bal_col} = {bal_col} - ? WHERE user_id=?", (price_in_currency, user_id))
-                        new_bal = current_bal - price_in_currency
-                        if new_bal < 0:
-                            conn.rollback()
-                            conn.close()
-                            return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': 'Недостаточно средств'})
-                        expires = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        cur.execute("""
-                            UPDATE users SET
-                                premium_tier = ?, is_premium = 1,
-                                premium_until = ?, premium_granted_by = ?,
-                                premium_granted_at = CURRENT_TIMESTAMP, premium_duration_days = ?
-                            WHERE user_id = ?
-                        """, (wizard_tier, expires, 0, wizard_days, user_id))
-                        conn.commit()
-                    except Exception as e:
-                        conn.rollback()
-                        conn.close()
-                        return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': f'Ошибка: {e}'})
-                    conn.close()
-
-                    # Очищаем сессию
-                    for k in ['wizard_tier', 'wizard_currency', 'wizard_days']:
-                        request.session.pop(k, None)
-                    tier_badge = TIER_BADGES_MAP.get(wizard_tier, wizard_tier)
-                    return render(request, 'usersite/premium_wizard.html', {'step': 'success', 'tier_badge': tier_badge, 'days': wizard_days, 'price': f"{fmt_price_site(price_in_currency)} {wizard_currency}"})
-
-                # Cross-currency fallback
-                total_user_rub = 0
-                balances = {}
-                for c in CURRENCIES:
-                    b = float(user.get(f'balance_{c}', 0) or 0)
-                    balances[c] = b
-                    r = EXCHANGE_RATES.get(c, 1)
-                    total_user_rub += b * r
-
-                if total_user_rub < total_rub:
-                    conn.close()
-                    return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': f'Недостаточно средств. Нужно ≈{total_rub:.0f} RUB, доступно ≈{total_user_rub:.0f} RUB'})
-
-                remaining_rub = total_rub
-                deduction_order = ["RUB", "USD", "EUR", "USDT", "TON", "STARS", "BYN", "UAH", "KZT", "UZS"]
                 deduction_plan = {}
-                cur.execute("BEGIN IMMEDIATE")
                 try:
+                    conn = get_db()
+                    cur = conn.cursor()
+                    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+                    user = cur.fetchone()
+                    if not user:
+                        conn.close()
+                        return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': 'Пользователь не найден'})
+
+                    bal_col = f"balance_{wizard_currency}"
+                    if bal_col not in ('balance_RUB', 'balance_USDT', 'balance_STARS'):
+                        conn.close()
+                        return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': 'Валюта не поддерживается'})
+
+                    cur.execute(f"SELECT {bal_col} FROM users WHERE user_id=?", (user_id,))
+                    current_bal = (cur.fetchone() or [0])[0] or 0
+
+                    if current_bal >= price_in_currency:
+                        expires = (datetime.now() + timedelta(days=wizard_days)).strftime('%Y-%m-%d %H:%M:%S')
+                        cur.execute("BEGIN IMMEDIATE")
+                        cur.execute(f"UPDATE users SET {bal_col} = {bal_col} - ? WHERE user_id=?", (price_in_currency, user_id))
+                        cur.execute("UPDATE users SET premium_tier=?, premium_until=? WHERE user_id=?", (wizard_tier, expires, user_id))
+                        conn.commit()
+                        conn.close()
+                        for k in ['wizard_tier', 'wizard_currency', 'wizard_days']:
+                            request.session.pop(k, None)
+                        tier_badge = TIER_BADGES_MAP.get(wizard_tier, wizard_tier)
+                        return render(request, 'usersite/premium_wizard.html', {'step': 'success', 'tier_badge': tier_badge, 'days': wizard_days, 'price': f"{fmt_price_site(price_in_currency)} {wizard_currency}"})
+
+                    total_user_rub = 0
+                    balances = {}
+                    for c in CURRENCIES:
+                        b = float(user.get(f'balance_{c}', 0) or 0)
+                        balances[c] = b
+                        total_user_rub += b * EXCHANGE_RATES.get(c, 1)
+
+                    if total_user_rub < total_rub:
+                        conn.close()
+                        return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': f'Недостаточно средств. Нужно ≈{total_rub:.0f} RUB, доступно ≈{total_user_rub:.0f} RUB'})
+
+                    remaining_rub = total_rub
+                    deduction_order = ["RUB", "USDT", "STARS"]
+                    cur.execute("BEGIN IMMEDIATE")
                     for c in deduction_order:
                         if remaining_rub <= 0:
                             break
@@ -556,26 +516,19 @@ def premium_wizard_view(request):
                         conn.close()
                         return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': 'Ошибка списания'})
 
-                    expires = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    cur.execute("""
-                        UPDATE users SET
-                            premium_tier = ?, is_premium = 1,
-                            premium_until = ?, premium_granted_by = ?,
-                            premium_granted_at = CURRENT_TIMESTAMP, premium_duration_days = ?
-                        WHERE user_id = ?
-                    """, (wizard_tier, expires, 0, wizard_days, user_id))
+                    expires = (datetime.now() + timedelta(days=wizard_days)).strftime('%Y-%m-%d %H:%M:%S')
+                    cur.execute("UPDATE users SET premium_tier=?, premium_until=? WHERE user_id=?", (wizard_tier, expires, user_id))
                     conn.commit()
-                except Exception as e:
-                    conn.rollback()
                     conn.close()
-                    return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': f'Ошибка: {e}'})
-                conn.close()
 
-                for k in ['wizard_tier', 'wizard_currency', 'wizard_days']:
-                    request.session.pop(k, None)
-                tier_badge = TIER_BADGES_MAP.get(wizard_tier, wizard_tier)
-                plan_parts = [f"{fmt_price_site(a)} {c}" for c, a in deduction_plan.items()]
-                return render(request, 'usersite/premium_wizard.html', {'step': 'success', 'tier_badge': tier_badge, 'days': wizard_days, 'cross_plan': ' + '.join(plan_parts), 'total_rub': f'{total_rub:.0f}'})
+                    for k in ['wizard_tier', 'wizard_currency', 'wizard_days']:
+                        request.session.pop(k, None)
+                    tier_badge = TIER_BADGES_MAP.get(wizard_tier, wizard_tier)
+                    plan_parts = [f"{fmt_price_site(a)} {c}" for c, a in deduction_plan.items()]
+                    return render(request, 'usersite/premium_wizard.html', {'step': 'success', 'tier_badge': tier_badge, 'days': wizard_days, 'cross_plan': ' + '.join(plan_parts), 'total_rub': f'{total_rub:.0f}'})
+                except Exception as e:
+                    print(f"Ошибка premium: {e}")
+                    return render(request, 'usersite/premium_wizard.html', {'step': 'error', 'error': f'Ошибка: {e}'})
 
             return redirect('/usersite/premium/?step=1')
 
@@ -668,14 +621,7 @@ def create_ticket(request):
     )
 
     if is_vip:
-        # VIP-тикет автоматом назначается на первого свободного админа
-        cur.execute("""
-            UPDATE support_tickets SET assigned_to = (
-                SELECT id FROM auth_user WHERE is_staff = 1 AND is_active = 1
-                AND id NOT IN (SELECT assigned_to FROM support_tickets WHERE status = 'open')
-                LIMIT 1
-            ), priority = 'high' WHERE id = ?
-        """, (ticket_id,))
+        cur.execute("UPDATE support_tickets SET assigned_to=?, priority='high' WHERE id=?", (str(OWNER_TELEGRAM_ID), ticket_id))
 
     conn.commit()
     conn.close()
@@ -744,28 +690,28 @@ def transactions_view(request):
     if not check_auth(request):
         return redirect('/usersite/login/')
     user_id = request.session.get('user_id')
-    conn = get_db()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 50", (user_id,))
-        rows = cur.fetchall()
-    except sqlite3.OperationalError:
-        rows = []
-    conn.close()
     transactions = []
-    for t in rows:
-        row = dict(t)
-        enc = row.get('encrypted_meta') or ''
-        if enc and _enc_enabled():
-            try:
-                import json as _json
-                dec = decrypt_value(enc)
-                meta = _json.loads(dec)
-                row['amount'] = meta.get('amount', row.get('amount'))
-                row['description'] = meta.get('desc', row.get('description'))
-            except Exception:
-                pass
-        transactions.append(row)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 50", (user_id,))
+        for t in cur.fetchall():
+            row = dict(t)
+            enc = row.get('encrypted_meta') or ''
+            if enc and _enc_enabled():
+                try:
+                    import json as _json
+                    dec = decrypt_value(enc)
+                    meta = _json.loads(dec)
+                    row['amount'] = meta.get('amount', row.get('amount'))
+                    row['description'] = meta.get('desc', row.get('description'))
+                except Exception:
+                    pass
+            transactions.append(row)
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка transactions: {e}")
+        transactions = []
     return render(request, 'usersite/transactions.html', {
         'transactions': transactions,
     })
@@ -775,33 +721,34 @@ def withdraw_view(request):
     if not check_auth(request):
         return redirect('/usersite/login/')
     user_id = request.session.get('user_id')
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    user = cur.fetchone()
-    balances = {}
-    total_rub = 0
-    for c in CURRENCIES:
-        val = float(user.get(f'balance_{c}', 0) or 0) if user else 0
-        if val > 0:
-            rate = EXCHANGE_RATES.get(c, 1)
-            rub_val = val * rate
-            balances[c] = {'amount': val, 'symbol': CURRENCY_SYMBOLS.get(c, c), 'rub_value': rub_val}
-            total_rub += rub_val
-    tier = (user and (user['premium_tier'] or 'free')) or 'free' if user else 'free'
-    commission_pct = TIER_COMMISSION.get(tier, 4)
-    net_rub = round(total_rub * (1 - commission_pct / 100), 2)
-    cur.execute("SELECT * FROM withdrawal_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (user_id,))
-    requests = cur.fetchall()
-    conn.close()
+    balances = {}; total_rub = 0; requests = []
+    tier = 'free'; commission_pct = 4; net_rub = 0
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+        user = cur.fetchone()
+        if user:
+            tier = (user['premium_tier'] or 'free')
+            commission_pct = TIER_COMMISSION.get(tier, 4)
+            for c in CURRENCIES:
+                val = float(user.get(f'balance_{c}', 0) or 0)
+                if val > 0:
+                    rate = EXCHANGE_RATES.get(c, 1)
+                    rub_val = val * rate
+                    balances[c] = {'amount': val, 'symbol': CURRENCY_SYMBOLS.get(c, c), 'rub_value': rub_val}
+                    total_rub += rub_val
+            net_rub = round(total_rub * (1 - commission_pct / 100), 2)
+        cur.execute("SELECT * FROM withdrawal_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (user_id,))
+        requests = [dict(r) for r in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка withdraw: {e}")
     return render(request, 'usersite/withdraw.html', {
-        'requests': [dict(r) for r in requests],
-        'balances': balances,
-        'total_rub': round(total_rub, 2),
-        'tier': tier,
+        'requests': requests, 'balances': balances,
+        'total_rub': round(total_rub, 2), 'tier': tier,
         'tier_badge': TIER_BADGES.get(tier, '⬜ FREE'),
-        'commission_pct': commission_pct,
-        'net_rub': net_rub,
+        'commission_pct': commission_pct, 'net_rub': net_rub,
     })
 
 
@@ -821,22 +768,26 @@ def withdraw_create_api(request):
     if not wallet_address:
         return JsonResponse({'success': False, 'error': 'Укажите реквизиты'})
 
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    user = cur.fetchone()
-    if not user:
-        conn.close()
-        return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+        user = cur.fetchone()
+        if not user:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
 
-    total_rub = 0
-    for c in CURRENCIES:
-        val = float(user.get(f'balance_{c}', 0) or 0)
-        total_rub += val * EXCHANGE_RATES.get(c, 1)
+        total_rub = 0
+        for c in CURRENCIES:
+            val = float(user.get(f'balance_{c}', 0) or 0)
+            total_rub += val * EXCHANGE_RATES.get(c, 1)
 
-    tier = user.get('premium_tier', 'free') or 'free'
-    commission_pct = TIER_COMMISSION.get(tier, 4)
-    net_rub = total_rub * (1 - commission_pct / 100)
+        tier = user.get('premium_tier', 'free') or 'free'
+        commission_pct = TIER_COMMISSION.get(tier, 4)
+        net_rub = total_rub * (1 - commission_pct / 100)
+    except Exception as e:
+        print(f"Ошибка withdraw API: {e}")
+        return JsonResponse({'success': False, 'error': 'Ошибка сервера'}, status=500)
 
     if net_rub < amount:
         conn.close()
@@ -860,42 +811,44 @@ def reviews_view(request):
     if not check_auth(request):
         return redirect('/usersite/login/')
     user_id = request.session.get('user_id')
-    conn = get_db()
-    cur = conn.cursor()
+    received = []; given = []; avg_rating = 0; total = 0; positive_pct = 0; user = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    cur.execute("SELECT r.*, d.item AS deal_item, u.username AS reviewer_name FROM reviews r "
-                "LEFT JOIN deals d ON r.deal_id = d.id "
-                "LEFT JOIN users u ON r.reviewer_id = u.user_id "
-                "WHERE r.reviewed_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
-    received = cur.fetchall()
+        cur.execute("SELECT r.*, d.asset_name AS deal_item, u.username AS reviewer_name FROM reviews r "
+                    "LEFT JOIN deals d ON r.deal_id = d.deal_id "
+                    "LEFT JOIN users u ON r.from_user_id = u.user_id "
+                    "WHERE r.to_user_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
+        received = [dict(r) for r in cur.fetchall()]
 
-    cur.execute("SELECT r.*, d.item AS deal_item, u.username AS reviewed_name FROM reviews r "
-                "LEFT JOIN deals d ON r.deal_id = d.id "
-                "LEFT JOIN users u ON r.reviewed_id = u.user_id "
-                "WHERE r.reviewer_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
-    given = cur.fetchall()
+        cur.execute("SELECT r.*, d.asset_name AS deal_item, u.username AS reviewed_name FROM reviews r "
+                    "LEFT JOIN deals d ON r.deal_id = d.deal_id "
+                    "LEFT JOIN users u ON r.to_user_id = u.user_id "
+                    "WHERE r.from_user_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
+        given = [dict(r) for r in cur.fetchall()]
 
-    cur.execute(
-        "SELECT AVG(rating) as avg_rating, COUNT(*) as total, "
-        "SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END) as positive "
-        "FROM reviews WHERE reviewed_id = ?", (user_id,))
-    stats_row = cur.fetchone()
-    avg_rating = round(stats_row[0] or 0, 1) if stats_row else 0
-    total = stats_row[1] or 0 if stats_row else 0
-    positive = stats_row[2] or 0 if stats_row else 0
-    positive_pct = round(positive / total * 100, 1) if total > 0 else 0
+        cur.execute(
+            "SELECT AVG(rating) as avg_rating, COUNT(*) as total, "
+            "SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END) as positive "
+            "FROM reviews WHERE to_user_id = ?", (user_id,))
+        stats_row = cur.fetchone()
+        if stats_row:
+            avg_rating = round(stats_row[0] or 0, 1)
+            total = stats_row[1] or 0
+            positive = stats_row[2] or 0
+            positive_pct = round(positive / total * 100, 1) if total > 0 else 0
 
-    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    user = cur.fetchone()
-    conn.close()
+        cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+        u = cur.fetchone()
+        user = dict(u) if u else {}
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка reviews: {e}")
 
     return render(request, 'usersite/reviews.html', {
-        'user': dict(user) if user else {},
-        'received': [dict(r) for r in received],
-        'given': [dict(r) for r in given],
-        'avg_rating': avg_rating,
-        'total': total,
-        'positive_pct': positive_pct,
+        'user': user, 'received': received, 'given': given,
+        'avg_rating': avg_rating, 'total': total, 'positive_pct': positive_pct,
     })
 
 
@@ -917,7 +870,7 @@ def update_review_api(request):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT reviewer_id FROM reviews WHERE id = ?", (review_id,))
+    cur.execute("SELECT from_user_id FROM reviews WHERE id = ?", (review_id,))
     row = cur.fetchone()
     if not row or row[0] != user_id:
         conn.close()

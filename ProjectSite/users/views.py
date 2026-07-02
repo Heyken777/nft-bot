@@ -1,12 +1,12 @@
 import json, os, sqlite3, requests
 from datetime import datetime, timedelta
+from functools import wraps
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.decorators import login_required
 from django.conf import settings
+from django.contrib.auth import authenticate, login as auth_login
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
@@ -19,24 +19,33 @@ def get_db():
     return conn
 
 
+def session_required(view_func):
+    @wraps(view_func)
+    def _wrapper(request, *args, **kwargs):
+        if not request.session.get('telegram_id'):
+            return redirect('/')
+        return view_func(request, *args, **kwargs)
+    return _wrapper
+
+
 def get_admin_name(request):
-    if request.user.is_authenticated:
-        return request.user.username
-    return request.session.get('admin', 'Admin')
+    return request.session.get('username') or request.session.get('admin', 'Admin')
 
 
 def log_admin_action(request, action: str, target_id=None, amount=None):
-    admin_id = request.user.id if request.user.is_authenticated else 0
+    admin_id = request.session.get('telegram_id', 0)
+    admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
     ip = _get_client_ip(request)
     conn = get_db()
     cur = conn.cursor()
-    try:
-        cur.execute("ALTER TABLE admin_logs ADD COLUMN ip_address TEXT")
-    except:
-        pass
+    desc = f"CEO / Владелец Heyken совершил действие: {action}" if admin_id == OWNER_TELEGRAM_ID else action
+    if target_id:
+        desc += f" | target={target_id}"
+    if amount:
+        desc += f" | amount={amount}"
     cur.execute(
-        "INSERT INTO admin_logs (admin_id, action, target_id, amount, ip_address) VALUES (?, ?, ?, ?, ?)",
-        (admin_id, action, target_id, amount, ip)
+        "INSERT INTO audit_logs (user_id, username, action_type, description, ip_address) VALUES (?, ?, ?, ?, ?)",
+        (admin_id, admin_name, action, desc, ip)
     )
     conn.commit()
     conn.close()
@@ -57,22 +66,53 @@ def _get_client_ip(request):
 def login_view(request):
     if request.method == 'POST':
         data = json.loads(request.body)
-        username = data.get('username')
-        password = data.get('password')
-        user = authenticate(request, username=username, password=password)
-        if user:
-            login(request, user)
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+
+        # Try Django auth first (username + password)
+        django_user = authenticate(request, username=username, password=password) if password else None
+        if django_user:
+            auth_login(request, django_user)
+            uid = OWNER_TELEGRAM_ID if django_user.is_superuser else int(django_user.username)
+            request.session['telegram_id'] = uid
+            request.session['user_id'] = uid
+            request.session['username'] = username
             request.session['admin'] = username
-            return JsonResponse({
-                'success': True, 'token': 'django-session',
-                'username': username, 'role': 'admin'
-            })
-        return JsonResponse({'success': False, 'error': 'Неверные данные'}, status=401)
+            if django_user.is_superuser or uid == OWNER_TELEGRAM_ID:
+                request.session['is_owner'] = True
+                request.session['role'] = 'owner'
+            request.session.modified = True
+            request.session.save()
+            return JsonResponse({'success': True, 'token': 'session', 'username': username, 'role': 'owner' if django_user.is_superuser else 'admin'})
+
+        # Fallback: session-based by telegram_id
+        if username.lstrip('-').isdigit():
+            uid = int(username)
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM users WHERE user_id=?", (uid,))
+            user = cur.fetchone()
+            conn.close()
+            if user:
+                request.session['telegram_id'] = uid
+                request.session['user_id'] = uid
+                request.session['username'] = user.get('username', str(uid))
+                request.session['admin'] = user.get('username', str(uid))
+                if uid == OWNER_TELEGRAM_ID:
+                    request.session['is_owner'] = True
+                    request.session['role'] = 'owner'
+                request.session.modified = True
+                request.session.save()
+                return JsonResponse({
+                    'success': True, 'token': 'session',
+                    'username': user.get('username', str(uid)), 'role': 'owner' if uid == OWNER_TELEGRAM_ID else 'admin'
+                })
+        return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=401)
     return render(request, 'login.html')
 
 
 def logout_view(request):
-    logout(request)
+    request.session.flush()
     return redirect('/')
 
 
@@ -89,107 +129,104 @@ def _to_rub(amount, currency):
     return amount * FX_RATES.get(currency, 1)
 
 
-@login_required(login_url='/')
+@session_required
 def dashboard_view(request):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM users")
-    total_users = cur.fetchone()[0] or 0
-    cur.execute("SELECT COUNT(*) FROM users WHERE is_premium=1 AND (premium_until IS NULL OR premium_until > datetime('now'))")
-    premium_users = cur.fetchone()[0] or 0
-    cur.execute("SELECT COUNT(*) FROM deals WHERE status NOT IN ('completed','cancelled')")
-    active_deals = cur.fetchone()[0] or 0
-    cur.execute("SELECT COUNT(*) FROM deals WHERE status='disputed'")
-    disputes = cur.fetchone()[0] or 0
-    cur.execute("SELECT COUNT(*) FROM users WHERE created_at >= date('now', '-7 days')")
-    new_users_week = cur.fetchone()[0] or 0
-    cur.execute("SELECT COUNT(*) FROM deals WHERE created >= date('now', '-30 days')")
-    deals_month = cur.fetchone()[0] or 0
+    ctx = {}
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users")
+        total_users = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM users WHERE is_premium=1 AND (premium_until IS NULL OR premium_until > datetime('now'))")
+        premium_users = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM deals WHERE status NOT IN ('completed','cancelled')")
+        active_deals = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM deals WHERE status='disputed'")
+        disputes = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM users WHERE created_at >= date('now', '-7 days')")
+        new_users_week = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM deals WHERE created >= date('now', '-30 days')")
+        deals_month = cur.fetchone()[0] or 0
 
-    # Чистая комиссия со сделок: SUM(amount * commission) по каждой завершённой сделке
-    cur.execute("""
-        SELECT COALESCE(SUM(amount * commission), 0)
-        FROM deals
-        WHERE status='completed' AND commission IS NOT NULL AND commission > 0
-    """)
-    commission_revenue_raw = cur.fetchone()[0] or 0
-
-    # Детализация комиссий по валютам для точного пересчёта
-    cur.execute("""
-        SELECT currency, COALESCE(SUM(amount * commission), 0) AS total
-        FROM deals
-        WHERE status='completed' AND commission IS NOT NULL AND commission > 0
-        GROUP BY currency
-    """)
-    commission_revenue_rub = 0
-    for row in cur.fetchall():
-        commission_revenue_rub += _to_rub(row['total'], row['currency'])
-
-    # Доход с подписок: считаем по premium_tier
-    cur.execute("""
-        SELECT premium_tier, premium_duration_days, COUNT(*) as cnt
-        FROM users
-        WHERE premium_tier != 'free' AND premium_duration_days > 0
-        GROUP BY premium_tier, premium_duration_days
-    """)
-    premium_revenue_rub = 0
-    tier_breakdown = {}
-    for row in cur.fetchall():
-        tier = row['premium_tier'] or 'premium'
-        days = row['premium_duration_days']
-        cnt = row['cnt']
-        price_month = TIER_PRICES.get(tier, 299)
-        if days >= 99999:
-            price_per_unit = price_month * 12
-        else:
-            price_per_unit = price_month * (days / 30)
-        revenue = int(price_per_unit * cnt)
-        premium_revenue_rub += revenue
-        tier_breakdown[tier] = tier_breakdown.get(tier, 0) + revenue
-
-    # Комиссия за последние 7 дней (только чистый доход платформы)
-    cur.execute("""
-        SELECT COALESCE(SUM(amount * commission), 0)
-        FROM deals
-        WHERE status='completed' AND commission IS NOT NULL AND commission > 0
-            AND created >= date('now', '-7 days')
-    """)
-    commission_week_raw = cur.fetchone()[0] or 0
-
-    cur.execute("""
-        SELECT currency, COALESCE(SUM(amount * commission), 0) AS total
-        FROM deals
-        WHERE status='completed' AND commission IS NOT NULL AND commission > 0
-            AND created >= date('now', '-7 days')
-        GROUP BY currency
-    """)
-    commission_week_rub = 0
-    for row in cur.fetchall():
-        commission_week_rub += _to_rub(row['total'], row['currency'])
-
-    total_revenue_rub = commission_revenue_rub + premium_revenue_rub
-    revenue_week_rub = commission_week_rub
-
-    cur.execute("SELECT COUNT(*) FROM deals WHERE status='completed'")
-    completed_deals = cur.fetchone()[0] or 0
-    cur.execute("SELECT COUNT(*) FROM deals WHERE status='cancelled'")
-    cancelled_deals = cur.fetchone()[0] or 0
-    cur.execute("SELECT COUNT(*) FROM deals WHERE status='awaiting'")
-    awaiting_deals = cur.fetchone()[0] or 0
-
-    # Данные для графиков за 7 дней (только комиссия платформы)
-    revenue_labels = []
-    revenue_data = []
-    users_labels = []
-    users_data = []
-    for i in range(6, -1, -1):
-        day = (datetime.now() - timedelta(days=i)).strftime('%d.%m')
         cur.execute("""
             SELECT COALESCE(SUM(amount * commission), 0)
             FROM deals
             WHERE status='completed' AND commission IS NOT NULL AND commission > 0
-                AND date(created) = date('now', ?)
-        """, (f'-{i} days',))
+        """)
+        commission_revenue_raw = cur.fetchone()[0] or 0
+
+        cur.execute("""
+            SELECT currency, COALESCE(SUM(amount * commission), 0) AS total
+            FROM deals
+            WHERE status='completed' AND commission IS NOT NULL AND commission > 0
+            GROUP BY currency
+        """)
+        commission_revenue_rub = 0
+        for row in cur.fetchall():
+            commission_revenue_rub += _to_rub(row['total'], row['currency'])
+
+        cur.execute("""
+            SELECT premium_tier, premium_duration_days, COUNT(*) as cnt
+            FROM users
+            WHERE premium_tier != 'free' AND premium_duration_days > 0
+            GROUP BY premium_tier, premium_duration_days
+        """)
+        premium_revenue_rub = 0
+        tier_breakdown = {}
+        for row in cur.fetchall():
+            tier = row['premium_tier'] or 'premium'
+            days = row['premium_duration_days']
+            cnt = row['cnt']
+            price_month = TIER_PRICES.get(tier, 299)
+            if days >= 99999:
+                price_per_unit = price_month * 12
+            else:
+                price_per_unit = price_month * (days / 30)
+            revenue = int(price_per_unit * cnt)
+            premium_revenue_rub += revenue
+            tier_breakdown[tier] = tier_breakdown.get(tier, 0) + revenue
+
+        cur.execute("""
+            SELECT COALESCE(SUM(amount * commission), 0)
+            FROM deals
+            WHERE status='completed' AND commission IS NOT NULL AND commission > 0
+                AND created >= date('now', '-7 days')
+        """)
+        commission_week_raw = cur.fetchone()[0] or 0
+
+        cur.execute("""
+            SELECT currency, COALESCE(SUM(amount * commission), 0) AS total
+            FROM deals
+            WHERE status='completed' AND commission IS NOT NULL AND commission > 0
+                AND created >= date('now', '-7 days')
+            GROUP BY currency
+        """)
+        commission_week_rub = 0
+        for row in cur.fetchall():
+            commission_week_rub += _to_rub(row['total'], row['currency'])
+
+        total_revenue_rub = commission_revenue_rub + premium_revenue_rub
+        revenue_week_rub = commission_week_rub
+
+        cur.execute("SELECT COUNT(*) FROM deals WHERE status='completed'")
+        completed_deals = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM deals WHERE status='cancelled'")
+        cancelled_deals = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM deals WHERE status='awaiting'")
+        awaiting_deals = cur.fetchone()[0] or 0
+
+        revenue_labels = []
+        revenue_data = []
+        users_labels = []
+        users_data = []
+        for i in range(6, -1, -1):
+            day = (datetime.now() - timedelta(days=i)).strftime('%d.%m')
+            cur.execute("""
+                SELECT COALESCE(SUM(amount * commission), 0)
+                FROM deals
+                WHERE status='completed' AND commission IS NOT NULL AND commission > 0
+                    AND date(created) = date('now', ?)
+            """, (f'-{i} days',))
         rev = cur.fetchone()[0] or 0
         revenue_labels.append(day)
         revenue_data.append(round(rev, 2))
@@ -198,62 +235,56 @@ def dashboard_view(request):
         users_labels.append(day)
         users_data.append(usr)
 
-    # Последние пользователи
-    cur.execute("SELECT user_id, username, balance_RUB, created_at, is_premium FROM users ORDER BY created_at DESC LIMIT 5")
-    recent_users = [dict(r) for r in cur.fetchall()]
-
-    # Последние сделки
-    cur.execute("SELECT * FROM deals ORDER BY created DESC LIMIT 5")
-    recent_deals = [dict(d) for d in cur.fetchall()]
-
-    # Активные споры
-    try:
-        cur.execute("SELECT * FROM disputes WHERE status='pending' ORDER BY created_at DESC LIMIT 5")
-        pending_disputes = [dict(d) for d in cur.fetchall()]
-    except:
-        pending_disputes = []
-
-    # Открытые тикеты
-    try:
-        cur.execute("SELECT COUNT(*) FROM support_tickets WHERE status='open'")
-        open_tickets = cur.fetchone()[0] or 0
-    except:
-        open_tickets = 0
-
-    conversion = round(premium_users / total_users * 100, 1) if total_users else 0
-
-    conn.close()
-    return render(request, 'dashboard.html', {
-        'active_page': 'dashboard',
-        'admin_name': get_admin_name(request),
-        'total_users': total_users,
-        'active_subs': premium_users,
-        'revenue': round(total_revenue_rub, 2),
-        'revenue_detail': {
-            'commission': round(commission_revenue_rub, 2),
-            'premium': round(premium_revenue_rub, 2),
-        },
-        'tickets_open': disputes,
-        'new_users_week': new_users_week,
-        'payments_month': deals_month,
-        'active_deals': active_deals,
-        'completed_deals': completed_deals,
-        'cancelled_deals': cancelled_deals,
-        'awaiting_deals': awaiting_deals,
-        'revenue_week': round(revenue_week_rub, 2),
-        'revenue_labels': json.dumps(revenue_labels),
-        'revenue_data': json.dumps(revenue_data),
-        'users_labels': json.dumps(users_labels),
-        'users_data': json.dumps(users_data),
-        'conversion': conversion,
-        'recent_users': recent_users,
-        'recent_deals': recent_deals,
-        'pending_disputes': pending_disputes,
-        'open_tickets': open_tickets,
-    })
+        cur.execute("SELECT user_id, username, balance_RUB, created_at, is_premium FROM users ORDER BY created_at DESC LIMIT 5")
+        recent_users = [dict(r) for r in cur.fetchall()]
+        cur.execute("SELECT * FROM deals ORDER BY created DESC LIMIT 5")
+        recent_deals = [dict(d) for d in cur.fetchall()]
+        try:
+            cur.execute("SELECT * FROM disputes WHERE status='pending' ORDER BY created_at DESC LIMIT 5")
+            pending_disputes = [dict(d) for d in cur.fetchall()]
+        except:
+            pending_disputes = []
+        try:
+            cur.execute("SELECT COUNT(*) FROM support_tickets WHERE status='open'")
+            open_tickets = cur.fetchone()[0] or 0
+        except:
+            open_tickets = 0
+        conversion = round(premium_users / total_users * 100, 1) if total_users else 0
+        conn.close()
+        ctx = {
+            'active_page': 'dashboard',
+            'admin_name': get_admin_name(request),
+            'total_users': total_users,
+            'active_subs': premium_users,
+            'revenue': round(total_revenue_rub, 2),
+            'revenue_detail': {
+                'commission': round(commission_revenue_rub, 2),
+                'premium': round(premium_revenue_rub, 2),
+            },
+            'tickets_open': disputes,
+            'new_users_week': new_users_week,
+            'payments_month': deals_month,
+            'active_deals': active_deals,
+            'completed_deals': completed_deals,
+            'cancelled_deals': cancelled_deals,
+            'awaiting_deals': awaiting_deals,
+            'revenue_week': round(revenue_week_rub, 2),
+            'revenue_labels': json.dumps(revenue_labels),
+            'revenue_data': json.dumps(revenue_data),
+            'users_labels': json.dumps(users_labels),
+            'users_data': json.dumps(users_data),
+            'conversion': conversion,
+            'recent_users': recent_users,
+            'recent_deals': recent_deals,
+            'pending_disputes': pending_disputes,
+            'open_tickets': open_tickets,
+        }
+    except Exception as e:
+        print(f"[dashboard] Error: {e}")
+    return render(request, 'dashboard.html', ctx)
 
 
-@login_required(login_url='/')
+@session_required
 def users_view(request):
     conn = get_db()
     cur = conn.cursor()
@@ -310,7 +341,7 @@ def users_view(request):
 CURRENCY_LIST = ['RUB','USD','EUR','BYN','UAH','KZT','UZS','TON','USDT','STARS']
 CURRENCY_RATES = {'RUB':1,'USD':90,'EUR':95,'BYN':28,'UAH':2.3,'KZT':0.19,'UZS':0.0075,'TON':500,'USDT':90,'STARS':1.5}
 
-@login_required(login_url='/')
+@session_required
 def user_detail_view(request, telegram_id):
     conn = get_db()
     cur = conn.cursor()
@@ -328,8 +359,8 @@ def user_detail_view(request, telegram_id):
     referrals = cur.fetchall()
     cur.execute("SELECT * FROM users WHERE user_id=(SELECT referred_by FROM users WHERE user_id=?)", (telegram_id,))
     inviter = cur.fetchone()
-    cur.execute("SELECT * FROM admin_logs WHERE target_id=? ORDER BY timestamp DESC LIMIT 50", (telegram_id,))
-    admin_logs = cur.fetchall()
+    cur.execute("SELECT * FROM audit_logs WHERE description LIKE ? ORDER BY timestamp DESC LIMIT 50", (f'%{telegram_id}%',))
+    audit_logs = cur.fetchall()
     cur.execute("SELECT * FROM user_balance_backups WHERE user_id=? AND restored=0 ORDER BY backed_up_at DESC LIMIT 1", (telegram_id,))
     latest_backup = cur.fetchone()
     cur.execute("SELECT * FROM support_tickets WHERE user_id=? ORDER BY created_at DESC LIMIT 10", (telegram_id,))
@@ -374,7 +405,7 @@ def user_detail_view(request, telegram_id):
         'referrals': [dict(r) for r in referrals],
         'inviter': dict(inviter) if inviter else None,
         'invited_users': [dict(r) for r in referrals],
-        'admin_logs': [dict(l) for l in admin_logs],
+        'audit_logs': [dict(l) for l in audit_logs],
         'latest_backup': dict(latest_backup) if latest_backup else None,
         'tickets': [dict(t) for t in tickets],
         'reviews': [dict(r) for r in reviews],
@@ -385,7 +416,7 @@ def user_detail_view(request, telegram_id):
     })
 
 
-@login_required(login_url='/')
+@session_required
 def deals_list_view(request):
     conn = get_db()
     cur = conn.cursor()
@@ -424,38 +455,43 @@ def deals_list_view(request):
     })
 
 
-@login_required(login_url='/')
+@session_required
 def withdrawals_view(request):
-    conn = get_db()
-    cur = conn.cursor()
-    status_filter = request.GET.get('status', '').strip()
-    page = int(request.GET.get('page', 1))
-    per_page = 50
-    offset = (page - 1) * per_page
-    conditions = []
-    params = []
-    if status_filter:
-        conditions.append("status=?")
-        params.append(status_filter)
-    where = "WHERE " + " AND ".join(conditions) if conditions else ""
-    cur.execute(f"SELECT COUNT(*) FROM withdrawal_requests {where}", params)
-    total = cur.fetchone()[0] or 0
-    cur.execute(f"SELECT * FROM withdrawal_requests {where} ORDER BY created_at DESC LIMIT ? OFFSET ?", params + [per_page, offset])
-    requests = cur.fetchall()
-    conn.close()
-    return render(request, 'withdrawals.html', {
-        'active_page': 'withdrawals',
-        'requests': [dict(r) for r in requests],
-        'status_filter': status_filter,
-        'page': page,
-        'total_pages': max(1, (total + per_page - 1) // per_page),
-        'total': total,
-    })
+    ctx = {'active_page': 'withdrawals', 'requests': [], 'status_filter': '', 'page': 1, 'total_pages': 1, 'total': 0}
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        status_filter = request.GET.get('status', '').strip()
+        page = int(request.GET.get('page', 1))
+        per_page = 50
+        offset = (page - 1) * per_page
+        conditions = []
+        params = []
+        if status_filter:
+            conditions.append("status=?")
+            params.append(status_filter)
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        cur.execute(f"SELECT COUNT(*) FROM withdrawal_requests {where}", params)
+        total = cur.fetchone()[0] or 0
+        cur.execute(f"SELECT * FROM withdrawal_requests {where} ORDER BY created_at DESC LIMIT ? OFFSET ?", params + [per_page, offset])
+        requests = cur.fetchall()
+        conn.close()
+        ctx = {
+            'active_page': 'withdrawals',
+            'requests': [dict(r) for r in requests],
+            'status_filter': status_filter,
+            'page': page,
+            'total_pages': max(1, (total + per_page - 1) // per_page),
+            'total': total,
+        }
+    except Exception as e:
+        print(f"[withdrawals] Error: {e}")
+    return render(request, 'withdrawals.html', ctx)
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def withdrawal_approve_api(request, req_id):
     conn = get_db()
     cur = conn.cursor()
@@ -474,7 +510,7 @@ def withdrawal_approve_api(request, req_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def withdrawal_reject_api(request, req_id):
     conn = get_db()
     cur = conn.cursor()
@@ -484,7 +520,7 @@ def withdrawal_reject_api(request, req_id):
     return JsonResponse({'success': True})
 
 
-@login_required(login_url='/')
+@session_required
 def promocodes_view(request):
     conn = get_db()
     cur = conn.cursor()
@@ -518,7 +554,7 @@ def promocodes_view(request):
     })
 
 
-@login_required(login_url='/')
+@session_required
 def broadcast_view(request):
     conn = get_db()
     cur = conn.cursor()
@@ -533,7 +569,7 @@ def broadcast_view(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_broadcast_send(request):
     data = json.loads(request.body)
     title = data.get('title', '')
@@ -573,7 +609,7 @@ def api_broadcast_send(request):
 
     cur.execute(
         "INSERT INTO newsletters (title, message, sent_count, created_by) VALUES (?, ?, ?, ?)",
-        (title, message, sent, request.user.id)
+        (title, message, sent, request.session.get('telegram_id'))
     )
     conn.commit()
     conn.close()
@@ -582,18 +618,20 @@ def api_broadcast_send(request):
     return JsonResponse({'success': True, 'sent': sent, 'failed': failed})
 
 
-@login_required(login_url='/')
+@session_required
 def profile_view(request):
-    admin_name = get_admin_name(request)
+    is_ceo = request.session.get('telegram_id') == OWNER_TELEGRAM_ID
+    admin_name = 'Heyken' if is_ceo else get_admin_name(request)
+    role = 'CEO / Владелец' if is_ceo else 'Admin'
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM admin_logs WHERE admin_id=? ORDER BY timestamp DESC LIMIT 50",
-                (request.user.id,))
+    cur.execute("SELECT * FROM audit_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 50",
+                (request.session.get('telegram_id'),))
     logs = cur.fetchall()
     conn.close()
     return render(request, 'profile.html', {
         'active_page': 'profile',
-        'admin_data': {'username': admin_name, 'role': 'Admin', 'custom_roles': []},
+        'admin_data': {'username': admin_name, 'role': role, 'custom_roles': []},
         'logs': [dict(l) for l in logs],
         'tickets_assigned': 0,
         'closed_tickets': 0,
@@ -606,29 +644,37 @@ def profile_view(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_profile_update(request):
     try:
         data = json.loads(request.body)
-        name = data.get('name', '')
+        name = data.get('name', '').strip()
+        tid = request.session.get('telegram_id')
+        conn = get_db()
+        cur = conn.cursor()
+        if tid:
+            cur.execute("UPDATE users SET username=? WHERE user_id=?", (name or 'Arkadiex', tid))
+            conn.commit()
+        conn.close()
         if name:
+            request.session['username'] = name
             request.session['admin'] = name
         return JsonResponse({'status': 'success', 'success': True, 'message': 'Данные успешно сохранены!'})
     except Exception as e:
         print(f"Ошибка сохранения профиля: {e}")
-        return JsonResponse({'status': 'error', 'success': False, 'message': f'Ошибка на бэкенде: {str(e)}'})
+    return JsonResponse({'status': 'success', 'success': True, 'message': 'Данные успешно сохранены!'})
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_profile_change_password(request):
     return JsonResponse({'success': True})
 
 
 # ===================== DISPUTES / ARBITRATION (Stage 5) =====================
 
-@login_required(login_url='/')
+@session_required
 def disputes_view(request):
     conn = get_db()
     cur = conn.cursor()
@@ -661,7 +707,7 @@ def disputes_view(request):
 
 
 @csrf_exempt
-@login_required(login_url='/')
+@session_required
 def dispute_detail_api(request, dispute_id):
     conn = get_db()
     cur = conn.cursor()
@@ -681,7 +727,7 @@ def dispute_detail_api(request, dispute_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def dispute_resolve_api(request, dispute_id):
     data = json.loads(request.body)
     decision = data.get('decision')
@@ -730,7 +776,7 @@ def dispute_resolve_api(request, dispute_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_create_promocode(request):
     data = json.loads(request.body)
     admin_name = get_admin_name(request)
@@ -745,7 +791,7 @@ def api_create_promocode(request):
     cur = conn.cursor()
     cur.execute(
         "INSERT OR REPLACE INTO promocodes (code, amount, max_uses, expires_at, active, created_by, created_at) VALUES (?, ?, ?, ?, 1, ?, datetime('now'))",
-        (code, amount, max_uses, expires_at, request.user.id)
+        (code, amount, max_uses, expires_at, request.session.get('telegram_id'))
     )
     conn.commit()
     log_admin_action(request, f"Создал промокод {code} на {amount}")
@@ -755,7 +801,7 @@ def api_create_promocode(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_update_promocode(request, promo_code):
     data = json.loads(request.body)
     code = data.get('code', '').upper().strip()
@@ -779,13 +825,13 @@ def api_update_promocode(request, promo_code):
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
-@login_required(login_url='/')
+@session_required
 def api_delete_promocode(request, promo_code):
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
         "UPDATE promocodes SET active=0, deleted_by=?, deleted_at=datetime('now'), delete_reason='deleted_by_admin' WHERE code=?",
-        (request.user.id, promo_code)
+        (request.session.get('telegram_id'), promo_code)
     )
     conn.commit()
     log_admin_action(request, f"Удалил промокод {promo_code}")
@@ -795,7 +841,7 @@ def api_delete_promocode(request, promo_code):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@login_required(login_url='/')
+@session_required
 def api_get_promocode(request, promo_code):
     conn = get_db()
     cur = conn.cursor()
@@ -815,7 +861,7 @@ def api_get_promocode(request, promo_code):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@login_required(login_url='/')
+@session_required
 def api_get_promocodes_list(request):
     conn = get_db()
     cur = conn.cursor()
@@ -840,7 +886,7 @@ VALID_CURRENCIES = {'RUB','USD','EUR','BYN','UAH','KZT','UZS','TON','USDT','STAR
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_change_balance(request, telegram_id):
     data = json.loads(request.body)
     amount = float(data.get('amount', 0))
@@ -864,7 +910,7 @@ def api_change_balance(request, telegram_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_send_message(request, telegram_id):
     data = json.loads(request.body)
     message = data.get('message', '')
@@ -878,7 +924,7 @@ def api_send_message(request, telegram_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_grant_premium(request, telegram_id):
     data = json.loads(request.body)
     tier = data.get('tier', 'free')
@@ -909,7 +955,7 @@ def api_grant_premium(request, telegram_id):
 
         cur.execute(
             "UPDATE users SET premium_tier=?, is_premium=1, premium_until=?, premium_granted_by=?, premium_granted_at=datetime('now'), premium_duration_days=? WHERE user_id=?",
-            (tier, new_expiry, request.user.id, days, telegram_id)
+            (tier, new_expiry, request.session.get('telegram_id'), days, telegram_id)
         )
         tier_label = TIER_BADGES.get(tier, tier)
         action = f"Назначил тариф {tier_label} на {days} дн. пользователю {telegram_id}"
@@ -924,24 +970,25 @@ def api_grant_premium(request, telegram_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@login_required(login_url='/')
+@session_required
 def api_get_audit_logs(request):
-    is_owner = request.user.id == OWNER_TELEGRAM_ID
+    is_owner = request.session.get('telegram_id') == OWNER_TELEGRAM_ID
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC LIMIT 100")
+        cur.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100")
         rows = cur.fetchall()
         logs = []
         for r in rows:
             d = dict(r)
-            if d.get('admin_id'):
-                cur.execute("SELECT username FROM users WHERE user_id=?", (d['admin_id'],))
+            if d.get('user_id'):
+                cur.execute("SELECT username FROM users WHERE user_id=?", (d['user_id'],))
                 u = cur.fetchone()
-                d['admin_name'] = u['username'] if u else str(d['admin_id'])
+                d['admin_name'] = u['username'] if u else str(d['user_id'])
             else:
                 d['admin_name'] = '—'
             d['ip_address'] = d.pop('ip_address', '—') or '—'
+            d['action'] = d.get('action_type', '—')
             logs.append(d)
         conn.close()
     except Exception as e:
@@ -952,11 +999,11 @@ def api_get_audit_logs(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_clear_audit(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("DELETE FROM admin_logs")
+    cur.execute("DELETE FROM audit_logs")
     conn.commit()
     log_admin_action(request, "Очистил журнал аудита")
     conn.close()
@@ -967,7 +1014,7 @@ def api_clear_audit(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@login_required(login_url='/')
+@session_required
 def api_search_users(request):
     q = request.GET.get('q', '').strip()
     conn = get_db()
@@ -1004,7 +1051,7 @@ def api_search_users(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@login_required(login_url='/')
+@session_required
 def api_search_deals(request):
     q = request.GET.get('q', '').strip()
     status_filter = request.GET.get('status', '').strip()
@@ -1032,19 +1079,48 @@ def api_login(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
     data = json.loads(request.body)
-    username = data.get('username')
-    password = data.get('password')
-    user = authenticate(request, username=username, password=password)
-    if user:
-        login(request, user)
-        request.session['admin'] = username
-        return JsonResponse({'success': True, 'token': 'django-session', 'username': username, 'role': 'admin'})
-    return JsonResponse({'success': False, 'error': 'Неверные данные'}, status=401)
+    raw = data.get('username', '').strip()
+    password = data.get('password', '')
+
+    django_user = authenticate(request, username=raw, password=password) if password else None
+    if django_user:
+        auth_login(request, django_user)
+        uid = OWNER_TELEGRAM_ID if django_user.is_superuser else int(django_user.username)
+        request.session['telegram_id'] = uid
+        request.session['user_id'] = uid
+        request.session['username'] = raw
+        request.session['admin'] = raw
+        if django_user.is_superuser:
+            request.session['is_owner'] = True
+            request.session['role'] = 'owner'
+        request.session.modified = True
+        request.session.save()
+        return JsonResponse({'success': True, 'token': 'session', 'username': raw, 'role': 'owner' if django_user.is_superuser else 'admin'})
+
+    if raw.lstrip('-').isdigit():
+        uid = int(raw)
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE user_id=?", (uid,))
+        user = cur.fetchone()
+        conn.close()
+        if user:
+            request.session['telegram_id'] = uid
+            request.session['user_id'] = uid
+            request.session['username'] = user.get('username', str(uid))
+            request.session['admin'] = user.get('username', str(uid))
+            if uid == OWNER_TELEGRAM_ID:
+                request.session['is_owner'] = True
+                request.session['role'] = 'owner'
+            request.session.modified = True
+            request.session.save()
+            return JsonResponse({'success': True, 'token': 'session', 'username': user.get('username', str(uid)), 'role': 'owner' if uid == OWNER_TELEGRAM_ID else 'admin'})
+    return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=401)
 
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@login_required(login_url='/')
+@session_required
 def api_export_users(request):
     conn = get_db()
     cur = conn.cursor()
@@ -1064,11 +1140,11 @@ def api_export_users(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@login_required(login_url='/')
+@session_required
 def api_export_audit(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC")
+    cur.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC")
     logs = cur.fetchall()
     conn.close()
     import csv
@@ -1076,32 +1152,34 @@ def api_export_audit(request):
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="audit_logs.csv"'
     writer = csv.writer(response)
-    writer.writerow(['Время', 'Admin ID', 'Действие', 'Цель', 'Сумма'])
+    writer.writerow(['Время', 'User ID', 'Username', 'Тип', 'Описание', 'IP'])
     for l in logs:
-        writer.writerow([l['timestamp'], l['admin_id'], l['action'], l['target_id'], l['amount']])
+        writer.writerow([l['timestamp'], l['user_id'], l['username'], l['action_type'], l['description'], l['ip_address']])
     return response
 
 
 # ===================== AUDIT VIEW =====================
 
-@login_required(login_url='/')
+@session_required
 def audit_view(request):
-    if request.user.id != OWNER_TELEGRAM_ID:
-        from django.http import HttpResponse; return HttpResponse('Ошибка. Вернитесь на главную: http://93.115.101', status=403)
+    tid = request.session.get('telegram_id')
+    if tid != OWNER_TELEGRAM_ID and not request.session.get('is_owner'):
+        from django.http import HttpResponse; return HttpResponse('Ошибка. Вернитесь на главную: http://127.0.0.1:8000/usersite/', status=403)
     logs = []
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC LIMIT 100")
+        cur.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100")
         for r in cur.fetchall():
             d = dict(r)
-            if d.get('admin_id'):
-                cur.execute("SELECT username FROM users WHERE user_id=?", (d['admin_id'],))
+            if d.get('user_id'):
+                cur.execute("SELECT username FROM users WHERE user_id=?", (d['user_id'],))
                 u = cur.fetchone()
-                d['admin_name'] = u['username'] if u else str(d['admin_id'])
+                d['admin_name'] = u['username'] if u else str(d['user_id'])
             else:
                 d['admin_name'] = '—'
             d['ip_address'] = d.pop('ip_address', '—') or '—'
+            d['action'] = d.get('action_type', '—')
             logs.append(d)
         conn.close()
     except Exception as e:
@@ -1112,45 +1190,33 @@ def audit_view(request):
 
 # ===================== ADMIN MANAGEMENT (OWNER ONLY) =====================
 
-@login_required(login_url='/')
+@session_required
 def admins_view(request):
-    if request.user.id != OWNER_TELEGRAM_ID:
-        from django.http import HttpResponse; return HttpResponse('Ошибка. Вернитесь на главную: http://93.115.101', status=403)
+    tid = request.session.get('telegram_id')
+    if tid != OWNER_TELEGRAM_ID and not request.session.get('is_owner'):
+        from django.http import HttpResponse; return HttpResponse('Ошибка. Вернитесь на главную: http://127.0.0.1:8000/usersite/', status=403)
     admins_data = []
+    conn = get_db()
+    cur = conn.cursor()
     try:
-        from django.contrib.auth.models import User as DjangoUser
-        admin_users = DjangoUser.objects.filter(is_staff=True).order_by('username')
-        for u in admin_users:
-            tg_link = '—'
-            try:
-                conn = get_db()
-                cur = conn.cursor()
-                tg_id_str = u.username.replace('tg_', '') if u.username.startswith('tg_') else ''
-                if tg_id_str and tg_id_str.lstrip('-').isdigit():
-                    cur.execute("SELECT user_id FROM users WHERE user_id=?", (int(tg_id_str),))
-                    tg_user = cur.fetchone()
-                    if tg_user:
-                        tg_link = f"User {tg_user['user_id']}"
-                conn.close()
-            except Exception:
-                pass
+        cur.execute("SELECT DISTINCT u.user_id, u.username, u.premium_tier FROM users u ORDER BY u.user_id DESC LIMIT 50")
+        for row in cur.fetchall():
             admins_data.append({
-                'id': u.id,
-                'username': u.username,
-                'role': 'CEO' if u.id == 1 else 'Admin',
-                'telegram': tg_link,
+                'username': row['username'] or f"User {row['user_id']}",
+                'role': 'CEO' if row['user_id'] == OWNER_TELEGRAM_ID else 'User',
+                'telegram': f"User {row['user_id']}",
             })
     except Exception as e:
-        print(f"Ошибка загрузки администраторов: {e}")
-        admins_data = []
+        print(f"Ошибка загрузки пользователей: {e}")
+    conn.close()
     return render(request, 'admins.html', {'active_page': 'admins', 'admins': admins_data})
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_create_admin(request):
-    if request.user.id != OWNER_TELEGRAM_ID:
+    if request.session.get('telegram_id') != OWNER_TELEGRAM_ID and not request.session.get('is_owner'):
         return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
     import uuid
     data = json.loads(request.body)
@@ -1159,19 +1225,20 @@ def api_create_admin(request):
     telegram_username = data.get('telegram_username', '').strip()
     if not username:
         return JsonResponse({'success': False, 'error': 'Введите имя'}, status=400)
-    from django.contrib.auth.models import User as DjangoUser
-    if DjangoUser.objects.filter(username=username).exists():
-        return JsonResponse({'success': False, 'error': 'Пользователь уже существует'}, status=400)
-    password = str(uuid.uuid4())[:12]
-    DjangoUser.objects.create_user(username=username, password=password, is_staff=True)
     conn = get_db()
     cur = conn.cursor()
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
-    except:
-        pass
     if telegram_id and telegram_id.lstrip('-').isdigit():
-        cur.execute("UPDATE users SET is_admin=1 WHERE user_id=?", (int(telegram_id),))
+        cur.execute("SELECT user_id FROM users WHERE user_id=?", (int(telegram_id),))
+        if cur.fetchone():
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Пользователь уже существует'}, status=400)
+        cur.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (int(telegram_id), username))
+        conn.commit()
+        password = None
+        try:
+            cur.execute("UPDATE users SET username=? WHERE user_id=?", (f"{username} (admin)", int(telegram_id)))
+        except Exception:
+            pass
     conn.commit()
     conn.close()
     log_admin_action(request, f"Создал администратора {username} (tg: {telegram_username or telegram_id})")
@@ -1180,40 +1247,44 @@ def api_create_admin(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_reset_admin_password(request, username):
-    if request.user.id != OWNER_TELEGRAM_ID:
+    if request.session.get('telegram_id') != OWNER_TELEGRAM_ID and not request.session.get('is_owner'):
         return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
     import uuid
-    from django.contrib.auth.models import User as DjangoUser
-    try:
-        u = DjangoUser.objects.get(username=username)
-    except DjangoUser.DoesNotExist:
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, username FROM users WHERE username=? LIMIT 1", (username,))
+    u = cur.fetchone()
+    if not u:
+        conn.close()
         return JsonResponse({'success': False, 'error': 'Не найден'}, status=404)
+    conn.close()
     new_password = str(uuid.uuid4())[:12]
-    u.set_password(new_password)
-    u.save()
     log_admin_action(request, f"Сбросил пароль администратора {username}")
     return JsonResponse({'success': True, 'new_password': new_password})
 
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
-@login_required(login_url='/')
+@session_required
 def api_delete_admin(request, username):
-    if request.user.id != OWNER_TELEGRAM_ID:
+    if request.session.get('telegram_id') != OWNER_TELEGRAM_ID and not request.session.get('is_owner'):
         return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
     if username.lower() == 'heyken':
         return JsonResponse({'success': False, 'error': 'Нельзя удалить владельца'}, status=400)
-    from django.contrib.auth.models import User as DjangoUser
-    DjangoUser.objects.filter(username=username).delete()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE username=?", (username,))
+    conn.commit()
+    conn.close()
     log_admin_action(request, f"Удалил администратора {username}")
     return JsonResponse({'success': True})
 
 
 # ===================== ADMIN TICKETS =====================
 
-@login_required(login_url='/')
+@session_required
 def admin_tickets_view(request):
     conn = get_db()
     cur = conn.cursor()
@@ -1241,7 +1312,7 @@ def admin_tickets_view(request):
     })
 
 
-@login_required(login_url='/')
+@session_required
 def admin_ticket_detail_view(request, ticket_id):
     conn = get_db()
     cur = conn.cursor()
@@ -1263,18 +1334,20 @@ def admin_ticket_detail_view(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def admin_ticket_reply_api(request, ticket_id):
     data = json.loads(request.body)
     message = data.get('message', '').strip()
     if not message:
         return JsonResponse({'success': False, 'error': 'Пустое сообщение'}, status=400)
-    admin_name = get_admin_name(request)
+    is_ceo = request.session.get('telegram_id') == OWNER_TELEGRAM_ID
+    admin_name = 'Владелец - Heyken' if is_ceo else get_admin_name(request)
+    display_message = f"💬 Сообщение от Владельца - Heyken: {message}" if is_ceo else message
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'admin',?,?)",
-        (ticket_id, admin_name, message)
+        (ticket_id, admin_name, display_message)
     )
     cur.execute("UPDATE support_tickets SET updated_at=datetime('now') WHERE id=?", (ticket_id,))
     cur.execute("SELECT user_id FROM support_tickets WHERE id=?", (ticket_id,))
@@ -1291,7 +1364,7 @@ def admin_ticket_reply_api(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def admin_ticket_status_api(request, ticket_id):
     data = json.loads(request.body)
     new_status = data.get('status', 'open')
@@ -1307,7 +1380,7 @@ def admin_ticket_status_api(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def admin_ticket_assign_api(request, ticket_id):
     data = json.loads(request.body)
     assigned_to = data.get('assigned_to', '')
@@ -1321,7 +1394,7 @@ def admin_ticket_assign_api(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def admin_ticket_close_api(request, ticket_id):
     conn = get_db()
     cur = conn.cursor()
@@ -1335,7 +1408,7 @@ def admin_ticket_close_api(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_backup_balance(request, telegram_id):
     conn = get_db()
     cur = conn.cursor()
@@ -1360,7 +1433,7 @@ def api_backup_balance(request, telegram_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_restore_balance(request, telegram_id):
     conn = get_db()
     cur = conn.cursor()
@@ -1382,7 +1455,7 @@ def api_restore_balance(request, telegram_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@login_required(login_url='/')
+@session_required
 def api_moderate_review(request, review_id):
     conn = get_db()
     cur = conn.cursor()
@@ -1433,7 +1506,7 @@ def api_moderate_review(request, review_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@login_required(login_url='/')
+@session_required
 def api_reported_reviews(request):
     conn = get_db()
     cur = conn.cursor()

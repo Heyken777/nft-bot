@@ -9,22 +9,46 @@ def ensure_tables():
     conn = sqlite3.connect(DB_PATH, timeout=40)
     cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS admin_logs (
+        CREATE TABLE IF NOT EXISTS audit_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT DEFAULT (datetime('now')),
-            admin_id INTEGER,
-            action TEXT,
-            target_id INTEGER,
-            amount REAL,
+            user_id BIGINT,
+            username TEXT DEFAULT '',
+            action_type TEXT,
+            description TEXT,
             ip_address TEXT DEFAULT '—'
         )
     """)
-    try:
-        cur.execute("ALTER TABLE admin_logs ADD COLUMN ip_address TEXT DEFAULT '—'")
-    except Exception:
-        pass
     conn.commit()
     conn.close()
+
+
+OWNER_TELEGRAM_ID = 1803437347
+CEO_USERNAME = 'Arkadiex'
+
+
+def seed_ceo_profile():
+    conn = sqlite3.connect(DB_PATH, timeout=40)
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM users WHERE user_id=777 OR username='heyken'")
+        cur.execute("SELECT user_id FROM users WHERE user_id=?", (OWNER_TELEGRAM_ID,))
+        owner = cur.fetchone()
+        if not owner:
+            cur.execute("""
+                INSERT INTO users (user_id, username, premium_tier, premium_until)
+                VALUES (?, ?, 'vip', '2036-01-01 00:00:00')
+            """, (OWNER_TELEGRAM_ID, CEO_USERNAME))
+            print(f"CEO profile @{CEO_USERNAME} created in DB")
+        else:
+            cur.execute("UPDATE users SET username=?, premium_tier='vip', premium_until='2036-01-01 00:00:00' WHERE user_id=?",
+                        (CEO_USERNAME, OWNER_TELEGRAM_ID))
+            print(f"CEO profile @{CEO_USERNAME} synced")
+        conn.commit()
+    except Exception as e:
+        print(f"CEO seed warning: {e}")
+    finally:
+        conn.close()
 
 
 class UsersConfig(AppConfig):
@@ -33,3 +57,4 @@ class UsersConfig(AppConfig):
 
     def ready(self):
         ensure_tables()
+        seed_ceo_profile()

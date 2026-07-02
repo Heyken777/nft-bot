@@ -1,10 +1,19 @@
 import jwt
-import os
 from datetime import datetime, timedelta
 from django.conf import settings
-from django.contrib.auth.models import User
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+
+
+class SimpleUser:
+    def __init__(self, uid):
+        self.id = uid
+        self.pk = uid
+        self.is_authenticated = True
+        self.is_active = True
+
+    def __str__(self):
+        return str(self.id)
 
 
 def get_secret():
@@ -13,7 +22,7 @@ def get_secret():
 
 def create_jwt(user_id, days=7):
     payload = {
-        'user_id': user_id,
+        'user_id': str(user_id),
         'exp': datetime.utcnow() + timedelta(days=days),
         'iat': datetime.utcnow(),
     }
@@ -38,8 +47,6 @@ class JWTAuthentication(BaseAuthentication):
         token = auth_header.split(' ')[1]
         payload = decode_jwt(token)
         user_id = payload.get('user_id')
-        try:
-            user = User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            raise AuthenticationFailed('User not found')
-        return (user, None)
+        if not user_id:
+            raise AuthenticationFailed('Invalid token payload')
+        return (SimpleUser(user_id), None)

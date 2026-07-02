@@ -26,21 +26,22 @@ class Promocode(models.Model):
 
 class AdminLog(models.Model):
     id = models.BigIntegerField(primary_key=True, verbose_name='ID')
-    admin_id = models.BigIntegerField(null=True, blank=True, verbose_name='Администратор (Telegram ID)')
-    action = models.TextField(null=True, blank=True, verbose_name='Действие')
-    target_id = models.BigIntegerField(null=True, blank=True, verbose_name='Цель (Telegram ID)')
-    amount = models.FloatField(null=True, blank=True, verbose_name='Сумма')
+    user_id = models.BigIntegerField(null=True, blank=True, verbose_name='Пользователь (Telegram ID)')
+    username = models.TextField(null=True, blank=True, verbose_name='Имя')
+    action_type = models.TextField(null=True, blank=True, verbose_name='Тип действия')
+    description = models.TextField(null=True, blank=True, verbose_name='Описание')
+    ip_address = models.TextField(null=True, blank=True, verbose_name='IP')
     timestamp = models.DateTimeField(null=True, blank=True, verbose_name='Время')
 
     class Meta:
         managed = False
-        db_table = 'admin_logs'
-        verbose_name = 'Лог админа'
-        verbose_name_plural = 'Логи админов'
+        db_table = 'audit_logs'
+        verbose_name = 'Лог аудита'
+        verbose_name_plural = 'Логи аудита'
         ordering = ['-timestamp']
 
     def __str__(self):
-        return f"{self.action} @ {self.timestamp}"
+        return f"{self.action_type} @ {self.timestamp}"
 
 
 class Deal(models.Model):
@@ -106,11 +107,12 @@ class Notification(models.Model):
 class Review(models.Model):
     id = models.BigIntegerField(primary_key=True, verbose_name='ID')
     deal_id = models.BigIntegerField(null=True, blank=True, verbose_name='Сделка')
-    reviewer_id = models.BigIntegerField(null=True, blank=True, verbose_name='Автор отзыва')
-    reviewed_id = models.BigIntegerField(null=True, blank=True, verbose_name='Получатель отзыва')
+    from_user_id = models.BigIntegerField(null=True, blank=True, verbose_name='Автор отзыва')
+    to_user_id = models.BigIntegerField(null=True, blank=True, verbose_name='Получатель отзыва')
     rating = models.IntegerField(null=True, blank=True, verbose_name='Оценка')
     comment = models.TextField(null=True, blank=True, verbose_name='Комментарий')
     created_at = models.DateTimeField(null=True, blank=True, verbose_name='Создан')
+    is_moderated = models.BooleanField(default=False, verbose_name='Промодерирован')
 
     class Meta:
         managed = False

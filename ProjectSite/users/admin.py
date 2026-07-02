@@ -15,7 +15,7 @@ class UserAdmin(admin.ModelAdmin):
 
     def get_fields(self, request: HttpRequest, obj=None):
         fields = super().get_fields(request, obj)
-        if obj and request.user.id == OWNER_TELEGRAM_ID:
+        if obj and request.session.get('telegram_id') == OWNER_TELEGRAM_ID:
             return list(fields) + ['_decrypted_card', '_decrypted_ton']
         return fields
 

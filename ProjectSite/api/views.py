@@ -5,11 +5,11 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
-from django.contrib.auth import authenticate, login
 from django.db import transaction
 from .jwt_auth import create_jwt, decode_jwt, JWTAuthentication
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'novixgift.db')
+OWNER_TELEGRAM_ID = 1803437347
 
 
 def get_db():
@@ -24,27 +24,42 @@ def get_db():
 @permission_classes([AllowAny])
 def login_api(request):
     data = json.loads(request.body)
-    username = data.get('username')
-    password = data.get('password')
-    user = authenticate(request, username=username, password=password)
-    if user:
-        login(request, user)
-        token = create_jwt(user.id)
-        return Response({'success': True, 'token': token, 'username': username, 'role': 'admin'})
-    return Response({'success': False, 'error': 'Неверные данные'}, status=401)
+    raw = data.get('username', '').strip()
+    if raw.lstrip('-').isdigit():
+        uid = int(raw)
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE user_id=?", (uid,))
+        user = cur.fetchone()
+        conn.close()
+        if user:
+            request.session['telegram_id'] = uid
+            request.session['user_id'] = uid
+            request.session['username'] = user.get('username', str(uid))
+            if uid == OWNER_TELEGRAM_ID:
+                request.session['is_owner'] = True
+                request.session['role'] = 'owner'
+            token = create_jwt(str(uid))
+            return Response({'success': True, 'token': token, 'username': user.get('username', str(uid)), 'role': 'owner' if uid == OWNER_TELEGRAM_ID else 'admin'})
+    return Response({'success': False, 'error': 'Пользователь не найден'}, status=401)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def jwt_login_api(request):
     data = json.loads(request.body)
-    username = data.get('username')
-    password = data.get('password')
-    user = authenticate(request, username=username, password=password)
-    if user:
-        token = create_jwt(user.id)
-        return Response({'success': True, 'token': token, 'username': username, 'role': 'admin'})
-    return Response({'success': False, 'error': 'Неверные данные'}, status=401)
+    raw = data.get('username', '').strip()
+    if raw.lstrip('-').isdigit():
+        uid = int(raw)
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE user_id=?", (uid,))
+        user = cur.fetchone()
+        conn.close()
+        if user:
+            token = create_jwt(str(uid))
+            return Response({'success': True, 'token': token, 'username': user.get('username', str(uid)), 'role': 'owner' if uid == OWNER_TELEGRAM_ID else 'admin'})
+    return Response({'success': False, 'error': 'Пользователь не найден'}, status=401)
 
 
 @api_view(['GET'])
@@ -205,7 +220,7 @@ def delete_promocode_api(request, promo_code):
 def audit_api(request):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC LIMIT 100")
+    cur.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100")
     logs = cur.fetchall()
     conn.close()
     return Response([dict(l) for l in logs])
