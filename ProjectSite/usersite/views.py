@@ -84,7 +84,7 @@ def telegram_auth_view(request):
             user_id = user['user_id']
             request.session['user_id'] = user_id
             request.session['telegram_id'] = user_id
-            request.session['username'] = user.get('username', str(user_id))
+            request.session['username'] = user['username'] if user['username'] else str(user_id)
             request.session['is_owner'] = True
             request.session['role'] = 'owner'
             request.session.modified = True
@@ -204,7 +204,7 @@ def dashboard_view(request):
         sales = cur.fetchone()[0] or 0
         cur.execute("SELECT COALESCE(SUM(amount), 0) FROM deals WHERE seller=? AND status='completed'", (user_id,))
         total_earned = cur.fetchone()[0] or 0
-        cur.execute("SELECT COUNT(*) FROM users WHERE referrer_id=?", (user_id,))
+        cur.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (user_id,))
         referrals_count = cur.fetchone()[0] or 0
 
         for c in CURRENCIES:
@@ -234,7 +234,7 @@ def dashboard_view(request):
                    COUNT(r.id) as reviews_count,
                    (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') as completed_deals
             FROM users u
-            LEFT JOIN reviews r ON r.to_user_id = u.user_id
+            LEFT JOIN reviews r ON r.reviewed_id = u.user_id
             WHERE (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') > 0
             GROUP BY u.user_id
             ORDER BY avg_rating DESC, completed_deals DESC
@@ -290,13 +290,13 @@ def profile_view(request):
         cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 20", (user_id, user_id))
         deals = [dict(d) for d in cur.fetchall()]
 
-        cur.execute("SELECT * FROM users WHERE referrer_id=?", (user_id,))
+        cur.execute("SELECT * FROM users WHERE referred_by=?", (user_id,))
         referrals = [dict(r) for r in cur.fetchall()]
 
-        cur.execute("SELECT r.*, d.asset_name AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.deal_id WHERE r.to_user_id=? ORDER BY r.created_at DESC LIMIT 10", (user_id,))
+        cur.execute("SELECT r.*, d.item AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.deal_id WHERE r.reviewed_id=? ORDER BY r.created_at DESC LIMIT 10", (user_id,))
         reviews = [dict(r) for r in cur.fetchall()]
 
-        cur.execute("SELECT AVG(rating) FROM reviews WHERE to_user_id=?", (user_id,))
+        cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (user_id,))
         avg_rating = cur.fetchone()[0] or 0
 
         conn.close()
@@ -621,7 +621,7 @@ def create_ticket(request):
     )
 
     if is_vip:
-        cur.execute("UPDATE support_tickets SET assigned_to=?, priority='high' WHERE id=?", (str(OWNER_TELEGRAM_ID), ticket_id))
+        cur.execute("UPDATE support_tickets SET assigned_to=? WHERE id=?", (str(OWNER_TELEGRAM_ID), ticket_id))
 
     conn.commit()
     conn.close()
@@ -729,10 +729,11 @@ def withdraw_view(request):
         cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
         user = cur.fetchone()
         if user:
-            tier = (user['premium_tier'] or 'free')
+            u = dict(user)
+            tier = (u.get('premium_tier') or 'free')
             commission_pct = TIER_COMMISSION.get(tier, 4)
             for c in CURRENCIES:
-                val = float(user.get(f'balance_{c}', 0) or 0)
+                val = float(u.get(f'balance_{c}', 0) or 0)
                 if val > 0:
                     rate = EXCHANGE_RATES.get(c, 1)
                     rub_val = val * rate
@@ -776,13 +777,14 @@ def withdraw_create_api(request):
         if not user:
             conn.close()
             return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
+        u = dict(user)
 
         total_rub = 0
         for c in CURRENCIES:
-            val = float(user.get(f'balance_{c}', 0) or 0)
+            val = float(u.get(f'balance_{c}', 0) or 0)
             total_rub += val * EXCHANGE_RATES.get(c, 1)
 
-        tier = user.get('premium_tier', 'free') or 'free'
+        tier = u.get('premium_tier', 'free') or 'free'
         commission_pct = TIER_COMMISSION.get(tier, 4)
         net_rub = total_rub * (1 - commission_pct / 100)
     except Exception as e:
@@ -816,22 +818,22 @@ def reviews_view(request):
         conn = get_db()
         cur = conn.cursor()
 
-        cur.execute("SELECT r.*, d.asset_name AS deal_item, u.username AS reviewer_name FROM reviews r "
+        cur.execute("SELECT r.*, d.item AS deal_item, u.username AS reviewer_name FROM reviews r "
                     "LEFT JOIN deals d ON r.deal_id = d.deal_id "
-                    "LEFT JOIN users u ON r.from_user_id = u.user_id "
-                    "WHERE r.to_user_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
+                    "LEFT JOIN users u ON r.reviewer_id = u.user_id "
+                    "WHERE r.reviewed_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
         received = [dict(r) for r in cur.fetchall()]
 
-        cur.execute("SELECT r.*, d.asset_name AS deal_item, u.username AS reviewed_name FROM reviews r "
+        cur.execute("SELECT r.*, d.item AS deal_item, u.username AS reviewed_name FROM reviews r "
                     "LEFT JOIN deals d ON r.deal_id = d.deal_id "
-                    "LEFT JOIN users u ON r.to_user_id = u.user_id "
-                    "WHERE r.from_user_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
+                    "LEFT JOIN users u ON r.reviewed_id = u.user_id "
+                    "WHERE r.reviewer_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
         given = [dict(r) for r in cur.fetchall()]
 
         cur.execute(
             "SELECT AVG(rating) as avg_rating, COUNT(*) as total, "
             "SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END) as positive "
-            "FROM reviews WHERE to_user_id = ?", (user_id,))
+            "FROM reviews WHERE reviewed_id = ?", (user_id,))
         stats_row = cur.fetchone()
         if stats_row:
             avg_rating = round(stats_row[0] or 0, 1)
@@ -870,7 +872,7 @@ def update_review_api(request):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT from_user_id FROM reviews WHERE id = ?", (review_id,))
+    cur.execute("SELECT reviewer_id FROM reviews WHERE id = ?", (review_id,))
     row = cur.fetchone()
     if not row or row[0] != user_id:
         conn.close()
