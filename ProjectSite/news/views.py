@@ -3,87 +3,180 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from django.contrib.admin.views.decorators import staff_member_required
 from django.utils import timezone
-import json
+import json, os, sqlite3
 from .models import News, Partnership, PartnershipMessage
+from users.views import has_permission, OWNER_TELEGRAM_ID as CEO_ID
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
+OWNER_TELEGRAM_ID = 1803437347
+
+
+def _get_client_ip(request):
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+
+def _get_admin_name(request):
+    return 'Heyken' if request.session.get('telegram_id') == OWNER_TELEGRAM_ID else request.session.get('username', 'Администратор')
+
+
+def _log_admin_action(request, action: str, target_id=None):
+    admin_id = request.session.get('telegram_id', 0)
+    admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
+    ip = _get_client_ip(request)
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=40)
+        cur = conn.cursor()
+        desc = f"CEO / Владелец Heyken совершил действие: {action}" if admin_id == OWNER_TELEGRAM_ID else action
+        if target_id:
+            desc += f" | id={target_id}"
+        cur.execute(
+            "INSERT INTO audit_logs (user_id, username, action_type, description, ip_address) VALUES (?, ?, ?, ?, ?)",
+            (admin_id, admin_name, action, desc, ip)
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _log_page_view(request, page_name: str):
+    admin_id = request.session.get('telegram_id', 0)
+    admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
+    ip = _get_client_ip(request)
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=40)
+        cur = conn.cursor()
+        desc = f"👑 CEO перешёл на страницу: {page_name}" if admin_id == OWNER_TELEGRAM_ID else f"📄 Просмотр страницы: {page_name}"
+        cur.execute(
+            "INSERT INTO audit_logs (user_id, username, action_type, description, ip_address) VALUES (?, ?, ?, ?, ?)",
+            (admin_id, admin_name, 'page_view', desc, ip)
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 # ============= НОВОСТИ (АДМИНКА) =============
 
 def news_list_view(request):
     """Список новостей"""
-    news_list = News.objects.all().order_by('-created_at')
+    if not request.session.get('telegram_id'):
+        return redirect('/')
+    _log_page_view(request, 'Новости')
+    news_list = []
+    try:
+        news_list = News.objects.all().order_by('-created_at')
+    except Exception as e:
+        print(f"[news_list] Error: {e}")
     return render(request, 'news_list.html', {
         'active_page': 'news',
+        'admin_name': _get_admin_name(request),
         'news_list': news_list,
     })
 
 def news_create_view(request):
     """Создание новости"""
-    if request.method == 'POST':
-        title = request.POST.get('title')
-        short_description = request.POST.get('short_description')
-        description = request.POST.get('description', '')
-        content = request.POST.get('content')
-        is_published = request.POST.get('is_published') == 'on'
-        
-        News.objects.create(
-            title=title,
-            short_description=short_description,
-            description=description,
-            content=content,
-            is_published=is_published
-        )
+    if not request.session.get('telegram_id'):
+        return redirect('/')
+    _log_page_view(request, 'Создание новости')
+    try:
+        if request.method == 'POST':
+            title = request.POST.get('title')
+            short_description = request.POST.get('short_description')
+            description = request.POST.get('description', '')
+            content = request.POST.get('content')
+            is_published = request.POST.get('is_published') == 'on'
+            
+            News.objects.create(
+                title=title,
+                short_description=short_description,
+                description=description,
+                content=content,
+                is_published=is_published
+            )
+            _log_admin_action(request, f"Создал новость: {title}")
+            return redirect('/news/')
+    except Exception as e:
+        print(f"[news_create] Error: {e}")
         return redirect('/news/')
     
     return render(request, 'news_form.html', {
         'active_page': 'news',
+        'admin_name': _get_admin_name(request),
         'news': None,
         'title': 'Создать новость',
     })
 
 def news_edit_view(request, news_id):
     """Редактирование новости"""
-    news = get_object_or_404(News, id=news_id)
-    
-    if request.method == 'POST':
-        news.title = request.POST.get('title')
-        news.short_description = request.POST.get('short_description')
-        news.description = request.POST.get('description', '')
-        news.content = request.POST.get('content')
-        news.is_published = request.POST.get('is_published') == 'on'
-        news.save()
+    if not request.session.get('telegram_id'):
+        return redirect('/')
+    _log_page_view(request, 'Редактирование новости', target_id=news_id)
+    news = None
+    try:
+        news = get_object_or_404(News, id=news_id)
+        
+        if request.method == 'POST':
+            news.title = request.POST.get('title')
+            news.short_description = request.POST.get('short_description')
+            news.description = request.POST.get('description', '')
+            news.content = request.POST.get('content')
+            news.is_published = request.POST.get('is_published') == 'on'
+            news.save()
+            _log_admin_action(request, f"Отредактировал новость #{news_id}: {news.title}")
+            return redirect('/news/')
+    except Exception as e:
+        print(f"[news_edit] Error: {e}")
         return redirect('/news/')
     
     return render(request, 'news_form.html', {
         'active_page': 'news',
+        'admin_name': _get_admin_name(request),
         'news': news,
         'title': 'Редактировать новость',
     })
 
-@csrf_exempt
-@require_http_methods(["POST"])
 def news_delete_view(request, news_id):
     """Удаление новости"""
-    news = get_object_or_404(News, id=news_id)
-    news.delete()
+    if not request.session.get('telegram_id'):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    try:
+        news = get_object_or_404(News, id=news_id)
+        news.delete()
+        _log_admin_action(request, f"Удалил новость #{news_id}")
+    except Exception as e:
+        print(f"[news_delete] Error: {e}")
     return JsonResponse({'success': True})
 
 
 # ============= СОТРУДНИЧЕСТВО (АДМИНКА) =============
 
-@staff_member_required(login_url='/')
 def partnership_list_view(request):
     """Список заявок на сотрудничество (админка)"""
-    partnerships = Partnership.objects.all().order_by('-created_at')
+    if not request.session.get('telegram_id'):
+        return redirect('/')
+    _log_page_view(request, 'Заявки на сотрудничество')
+    partnerships = []
+    try:
+        partnerships = Partnership.objects.all().order_by('-created_at')
+    except Exception as e:
+        print(f"[partnership_list] Error: {e}")
     return render(request, 'partnership_list.html', {
         'active_page': 'partnership',
+        'admin_name': _get_admin_name(request),
         'partnerships': partnerships,
     })
 
-@staff_member_required(login_url='/')
 def partnership_detail_view(request, partnership_id):
     """Детальный просмотр заявки с чатом (админка)"""
+    if not request.session.get('telegram_id'):
+        return redirect('/')
+    _log_page_view(request, 'Заявка на сотрудничество', target_id=partnership_id)
     partnership = get_object_or_404(Partnership, id=partnership_id)
     messages = PartnershipMessage.objects.filter(partnership=partnership).order_by('created_at')
     
@@ -92,26 +185,30 @@ def partnership_detail_view(request, partnership_id):
         message_text = data.get('message')
         
         if message_text:
+            admin_name = _get_admin_name(request)
             PartnershipMessage.objects.create(
                 partnership=partnership,
                 sender_type='admin',
-                sender_name=request.session.get('admin', 'Admin'),
+                sender_name=admin_name,
                 message=message_text
             )
             partnership.updated_at = timezone.now()
             partnership.save()
+            _log_admin_action(request, f"Ответил в заявке на сотрудничество #{partnership_id}")
             return JsonResponse({'success': True})
     
     return render(request, 'partnership_detail.html', {
         'active_page': 'partnership',
+        'admin_name': _get_admin_name(request),
         'partnership': partnership,
         'messages': messages,
     })
 
-@staff_member_required(login_url='/')
 @csrf_exempt
 def partnership_update_status(request, partnership_id):
     """Обновление статуса заявки"""
+    if not request.session.get('telegram_id'):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
     
@@ -140,14 +237,17 @@ def partnership_update_status(request, partnership_id):
         message=f"Статус заявки изменён на: {status_text}"
     )
     
+    _log_admin_action(request, f"Обновил статус заявки на сотрудничество #{partnership_id} → {status_text}", target_id=partnership_id)
     return JsonResponse({'success': True})
 
-@staff_member_required(login_url='/')
 @csrf_exempt
 def partnership_delete_view(request, partnership_id):
     """Удаление заявки"""
+    if not request.session.get('telegram_id'):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
     partnership = get_object_or_404(Partnership, id=partnership_id)
     partnership.delete()
+    _log_admin_action(request, f"Удалил заявку на сотрудничество #{partnership_id}", target_id=partnership_id)
     return JsonResponse({'success': True})
 
 

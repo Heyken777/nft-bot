@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}Нет доступа{% endblock %}
+{% block content %}
+<div class="stat-card text-center py-5" style="max-width:500px; margin:80px auto;">
+    <i class="fas fa-shield-halved" style="font-size:64px; color:#ff4757; margin-bottom:20px;"></i>
+    <h3 class="mb-3">🚫 Доступ запрещён</h3>
+    <p class="text-cyan-300/70 mb-4">У вашей роли недостаточно прав для просмотра этой страницы.</p>
+    <a href="/dashboard/" class="btn-primary"><i class="fas fa-arrow-left me-2"></i>На дашборд</a>
+</div>
+{% endblock %}

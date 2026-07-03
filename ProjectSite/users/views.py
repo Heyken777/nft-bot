@@ -54,11 +54,84 @@ def log_admin_action(request, action: str, target_id=None, amount=None):
         pass
 
 
+def log_page_view(request, page_name: str, target_id=None):
+    admin_id = request.session.get('telegram_id', 0)
+    admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
+    ip = _get_client_ip(request)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        desc = f"👑 CEO перешёл на страницу: {page_name}" if admin_id == OWNER_TELEGRAM_ID else f"📄 Просмотр страницы: {page_name}"
+        if target_id:
+            desc += f" | id={target_id}"
+        cur.execute(
+            "INSERT INTO audit_logs (user_id, username, action_type, description, ip_address) VALUES (?, ?, ?, ?, ?)",
+            (admin_id, admin_name, 'page_view', desc, ip)
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def _get_client_ip(request):
     xff = request.META.get('HTTP_X_FORWARDED_FOR')
     if xff:
         return xff.split(',')[0].strip()
     return request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+
+# ===================== ROLE-BASED ACCESS CONTROL =====================
+
+ROLE_PERMISSIONS = {
+    'CEO': ['*'],
+    'Admin': [
+        'dashboard', 'users', 'users_edit', 'deals', 'withdrawals',
+        'promocodes', 'broadcast', 'disputes', 'audit',
+        'tickets', 'tickets_reply', 'news', 'partnership',
+    ],
+    'Moderator': [
+        'dashboard', 'users', 'deals', 'disputes', 'reviews',
+        'tickets', 'tickets_reply', 'news',
+    ],
+    'Support': [
+        'tickets', 'tickets_reply', 'users',
+    ],
+    'Analyst': [
+        'dashboard', 'users', 'deals', 'audit',
+    ],
+}
+
+
+def get_user_role(request):
+    tid = request.session.get('telegram_id')
+    if tid == OWNER_TELEGRAM_ID:
+        return 'CEO'
+    return request.session.get('admin_role', 'Admin')
+
+
+def has_permission(request, permission):
+    role = get_user_role(request)
+    perms = ROLE_PERMISSIONS.get(role, [])
+    if '*' in perms:
+        return True
+    return permission in perms
+
+
+def require_permission(permission):
+    def decorator(view_func):
+        @wraps(view_func)
+        def _wrapper(request, *args, **kwargs):
+            if not request.session.get('telegram_id'):
+                return redirect('/')
+            if not has_permission(request, permission):
+                return render(request, 'no_access.html', {
+                    'active_page': '',
+                    'admin_name': get_admin_name(request),
+                }, status=403)
+            return view_func(request, *args, **kwargs)
+        return _wrapper
+    return decorator
 
 
 CURRENCY_LIST = ['RUB','USD','EUR','BYN','UAH','KZT','UZS','TON','USDT','STARS']
@@ -89,17 +162,18 @@ def login_view(request):
             django_user = authenticate(request, username=username, password=password) if password else None
             if django_user:
                 auth_login(request, django_user)
-                uid = OWNER_TELEGRAM_ID if django_user.is_superuser else int(django_user.username)
+                uid = int(django_user.username) if django_user.username.lstrip('-').isdigit() else OWNER_TELEGRAM_ID
                 request.session['telegram_id'] = uid
                 request.session['user_id'] = uid
-                request.session['username'] = username
-                request.session['admin'] = username
+                request.session['username'] = django_user.first_name or username
+                request.session['admin'] = django_user.first_name or username
+                request.session['admin_role'] = 'CEO' if django_user.is_superuser else 'Admin'
                 if django_user.is_superuser or uid == OWNER_TELEGRAM_ID:
                     request.session['is_owner'] = True
                     request.session['role'] = 'owner'
                 request.session.modified = True
                 request.session.save()
-                return JsonResponse({'success': True, 'token': 'session', 'username': username, 'role': 'owner' if django_user.is_superuser else 'admin'})
+                return JsonResponse({'success': True, 'token': 'session', 'username': request.session['username'], 'role': 'owner' if django_user.is_superuser else 'admin'})
 
             if username.lstrip('-').isdigit():
                 uid = int(username)
@@ -114,6 +188,7 @@ def login_view(request):
                     request.session['user_id'] = uid
                     request.session['username'] = u.get('username', str(uid))
                     request.session['admin'] = u.get('username', str(uid))
+                    request.session['admin_role'] = u.get('admin_role', 'Admin') or 'Admin'
                     if uid == OWNER_TELEGRAM_ID:
                         request.session['is_owner'] = True
                         request.session['role'] = 'owner'
@@ -137,8 +212,9 @@ def logout_view(request):
 
 # ===================== DASHBOARD =====================
 
-@session_required
+@require_permission('dashboard')
 def dashboard_view(request):
+    log_page_view(request, 'Дашборд')
     ctx = {}; now = datetime.now()
     try:
         conn = get_db()
@@ -285,8 +361,9 @@ def dashboard_view(request):
 
 # ===================== USERS =====================
 
-@session_required
+@require_permission('users')
 def users_view(request):
+    log_page_view(request, 'Список пользователей')
     page = 1; search = ''; user_list = []; total = 0
     try:
         page = int(request.GET.get('page', 1))
@@ -300,7 +377,7 @@ def users_view(request):
         conn = get_db()
         cur = conn.cursor()
         balance_fields = ', '.join([f'balance_{c}' for c in CURRENCY_LIST])
-        columns = f'user_id, username, created_at, premium_tier, {balance_fields}'
+        columns = f'user_id, username, created_at, premium_tier, admin_role, telegram_username, {balance_fields}'
 
         if search:
             cur.execute(f"""
@@ -326,6 +403,7 @@ def users_view(request):
             display = d.get('username') or str(d['telegram_id'])
             d['display_name'] = display
             d['avatar_letter'] = display[0].upper()
+            d['admin_role'] = d.get('admin_role') or '—'
             total_rub = 0
             for c in CURRENCY_LIST:
                 total_rub += (d.get(f'balance_{c}', 0) or 0) * CURRENCY_RATES.get(c, 0)
@@ -346,8 +424,9 @@ def users_view(request):
     })
 
 
-@session_required
+@require_permission('users')
 def user_detail_view(request, telegram_id):
+    log_page_view(request, 'Карточка пользователя', target_id=telegram_id)
     user_dict = None; deals = []; disputes = []; referrals = []; inviter = None
     audit_logs = []; latest_backup = None; tickets = []; reviews = []; avg_rating = 0
     try:
@@ -453,8 +532,9 @@ def user_detail_view(request, telegram_id):
 
 # ===================== DEALS =====================
 
-@session_required
+@require_permission('deals')
 def deals_list_view(request):
+    log_page_view(request, 'Список сделок')
     search = ''; status_filter = ''; page = 1; deals = []; total = 0
     try:
         page = int(request.GET.get('page', 1))
@@ -497,8 +577,9 @@ def deals_list_view(request):
 
 # ===================== WITHDRAWALS =====================
 
-@session_required
+@require_permission('withdrawals')
 def withdrawals_view(request):
+    log_page_view(request, 'Выводы средств')
     ctx = {'active_page': 'withdrawals', 'admin_name': get_admin_name(request), 'requests': [], 'status_filter': '', 'page': 1, 'total_pages': 1, 'total': 0}
     try:
         conn = get_db()
@@ -534,7 +615,7 @@ def withdrawals_view(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('withdrawals')
 def withdrawal_approve_api(request, req_id):
     try:
         conn = get_db()
@@ -558,7 +639,7 @@ def withdrawal_approve_api(request, req_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('withdrawals')
 def withdrawal_reject_api(request, req_id):
     try:
         conn = get_db()
@@ -574,8 +655,9 @@ def withdrawal_reject_api(request, req_id):
 
 # ===================== PROMOCODES =====================
 
-@session_required
+@require_permission('promocodes')
 def promocodes_view(request):
+    log_page_view(request, 'Промокоды')
     promo_list = []; now = datetime.now()
     try:
         conn = get_db()
@@ -617,8 +699,9 @@ def promocodes_view(request):
 
 # ===================== BROADCAST =====================
 
-@session_required
+@require_permission('broadcast')
 def broadcast_view(request):
+    log_page_view(request, 'Рассылки')
     newsletters = []
     try:
         conn = get_db()
@@ -637,7 +720,7 @@ def broadcast_view(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('broadcast')
 def api_broadcast_send(request):
     try:
         data = json.loads(request.body)
@@ -694,19 +777,46 @@ def api_broadcast_send(request):
 def profile_view(request):
     logs = []
     try:
-        is_ceo = request.session.get('telegram_id') == OWNER_TELEGRAM_ID
+        log_page_view(request, 'Профиль')
+        tid = request.session.get('telegram_id')
+        is_ceo = tid == OWNER_TELEGRAM_ID
         admin_name = 'Heyken' if is_ceo else get_admin_name(request)
-        role = 'CEO / Владелец' if is_ceo else 'Admin'
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM audit_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 50",
-                    (request.session.get('telegram_id'),))
+        cur.execute("SELECT * FROM users WHERE user_id=?", (tid,))
+        user_row = cur.fetchone()
+        if user_row:
+            u = dict(user_row)
+            db_role = u.get('admin_role', 'Admin') or 'Admin'
+            db_telegram = u.get('telegram_username', '') or ''
+            db_custom_roles = u.get('custom_roles', '[]') or '[]'
+        else:
+            db_role = 'Admin'
+            db_telegram = ''
+            db_custom_roles = '[]'
+        try:
+            parsed_custom_roles = json.loads(db_custom_roles) if isinstance(db_custom_roles, str) else db_custom_roles
+        except Exception:
+            parsed_custom_roles = []
+        display_role = 'CEO' if is_ceo else db_role
+        cur.execute("SELECT * FROM audit_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 50", (tid,))
         logs = cur.fetchall()
         conn.close()
         return render(request, 'profile.html', {
             'active_page': 'profile',
-            'admin_name': get_admin_name(request),
-            'admin_data': {'username': admin_name, 'role': role, 'custom_roles': []},
+            'admin_name': admin_name,
+            'user_name': admin_name,
+            'user_username': '@Arkadiex' if is_ceo else (('@' + db_telegram) if db_telegram else ''),
+            'user_role': 'CEO / Владелец' if is_ceo else db_role,
+            'is_ceo': is_ceo,
+            'admin_data': {
+                'username': admin_name,
+                'role': display_role,
+                'custom_roles': parsed_custom_roles,
+                'telegram': db_telegram,
+                'id': tid,
+                'created_at': u.get('created_at', '') if user_row else '',
+            },
             'logs': [dict(l) for l in logs],
             'tickets_assigned': 0,
             'closed_tickets': 0,
@@ -718,7 +828,7 @@ def profile_view(request):
     return render(request, 'profile.html', {
         'active_page': 'profile',
         'admin_name': get_admin_name(request),
-        'admin_data': {'username': get_admin_name(request), 'role': 'Admin', 'custom_roles': []},
+        'admin_data': {'username': get_admin_name(request), 'role': 'Администратор', 'custom_roles': []},
         'logs': [], 'tickets_assigned': 0, 'closed_tickets': 0,
         'rating': 0, 'viewing_self': True,
     })
@@ -727,26 +837,65 @@ def profile_view(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 @session_required
-def api_profile_update(request):
+def api_profile_update(request, username=None):
     try:
         data = json.loads(request.body)
         name = data.get('name', '').strip()
+        telegram = data.get('telegram', '').strip().lstrip('@')
+        role = data.get('role', '').strip()
+        raw_custom_roles = data.get('custom_roles', [])
         tid = request.session.get('telegram_id')
+        if not tid:
+            return JsonResponse({'success': False, 'error': 'Not authenticated'}, status=401)
+
+        target_id = data.get('target_id')
+        if target_id is not None:
+            target_id = int(target_id)
+            if tid != OWNER_TELEGRAM_ID:
+                return JsonResponse({'success': False, 'error': 'Доступ запрещён: только владелец может редактировать других'}, status=403)
+            actual_target = target_id
+        elif username:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT user_id FROM users WHERE username=? OR user_id=?", (username, username))
+            row = cur.fetchone()
+            conn.close()
+            if not row:
+                return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
+            actual_target = row['user_id']
+            if tid != OWNER_TELEGRAM_ID:
+                return JsonResponse({'success': False, 'error': 'Доступ запрещён: только владелец может редактировать других'}, status=403)
+        else:
+            actual_target = tid
+
+        is_self = actual_target == tid
+        custom_roles_json = json.dumps(raw_custom_roles, ensure_ascii=False)
+
         conn = get_db()
         cur = conn.cursor()
-        if tid:
-            if tid == OWNER_TELEGRAM_ID:
-                cur.execute("UPDATE users SET username=? WHERE user_id=?", (name or 'Arkadiex', tid))
-            else:
-                cur.execute("UPDATE users SET username=? WHERE user_id=?", (name, tid))
-            conn.commit()
+        valid_roles = ['Admin', 'Moderator', 'Support', 'Analyst', 'CEO']
+        if role and role in valid_roles:
+            cur.execute("UPDATE users SET username=?, telegram_username=?, admin_role=?, custom_roles=? WHERE user_id=?",
+                        (name or str(actual_target), telegram, role, custom_roles_json, actual_target))
+        else:
+            cur.execute("UPDATE users SET username=?, telegram_username=?, custom_roles=? WHERE user_id=?",
+                        (name or str(actual_target), telegram, custom_roles_json, actual_target))
+        conn.commit()
+
+        if is_self:
+            request.session['username'] = name or 'Arkadiex'
+            request.session['admin'] = name or 'Arkadiex'
+            request.session['admin_role'] = role or 'Admin'
+            request.session.modified = True
+            request.session.save()
+
+        log_admin_action(request, f"Обновил профиль {'себя' if is_self else f'пользователя {actual_target}'} (role={role})", target_id=actual_target)
+
         conn.close()
-        if name:
-            request.session['username'] = name
-            request.session['admin'] = name
+        return JsonResponse({'status': 'success', 'success': True, 'message': 'Данные успешно сохранены!'})
     except Exception as e:
         print(f"Ошибка сохранения профиля: {e}")
-    return JsonResponse({'status': 'success', 'success': True, 'message': 'Данные успешно сохранены!'})
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
 @csrf_exempt
@@ -758,8 +907,9 @@ def api_profile_change_password(request):
 
 # ===================== DISPUTES / ARBITRATION =====================
 
-@session_required
+@require_permission('disputes')
 def disputes_view(request):
+    log_page_view(request, 'Споры / Арбитраж')
     disputes_data = []
     try:
         conn = get_db()
@@ -818,7 +968,7 @@ def dispute_detail_api(request, dispute_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('disputes')
 def dispute_resolve_api(request, dispute_id):
     try:
         data = json.loads(request.body)
@@ -872,7 +1022,7 @@ def dispute_resolve_api(request, dispute_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('promocodes')
 def api_create_promocode(request):
     try:
         data = json.loads(request.body)
@@ -900,7 +1050,7 @@ def api_create_promocode(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('promocodes')
 def api_update_promocode(request, promo_code):
     try:
         data = json.loads(request.body)
@@ -926,7 +1076,7 @@ def api_update_promocode(request, promo_code):
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
-@session_required
+@require_permission('promocodes')
 def api_delete_promocode(request, promo_code):
     try:
         conn = get_db()
@@ -998,7 +1148,7 @@ VALID_CURRENCIES = {'RUB','USD','EUR','BYN','UAH','KZT','UZS','TON','USDT','STAR
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('users_edit')
 def api_change_balance(request, telegram_id):
     try:
         data = json.loads(request.body)
@@ -1042,7 +1192,7 @@ def api_send_message(request, telegram_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('users_edit')
 def api_grant_premium(request, telegram_id):
     try:
         data = json.loads(request.body)
@@ -1118,7 +1268,7 @@ def api_get_audit_logs(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('audit')
 def api_clear_audit(request):
     try:
         conn = get_db()
@@ -1213,17 +1363,18 @@ def api_login(request):
         django_user = authenticate(request, username=raw, password=password) if password else None
         if django_user:
             auth_login(request, django_user)
-            uid = OWNER_TELEGRAM_ID if django_user.is_superuser else int(django_user.username)
+            uid = int(django_user.username) if django_user.username.lstrip('-').isdigit() else OWNER_TELEGRAM_ID
             request.session['telegram_id'] = uid
             request.session['user_id'] = uid
-            request.session['username'] = raw
-            request.session['admin'] = raw
+            request.session['username'] = django_user.first_name or raw
+            request.session['admin'] = django_user.first_name or raw
+            request.session['admin_role'] = 'CEO' if django_user.is_superuser else 'Admin'
             if django_user.is_superuser:
                 request.session['is_owner'] = True
                 request.session['role'] = 'owner'
             request.session.modified = True
             request.session.save()
-            return JsonResponse({'success': True, 'token': 'session', 'username': raw, 'role': 'owner' if django_user.is_superuser else 'admin'})
+            return JsonResponse({'success': True, 'token': 'session', 'username': request.session['username'], 'role': 'owner' if django_user.is_superuser else 'admin'})
 
         if raw.lstrip('-').isdigit():
             uid = int(raw)
@@ -1238,6 +1389,7 @@ def api_login(request):
                 request.session['user_id'] = uid
                 request.session['username'] = u.get('username', str(uid))
                 request.session['admin'] = u.get('username', str(uid))
+                request.session['admin_role'] = u.get('admin_role', 'Admin') or 'Admin'
                 if uid == OWNER_TELEGRAM_ID:
                     request.session['is_owner'] = True
                     request.session['role'] = 'owner'
@@ -1300,8 +1452,9 @@ def api_export_audit(request):
 
 # ===================== AUDIT VIEW =====================
 
-@session_required
+@require_permission('audit')
 def audit_view(request):
+    log_page_view(request, 'Журнал аудита')
     tid = request.session.get('telegram_id')
     if tid != OWNER_TELEGRAM_ID and not request.session.get('is_owner'):
         return render(request, 'audit.html', {'active_page': 'audit', 'admin_name': get_admin_name(request), 'logs': []})
@@ -1329,8 +1482,9 @@ def audit_view(request):
 
 # ===================== ADMIN MANAGEMENT (OWNER ONLY) =====================
 
-@session_required
+@require_permission('users')
 def admins_view(request):
+    log_page_view(request, 'Администраторы')
     tid = request.session.get('telegram_id')
     if tid != OWNER_TELEGRAM_ID and not request.session.get('is_owner'):
         return render(request, 'admins.html', {'active_page': 'admins', 'admin_name': get_admin_name(request), 'admins': []})
@@ -1441,8 +1595,9 @@ def api_delete_admin(request, username):
 
 # ===================== ADMIN TICKETS =====================
 
-@session_required
+@require_permission('tickets')
 def admin_tickets_view(request):
+    log_page_view(request, 'Тикеты поддержки')
     tickets_data = []
     try:
         conn = get_db()
@@ -1471,8 +1626,9 @@ def admin_tickets_view(request):
     })
 
 
-@session_required
+@require_permission('tickets')
 def admin_ticket_detail_view(request, ticket_id):
+    log_page_view(request, 'Тикет поддержки', target_id=ticket_id)
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -1498,7 +1654,7 @@ def admin_ticket_detail_view(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('tickets_reply')
 def admin_ticket_reply_api(request, ticket_id):
     try:
         data = json.loads(request.body)
@@ -1532,7 +1688,7 @@ def admin_ticket_reply_api(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('tickets')
 def admin_ticket_status_api(request, ticket_id):
     try:
         data = json.loads(request.body)
@@ -1552,7 +1708,7 @@ def admin_ticket_status_api(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('tickets')
 def admin_ticket_assign_api(request, ticket_id):
     try:
         data = json.loads(request.body)
@@ -1570,7 +1726,7 @@ def admin_ticket_assign_api(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('tickets')
 def admin_ticket_close_api(request, ticket_id):
     try:
         conn = get_db()
@@ -1588,7 +1744,7 @@ def admin_ticket_close_api(request, ticket_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('users_edit')
 def api_backup_balance(request, telegram_id):
     try:
         conn = get_db()
@@ -1618,7 +1774,7 @@ def api_backup_balance(request, telegram_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('users_edit')
 def api_restore_balance(request, telegram_id):
     try:
         conn = get_db()
@@ -1644,7 +1800,7 @@ def api_restore_balance(request, telegram_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@session_required
+@require_permission('reviews')
 def api_moderate_review(request, review_id):
     try:
         conn = get_db()

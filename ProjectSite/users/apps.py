@@ -36,12 +36,12 @@ def seed_ceo_profile():
         owner = cur.fetchone()
         if not owner:
             cur.execute("""
-                INSERT INTO users (user_id, username, premium_tier, premium_until)
-                VALUES (?, ?, 'vip', '2036-01-01 00:00:00')
+                INSERT INTO users (user_id, username, admin_role, premium_tier, premium_until)
+                VALUES (?, ?, 'CEO', 'vip', '2036-01-01 00:00:00')
             """, (OWNER_TELEGRAM_ID, CEO_USERNAME))
             print(f"CEO profile @{CEO_USERNAME} created in DB")
         else:
-            cur.execute("UPDATE users SET username=?, premium_tier='vip', premium_until='2036-01-01 00:00:00' WHERE user_id=?",
+            cur.execute("UPDATE users SET username=?, admin_role='CEO', premium_tier='vip', premium_until='2036-01-01 00:00:00' WHERE user_id=?",
                         (CEO_USERNAME, OWNER_TELEGRAM_ID))
             print(f"CEO profile @{CEO_USERNAME} synced")
         conn.commit()

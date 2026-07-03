@@ -37,6 +37,8 @@ urlpatterns = [
     path('api/users/<int:telegram_id>/restore-balance/', views.api_restore_balance),
     path('api/users/search/', views.api_search_users, name='api_search_users'),
     path('api/users/export/', views.api_export_users),
+    
+    # API: Сделки
     path('api/deals/search/', views.api_search_deals, name='api_search_deals'),
 
     # API: промокоды (code — строка)
@@ -59,6 +61,7 @@ urlpatterns = [
     # Администраторы (CEO only)
     path('admins/', views.admins_view, name='admins'),
     path('api/admins/create/', views.api_create_admin),
+    path('api/admins/<str:username>/update/', views.api_profile_update),
     path('api/admins/<str:username>/reset-password/', views.api_reset_admin_password),
     path('api/admins/<str:username>/delete/', views.api_delete_admin),
 
