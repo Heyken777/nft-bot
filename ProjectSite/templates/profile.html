@@ -41,8 +41,8 @@
             
             <h2 class="mt-4 mb-2" style="font-size:clamp(1.2rem, 5vw, 1.8rem);">{{ admin_data.username }}</h2>
             
-            <div class="role-badge" style="display:inline-block; padding:8px 24px; border-radius:30px; margin-bottom:16px; {% if is_ceo %}background:rgba(212,175,55,0.15); border:1px solid rgba(212,175,55,0.3);{% else %}background:rgba(255,0,102,0.15);{% endif %}">
-                <i class="fas fa-shield-alt me-2"></i> {% if is_ceo %}👑 CEO / Владелец{% else %}{{ admin_data.role|default:"Администратор" }}{% endif %}
+            <div class="role-badge" style="display:inline-block; padding:8px 24px; border-radius:30px; margin-bottom:16px; {% if admin_data.role == 'CEO' %}background:rgba(212,175,55,0.15); border:1px solid rgba(212,175,55,0.3);{% else %}background:rgba(255,0,102,0.15);{% endif %}">
+                <i class="fas fa-shield-alt me-2"></i> {% if admin_data.role == 'CEO' %}👑 CEO / Владелец{% else %}{{ admin_data.role|default:"Администратор" }}{% endif %}
             </div>
             
             <div class="d-flex justify-content-center gap-3 mb-4 flex-wrap">
