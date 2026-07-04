@@ -20,18 +20,18 @@ def _get_client_ip(request):
 
 
 def _get_admin_name(request):
-    return 'Heyken' if request.session.get('telegram_id') == OWNER_TELEGRAM_ID else request.session.get('username', 'Администратор')
+    return request.session.get('username', 'Администратор')
 
 
 def _log_admin_action(request, action: str, target_id=None):
     admin_id = request.session.get('telegram_id', 0)
-    admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
+    admin_name = request.session.get('username', '') or 'Admin'
     ip = _get_client_ip(request)
     now = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
         conn = sqlite3.connect(DB_PATH, timeout=40)
         cur = conn.cursor()
-        desc = f"CEO / Владелец Heyken совершил действие: {action}" if admin_id == OWNER_TELEGRAM_ID else action
+        desc = f"CEO / Владелец {admin_name} совершил действие: {action}" if admin_id == OWNER_TELEGRAM_ID else action
         if target_id:
             desc += f" | id={target_id}"
         desc += f" | IP: {ip}"
@@ -47,7 +47,7 @@ def _log_admin_action(request, action: str, target_id=None):
 
 def _log_page_view(request, action_type: str, description: str):
     admin_id = request.session.get('telegram_id', 0)
-    admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
+    admin_name = request.session.get('username', '') or 'Admin'
     ip = _get_client_ip(request)
     now = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
     try:

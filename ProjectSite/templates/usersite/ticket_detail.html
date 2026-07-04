@@ -316,9 +316,7 @@
                         <span class="message-author">{{ msg.sender_name|default:"Пользователь" }}</span>
                         <span class="message-role">
                             {% if msg.sender_type == 'admin' %}
-                                {% if msg.sender_name == 'Heyken' %}👑 Владелец
-                                {% elif msg.sender_name == 'Support' %}🎧 Поддержка
-                                {% else %}🔧 Администратор{% endif %}
+                                🔧 Администратор
                             {% else %}
                                 📱 Пользователь
                             {% endif %}

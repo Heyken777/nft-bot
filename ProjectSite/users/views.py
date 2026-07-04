@@ -38,13 +38,13 @@ def get_admin_name(request):
 
 def log_admin_action(request, action: str, target_id=None, amount=None):
     admin_id = request.session.get('telegram_id', 0)
-    admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
+    admin_name = request.session.get('username', '') or 'Admin'
     ip = _get_client_ip(request)
     now = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
         conn = get_db()
         cur = conn.cursor()
-        desc = f"CEO / Владелец Heyken совершил действие: {action}" if admin_id == OWNER_TELEGRAM_ID else action
+        desc = f"CEO / Владелец {admin_name} совершил действие: {action}" if admin_id == OWNER_TELEGRAM_ID else action
         if target_id:
             desc += f" | target={target_id}"
         if amount:
@@ -62,7 +62,7 @@ def log_admin_action(request, action: str, target_id=None, amount=None):
 
 def log_page_view(request, action_type: str, description: str, target_id=None):
     admin_id = request.session.get('telegram_id', 0)
-    admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
+    admin_name = request.session.get('username', '') or 'Admin'
     ip = _get_client_ip(request)
     now = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
@@ -813,7 +813,7 @@ def profile_view(request):
         log_page_view(request, 'Просмотр Профиля', 'Администратор открыл свой профиль')
         tid = request.session.get('telegram_id')
         is_ceo = tid == OWNER_TELEGRAM_ID
-        admin_name = 'Heyken' if is_ceo else get_admin_name(request)
+        admin_name = get_admin_name(request)
         conn = get_db()
         cur = conn.cursor()
         cur.execute("SELECT * FROM users WHERE user_id=?", (tid,))
@@ -832,6 +832,7 @@ def profile_view(request):
         except Exception:
             parsed_custom_roles = []
         display_role = 'CEO' if is_ceo else db_role
+        display_name = admin_name
         cur.execute("SELECT * FROM audit_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 50", (tid,))
         logs = cur.fetchall()
         conn.close()
@@ -839,7 +840,7 @@ def profile_view(request):
             'active_page': 'profile',
             'admin_name': admin_name,
             'user_name': admin_name,
-            'user_username': '@Arkadiex' if is_ceo else (('@' + db_telegram) if db_telegram else ''),
+            'user_username': f'@{admin_name}' if is_ceo else (('@' + db_telegram) if db_telegram else ''),
             'user_role': 'CEO / Владелец' if is_ceo else db_role,
             'is_ceo': is_ceo,
             'admin_data': {
@@ -1306,7 +1307,7 @@ def api_send_message(request, telegram_id):
 
         admin_name = get_admin_name(request)
         is_ceo = request.session.get('telegram_id') == OWNER_TELEGRAM_ID
-        display_name = 'Владелец - Heyken' if is_ceo else admin_name
+        display_name = admin_name
         tg_text = f"💬 Сообщение от поддержки NovIX:\n\n{text}\n\n— {display_name}"
 
         bot_token = os.getenv('BOT_TOKEN') or getattr(settings, 'BOT_TOKEN', '')
@@ -1874,8 +1875,8 @@ def admin_ticket_reply_api(request, ticket_id):
         if not message:
             return JsonResponse({'success': False, 'error': 'Пустое сообщение'}, status=400)
         is_ceo = request.session.get('telegram_id') == OWNER_TELEGRAM_ID
-        admin_name = 'Владелец - Heyken' if is_ceo else get_admin_name(request)
-        display_message = f"💬 Сообщение от Владельца - Heyken: {message}" if is_ceo else message
+        admin_name = get_admin_name(request)
+        display_message = f"💬 {admin_name}: {message}"
         conn = get_db()
         cur = conn.cursor()
         cur.execute(
