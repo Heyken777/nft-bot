@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'usersite',
     'news',
     'escrow',
+    'disputes',
 ]
 
 MIDDLEWARE = [

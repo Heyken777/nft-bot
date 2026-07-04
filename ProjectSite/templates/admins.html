@@ -90,6 +90,17 @@
             <option value="Support">Арбитр споров</option>
         </select>
 
+        <!-- Роль в тикетах -->
+        <label style="color: #8892b0; font-size: 13px; margin-bottom: 6px; display: block;">Роль в тикетах</label>
+        <select id="ticketRole" class="form-control mb-3" style="background: rgba(0,10,20,0.65); border: 1px solid rgba(0,255,255,0.25); border-radius: 14px; padding: 14px; color: #fff; font-size: 14px; width: 100%; box-sizing: border-box; cursor: pointer;">
+            <option value="Старший администратор">Старший администратор</option>
+            <option value="Администратор" selected>Администратор</option>
+            <option value="Старший модератор">Старший модератор</option>
+            <option value="Модератор">Модератор</option>
+            <option value="Младший модератор">Младший модератор</option>
+            <option value="Хелпер">Хелпер</option>
+        </select>
+
         <!-- UUID Password -->
         <div class="d-flex gap-2 mb-3">
             <button onclick="generatePassword()" style="flex:1; background: rgba(0,255,200,0.1); border: 1px solid rgba(0,255,200,0.3); border-radius: 14px; padding: 14px; color: #00ffcc; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.background='rgba(0,255,200,0.2)'" onmouseout="this.style.background='rgba(0,255,200,0.1)'">
@@ -136,6 +147,7 @@ async function createAdmin() {
     const telegramId = document.getElementById('adminTelegramId').value.trim();
     const telegram = document.getElementById('adminTelegram').value.trim();
     const role = document.getElementById('adminRole').value;
+    const ticketRole = document.getElementById('ticketRole').value;
     const password = window._generatedPassword || '';
 
     if (!name) { showToast('Введите имя администратора', 'error'); return; }
@@ -153,7 +165,8 @@ async function createAdmin() {
                 telegram_id: telegramId,
                 telegram_username: telegram,
                 role: role,
-                password: password
+                password: password,
+                ticket_role: ticketRole
             })
         });
         const data = await res.json();

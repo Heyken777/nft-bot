@@ -813,7 +813,29 @@ def profile_view(request):
         log_page_view(request, 'Просмотр Профиля', 'Администратор открыл свой профиль')
         tid = request.session.get('telegram_id')
         is_ceo = tid == OWNER_TELEGRAM_ID
+
+        # Support viewing other admins via ?user=username
+        target_username = request.GET.get('user', '').strip()
+        viewing_self = True
+        if target_username and target_username != get_admin_name(request) and is_ceo:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT user_id, username, admin_role, telegram_username, custom_roles, created_at FROM users WHERE username=? AND admin_role IS NOT NULL AND admin_role != ''", (target_username,))
+            target_row = cur.fetchone()
+            conn.close()
+            if target_row:
+                tid = target_row['user_id']
+                viewing_self = False
+
         admin_name = get_admin_name(request)
+        if not viewing_self:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT username FROM users WHERE user_id=?", (tid,))
+            urow = cur.fetchone()
+            admin_name = urow[0] if urow else target_username
+            conn.close()
+
         conn = get_db()
         cur = conn.cursor()
         cur.execute("SELECT * FROM users WHERE user_id=?", (tid,))
@@ -831,8 +853,21 @@ def profile_view(request):
             parsed_custom_roles = json.loads(db_custom_roles) if isinstance(db_custom_roles, str) else db_custom_roles
         except Exception:
             parsed_custom_roles = []
-        display_role = 'CEO' if is_ceo else db_role
+        display_role = 'CEO' if (tid == OWNER_TELEGRAM_ID) else db_role
         display_name = admin_name
+
+        cur.execute("""
+            SELECT COUNT(*) FROM support_tickets
+            WHERE assigned_to=? AND status!='closed'
+        """, (admin_name,))
+        tickets_assigned = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT COUNT(*) FROM audit_logs
+            WHERE user_id=? AND description LIKE '%Закрыл тикет%'
+        """, (tid,))
+        closed_tickets = cur.fetchone()[0]
+
         cur.execute("SELECT * FROM audit_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 50", (tid,))
         logs = cur.fetchall()
         conn.close()
@@ -840,9 +875,9 @@ def profile_view(request):
             'active_page': 'profile',
             'admin_name': admin_name,
             'user_name': admin_name,
-            'user_username': f'@{admin_name}' if is_ceo else (('@' + db_telegram) if db_telegram else ''),
-            'user_role': 'CEO / Владелец' if is_ceo else db_role,
-            'is_ceo': is_ceo,
+            'user_username': f'@{admin_name}' if tid == OWNER_TELEGRAM_ID else (('@' + db_telegram) if db_telegram else ''),
+            'user_role': 'CEO / Владелец' if tid == OWNER_TELEGRAM_ID else db_role,
+            'is_ceo': tid == OWNER_TELEGRAM_ID,
             'admin_data': {
                 'username': admin_name,
                 'role': display_role,
@@ -852,10 +887,10 @@ def profile_view(request):
                 'created_at': u.get('created_at', '') if user_row else '',
             },
             'logs': [dict(l) for l in logs],
-            'tickets_assigned': 0,
-            'closed_tickets': 0,
+            'tickets_assigned': tickets_assigned,
+            'closed_tickets': closed_tickets,
             'rating': min(100, len(logs)),
-            'viewing_self': True,
+            'viewing_self': viewing_self,
         })
     except Exception as e:
         print(f"[profile] Error: {e}")
@@ -940,205 +975,6 @@ def api_profile_change_password(request):
 
 
 # ===================== DISPUTES / ARBITRATION =====================
-
-@require_permission('disputes')
-def disputes_view(request):
-    log_page_view(request, 'Просмотр Споров', 'Администратор открыл страницу споров и арбитража')
-    disputes_data = []
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT d.*, de.seller, de.buyer, de.amount, de.currency, de.item, de.status AS deal_status
-            FROM disputes d
-            LEFT JOIN deals de ON d.deal_id = de.id
-            ORDER BY d.created_at DESC
-        """)
-        for d in cur.fetchall():
-            row = dict(d)
-            dc = row.get('dispute_code') or f"#{row.get('id')}"
-            disputes_data.append({
-                'id': row.get('id'),
-                'dispute_code': dc,
-                'username': f"user_{row.get('buyer')}",
-                'user_id': row.get('buyer'),
-                'user_login': f"User {row.get('buyer')}",
-                'subject': f"Спор {dc} по сделке #{row.get('deal_id')} — {row.get('item', 'NFT')}",
-                'order_number': f"#{row.get('deal_id')}",
-                'user_type': 'buyer' if row.get('initiator') == 'buyer' else 'seller',
-                'status': 'open' if row.get('status') == 'pending' else row.get('status', 'closed'),
-                'created_at': row.get('created_at', ''),
-            })
-        conn.close()
-    except Exception as e:
-        print(f"[disputes] Error: {e}")
-    return render(request, 'tickets.html', {
-        'active_page': 'tickets',
-        'admin_name': get_admin_name(request),
-        'tickets': disputes_data,
-        'is_disputes': True,
-    })
-
-
-@csrf_exempt
-@session_required
-def dispute_detail_api(request, dispute_id):
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT d.*, de.seller, de.buyer, de.amount, de.currency, de.item, de.status AS deal_status,
-                   de.created AS deal_created, de.commission
-            FROM disputes d
-            LEFT JOIN deals de ON d.deal_id = de.id
-            WHERE d.id=?
-        """, (dispute_id,))
-        row = cur.fetchone()
-        conn.close()
-        if not row:
-            return JsonResponse({'error': 'Not found'}, status=404)
-        data = dict(row)
-        data['dispute_code'] = data.get('dispute_code') or f"#{data.get('id')}"
-        return JsonResponse(data)
-    except Exception as e:
-        print(f"[dispute_detail] Error: {e}")
-        return JsonResponse({'error': 'Server error'}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-@require_permission('disputes')
-def dispute_resolve_api(request, dispute_id):
-    admin_id = request.session.get('telegram_id', 0)
-    try:
-        data = json.loads(request.body)
-        decision = data.get('decision')
-        reason = (data.get('reason', '') or '').strip()
-
-        if decision not in ('seller', 'buyer'):
-            return JsonResponse({'error': 'Некорректное решение'}, status=400)
-
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM disputes WHERE id=?", (dispute_id,))
-        row = cur.fetchone()
-        if not row:
-            conn.close()
-            return JsonResponse({'error': 'Спор не найден'}, status=404)
-        dispute = dict(row)
-        if dispute.get('status') != 'pending':
-            conn.close()
-            return JsonResponse({'error': 'Спор уже закрыт'}, status=400)
-
-        dispute_code = dispute.get('dispute_code') or f"#{dispute_id}"
-        deal_id = dispute['deal_id']
-        cur.execute("SELECT * FROM deals WHERE id=?", (deal_id,))
-        deal_row = cur.fetchone()
-        if not deal_row:
-            conn.close()
-            return JsonResponse({'error': 'Сделка не найдена'}, status=404)
-        deal = dict(deal_row)
-
-        currency = deal['currency']
-        amount = float(deal['amount'])
-        seller_id = deal['seller']
-        buyer_id = deal.get('buyer')
-
-        # Комиссия продавца на основе его Premium-тарифа
-        cur.execute("SELECT premium_tier FROM users WHERE user_id=?", (seller_id,))
-        tier_row = cur.fetchone()
-        tier = tier_row[0] if tier_row else 'free'
-        commission_rate = {'free': 0.10, 'premium': 0.05, 'platinum': 0.03, 'vip': 0.0}.get(tier, 0.10)
-        commission = amount * commission_rate
-        seller_payout = round(amount - commission, 2)
-
-        now = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
-
-        if decision == 'seller':
-            cur.execute(f"UPDATE users SET balance_{currency} = COALESCE(balance_{currency},0) + ? WHERE user_id=?",
-                        (seller_payout, seller_id))
-            cur.execute("UPDATE deals SET status='completed', completed=? WHERE id=?", (now, deal_id))
-            cur.execute(
-                "UPDATE disputes SET status='seller', resolved_at=?, resolved_by=?, resolution_reason=? WHERE id=?",
-                (now, admin_id, reason, dispute_id)
-            )
-            winner_side = 'продавца'
-            action_desc = f"Спор {dispute_code}: победа продавца, выплачено {seller_payout} {currency}, причина: {reason}"
-        elif decision == 'buyer':
-            if not buyer_id:
-                conn.close()
-                return JsonResponse({'error': 'Покупатель не указан'}, status=400)
-            cur.execute(f"UPDATE users SET balance_{currency} = COALESCE(balance_{currency},0) + ? WHERE user_id=?",
-                        (amount, buyer_id))
-            cur.execute("UPDATE deals SET status='cancelled', completed=? WHERE id=?", (now, deal_id))
-            cur.execute(
-                "UPDATE disputes SET status='buyer', resolved_at=?, resolved_by=?, resolution_reason=? WHERE id=?",
-                (now, admin_id, reason, dispute_id)
-            )
-            winner_side = 'покупателя'
-            action_desc = f"Спор {dispute_code}: победа покупателя, возвращено {amount} {currency}, причина: {reason}"
-        else:
-            conn.close()
-            return JsonResponse({'error': 'Invalid decision'}, status=400)
-
-        # Аудит с IP
-        log_admin_action(request, action_desc, target_id=seller_id)
-        conn.commit()
-        conn.close()
-
-        # Уведомления через Telegram-бота (через FastAPI эндпоинт bot.py)
-        try:
-            import requests as http_requests
-            bot_token = os.environ.get('BOT_TOKEN', '')
-            if bot_token:
-                base_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-                reason_text = reason or 'Решение администрации.'
-
-                def send_tg(user_id, text):
-                    http_requests.post(base_url, json={
-                        'chat_id': user_id,
-                        'text': text,
-                        'parse_mode': 'Markdown'
-                    }, timeout=10)
-
-                if decision == 'seller':
-                    send_tg(seller_id,
-                        f"✅ *Спор {dispute_code} по сделке #{deal_id} успешно закрыт.*\n\n"
-                        f"Мнение всех администраторов пало на правоту продавца.\n"
-                        f"Вам зачислена сумма: {seller_payout} {currency}\n"
-                        f"Официальная причина: {reason_text}")
-                    if buyer_id:
-                        send_tg(buyer_id,
-                            f"⚖️ *Спор {dispute_code} закрыт.*\n\n"
-                            f"Решением администрации победа присуждена Продавцу.\n"
-                            f"Официальная причина: {reason_text}")
-                else:
-                    if buyer_id:
-                        send_tg(buyer_id,
-                            f"↩️ *Спор {dispute_code} по сделке #{deal_id} успешно закрыт.*\n\n"
-                            f"Мнение всех администраторов пало на правоту покупателя.\n"
-                            f"Вам зачислена сумма: {amount} {currency}\n"
-                            f"Официальная причина: {reason_text}")
-                    send_tg(seller_id,
-                        f"⚖️ *Спор {dispute_code} закрыт.*\n\n"
-                        f"Решением администрации победа присуждена Покупателю.\n"
-                        f"Официальная причина: {reason_text}")
-        except Exception as tg_err:
-            print(f"[dispute_resolve] TG notify error: {tg_err}")
-
-        return JsonResponse({
-            'success': True,
-            'dispute_code': dispute_code,
-            'decision': decision,
-            'winner_side': winner_side,
-            'amount': amount if decision == 'buyer' else seller_payout,
-            'currency': currency,
-            'reason': reason
-        })
-    except Exception as e:
-        print(f"[dispute_resolve] Error: {e}")
-        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
-
 
 # ===================== API: PROMOCODES =====================
 
@@ -1713,6 +1549,7 @@ def api_create_admin(request):
         telegram_username = data.get('telegram_username', '').strip()
         role = data.get('role', 'Admin').strip()
         password = data.get('password', '').strip()
+        ticket_role = data.get('ticket_role', 'Администратор').strip()
 
         if not username:
             return JsonResponse({'success': False, 'error': 'Введите имя'}, status=400)
@@ -1732,7 +1569,7 @@ def api_create_admin(request):
             if cur.fetchone():
                 conn.close()
                 return JsonResponse({'success': False, 'error': 'Пользователь с таким Telegram ID уже существует'}, status=400)
-            cur.execute("INSERT OR IGNORE INTO users (user_id, username, admin_role) VALUES (?, ?, ?)", (tid, username, role))
+            cur.execute("INSERT OR IGNORE INTO users (user_id, username, admin_role, ticket_role) VALUES (?, ?, ?, ?)", (tid, username, role, ticket_role))
             conn.commit()
         else:
             conn.close()
@@ -1740,8 +1577,8 @@ def api_create_admin(request):
 
         conn.commit()
         conn.close()
-        log_admin_action(request, f"Создал администратора {username} (tg: {telegram_username or telegram_id}, role: {role})")
-        return JsonResponse({'success': True, 'password': password, 'role': role})
+        log_admin_action(request, f"Создал администратора {username} (tg: {telegram_username or telegram_id}, role: {role}, ticket_role: {ticket_role})")
+        return JsonResponse({'success': True, 'password': password, 'role': role, 'ticket_role': ticket_role})
     except Exception as e:
         print(f"[create_admin] Error: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
@@ -1793,174 +1630,6 @@ def api_delete_admin(request, username):
 
 
 # ===================== ADMIN TICKETS =====================
-
-@require_permission('tickets')
-def admin_tickets_view(request):
-    log_page_view(request, 'Просмотр Тикетов', 'Администратор открыл список тикетов поддержки')
-    tickets_data = []
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM support_tickets ORDER BY updated_at DESC")
-        user_cache = {}
-        for t in cur.fetchall():
-            d = dict(t)
-            uid = d.get('user_id')
-            if uid not in user_cache:
-                cur.execute("SELECT username FROM users WHERE user_id=?", (uid,))
-                urow = cur.fetchone()
-                user_cache[uid] = urow[0] if urow else str(uid)
-            display_name = user_cache[uid]
-            tickets_data.append({
-                'id': d.get('id'),
-                'user_id': uid,
-                'username': display_name,
-                'user_login': display_name,
-                'subject': d.get('subject', 'Без темы'),
-                'order_number': d.get('order_number', '—'),
-                'user_type': d.get('user_type', '—'),
-                'status': d.get('status', 'open'),
-                'created_at': d.get('created_at', ''),
-            })
-        conn.close()
-    except Exception as e:
-        print(f"[admin_tickets] Error: {e}")
-    return render(request, 'tickets.html', {
-        'active_page': 'admin_tickets',
-        'admin_name': get_admin_name(request),
-        'tickets': tickets_data,
-    })
-
-
-@require_permission('tickets')
-def admin_ticket_detail_view(request, ticket_id):
-    log_page_view(request, 'Просмотр Тикета', f'Администратор открыл тикет #{ticket_id}', target_id=ticket_id)
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM support_tickets WHERE id=?", (ticket_id,))
-        row = cur.fetchone()
-        if not row:
-            conn.close()
-            return redirect('/tickets/')
-        ticket = dict(row)
-        uid = ticket.get('user_id')
-        cur.execute("SELECT username FROM users WHERE user_id=?", (uid,))
-        urow = cur.fetchone()
-        ticket['user_login'] = urow[0] if urow else str(uid)
-        cur.execute("SELECT * FROM support_ticket_messages WHERE ticket_id=? ORDER BY created_at", (ticket_id,))
-        messages = [dict(m) for m in cur.fetchall()]
-        cur.execute("SELECT user_id, username, admin_role FROM users WHERE admin_role IS NOT NULL AND admin_role != '' ORDER BY username")
-        admins = [dict(a) for a in cur.fetchall()]
-        conn.close()
-        return render(request, 'ticket_detail_admin.html', {
-            'active_page': 'admin_tickets',
-            'admin_name': get_admin_name(request),
-            'ticket': ticket,
-            'messages': messages,
-            'admins': admins,
-        })
-    except Exception as e:
-        print(f"[admin_ticket_detail] Error: {e}")
-    return redirect('/tickets/')
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-@require_permission('tickets_reply')
-def admin_ticket_reply_api(request, ticket_id):
-    try:
-        data = json.loads(request.body)
-        message = data.get('message', '').strip()
-        if not message:
-            return JsonResponse({'success': False, 'error': 'Пустое сообщение'}, status=400)
-        is_ceo = request.session.get('telegram_id') == OWNER_TELEGRAM_ID
-        admin_name = get_admin_name(request)
-        display_message = f"💬 {admin_name}: {message}"
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'admin',?,?)",
-            (ticket_id, admin_name, display_message)
-        )
-        cur.execute("UPDATE support_tickets SET updated_at=datetime('now') WHERE id=?", (ticket_id,))
-        cur.execute("SELECT user_id FROM support_tickets WHERE id=?", (ticket_id,))
-        row = cur.fetchone()
-        if row:
-            cur.execute(
-                "INSERT INTO notifications (user_id, title, message) VALUES (?, 'Новый ответ в тикете', ?)",
-                (row['user_id'], '🔔 В вашем тикете на сайте появился новый ответ от поддержки!')
-            )
-        conn.commit()
-        conn.close()
-        return JsonResponse({'success': True})
-    except Exception as e:
-        print(f"[ticket_reply] Error: {e}")
-        return JsonResponse({'success': False, 'error': 'Server error'}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-@require_permission('tickets')
-def admin_ticket_status_api(request, ticket_id):
-    try:
-        data = json.loads(request.body)
-        new_status = data.get('status', 'open')
-        if new_status not in ('open', 'in_progress', 'closed'):
-            return JsonResponse({'success': False, 'error': 'Invalid status'}, status=400)
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT status FROM support_tickets WHERE id=?", (ticket_id,))
-        old_row = cur.fetchone()
-        old_status = old_row[0] if old_row else 'unknown'
-        cur.execute("UPDATE support_tickets SET status=?, updated_at=datetime('now') WHERE id=?", (new_status, ticket_id))
-        conn.commit()
-        conn.close()
-        log_admin_action(request, f"Изменил статус тикета #{ticket_id}: {old_status} → {new_status}", target_id=ticket_id)
-        return JsonResponse({'success': True})
-    except Exception as e:
-        print(f"[ticket_status] Error: {e}")
-        return JsonResponse({'success': False, 'error': 'Server error'}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-@require_permission('tickets')
-def admin_ticket_assign_api(request, ticket_id):
-    try:
-        data = json.loads(request.body)
-        assigned_to = data.get('assigned_to', '')
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT assigned_to FROM support_tickets WHERE id=?", (ticket_id,))
-        old_row = cur.fetchone()
-        old_assign = old_row[0] if old_row else ''
-        cur.execute("UPDATE support_tickets SET assigned_to=?, updated_at=datetime('now') WHERE id=?", (assigned_to, ticket_id))
-        conn.commit()
-        conn.close()
-        action = f"Назначил тикет #{ticket_id}: {old_assign or '—'} → {assigned_to or '—'}"
-        log_admin_action(request, action, target_id=ticket_id)
-        return JsonResponse({'success': True})
-    except Exception as e:
-        print(f"[ticket_assign] Error: {e}")
-        return JsonResponse({'success': False, 'error': 'Server error'}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-@require_permission('tickets')
-def admin_ticket_close_api(request, ticket_id):
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("UPDATE support_tickets SET status='closed', updated_at=datetime('now') WHERE id=?", (ticket_id,))
-        conn.commit()
-        conn.close()
-        return JsonResponse({'success': True})
-    except Exception as e:
-        print(f"[ticket_close] Error: {e}")
-        return JsonResponse({'success': False, 'error': 'Server error'}, status=500)
-
 
 # ===================== BALANCE BACKUP / RESTORE =====================
 

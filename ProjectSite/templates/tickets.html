@@ -219,6 +219,30 @@
         display: inline-block;
     }
     
+    /* Приоритет */
+    .priority-badge {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        display: inline-block;
+    }
+    .priority-critical { background: rgba(255, 0, 0, 0.2); color: #ff4444; border-left: 2px solid #ff4444; }
+    .priority-high { background: rgba(255, 165, 0, 0.2); color: #ffa500; border-left: 2px solid #ffa500; }
+    .priority-medium { background: rgba(0, 200, 255, 0.2); color: #00c8ff; border-left: 2px solid #00c8ff; }
+    .priority-low { background: rgba(100, 100, 100, 0.2); color: #999; border-left: 2px solid #666; }
+    
+    .assignee-badge {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 500;
+        background: rgba(0, 163, 255, 0.1);
+        color: #00a3ff;
+        border: 1px solid rgba(0, 163, 255, 0.2);
+        display: inline-block;
+    }
+    
     /* Кнопки */
     .btn-sm {
         padding: 6px 14px;
@@ -416,6 +440,13 @@
                 <option value="buyer">Покупатель</option>
                 <option value="seller">Продавец</option>
             </select>
+            <select id="priorityFilter" class="filter-select" onchange="filterTickets()">
+                <option value="all">Все приоритеты</option>
+                <option value="Критический">Критический</option>
+                <option value="Высокий">Высокий</option>
+                <option value="Средний">Средний</option>
+                <option value="Низкий">Низкий</option>
+            </select>
         </div>
         <div class="filters-group">
             <input type="text" id="searchInput" class="search-input" placeholder="🔍 Поиск по ID или логину">
@@ -434,20 +465,22 @@
                     <th>Заказ</th>
                     <th>Тип</th>
                     <th>Статус</th>
+                    <th>Приоритет</th>
+                    <th>Ответственный</th>
                     <th>Создан</th>
                     <th>Действия</th>
                 </tr>
             </thead>
             <tbody id="ticketsBody">
                 {% for ticket in tickets %}
-                <tr data-id="{{ ticket.id }}" data-status="{{ ticket.status }}" data-type="{{ ticket.user_type }}" data-login="{{ ticket.user_login|default:''|lower }}" data-id-str="{{ ticket.id }}">
-                    <td>{% firstof ticket.dispute_code ticket.id %}</td>
+                <tr data-id="{{ ticket.id }}" data-status="{{ ticket.status }}" data-type="{{ ticket.user_type }}" data-priority="{{ ticket.priority|default:'Низкий' }}" data-login="{{ ticket.user_login|default:''|lower }}" data-id-str="{{ ticket.id }}">
+                    <td>{{ ticket.id }}</td>
                     <td>
                         <div class="user-cell">
                             <div class="user-avatar">
                                 {% firstof ticket.username|slice:":1" ticket.user_login|slice:":1" "?" %}
                             </div>
-                            <span>{{ ticket.username|default:ticket.user_id }}</span>
+                            <a href="/users/{{ ticket.user_id }}/" style="color: #00a3ff; text-decoration: underline; text-underline-offset: 2px;">{{ ticket.username|default:ticket.user_id }}</a>
                         </div>
                     </td>
                     <td>{{ ticket.user_login|default:"—" }}</td>
@@ -471,32 +504,27 @@
                         <span class="badge-closed">Закрыт</span>
                         {% endif %}
                     </td>
+                    <td>
+                        <span class="priority-badge {{ ticket.priority_class|default:'priority-low' }}">{{ ticket.priority|default:"Низкий" }}</span>
+                    </td>
+                    <td>
+                        <span class="assignee-badge">{{ ticket.assigned_to|default:"—" }}</span>
+                    </td>
                     <td>{{ ticket.created_at|date:"d.m.Y H:i" }}</td>
                     <td style="white-space: nowrap;">
                         <a href="{% url 'admin_ticket_detail' ticket.id %}" class="btn-sm btn-primary-sm" style="margin-right: 8px; text-decoration: none; display: inline-block;">
                             <i class="fas fa-external-link-alt"></i> Открыть
                         </a>
-                        {% if is_disputes %}
-                        <button class="btn-sm btn-primary-sm" onclick="openTicket({{ ticket.id }})" style="margin-right: 8px;">
-                            <i class="fas fa-gavel"></i> Вердикт
-                        </button>
-                        {% endif %}
                         {% if ticket.status != 'closed' %}
-                        {% if is_disputes %}
-                        <button class="btn-sm btn-outline-danger" onclick="event.stopPropagation(); openTicket({{ ticket.id }})">
-                            <i class="fas fa-times-circle"></i> Закрыть
-                        </button>
-                        {% else %}
                         <button class="btn-sm btn-outline-danger" onclick="event.stopPropagation(); closeTicketSupport({{ ticket.id }})">
                             <i class="fas fa-times-circle"></i> Закрыть
                         </button>
-                        {% endif %}
                         {% endif %}
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="9">
+                    <td colspan="11">
                         <div class="empty-state">
                             <i class="fas fa-inbox"></i>
                             <p>Нет тикетов</p>
@@ -509,102 +537,8 @@
     </div>
 </div>
 
-{% if is_disputes %}
-<!-- Модальное окно выбора вердикта спора -->
-<div id="verdictModal" class="modal-overlay">
-    <div class="modal-window" style="max-width: 520px;">
-        <i class="fas fa-gavel" style="font-size: 48px; color: #ffc107; margin-bottom: 16px;"></i>
-        <h3>Закрытие спора</h3>
-        <p style="color: #8892a4; margin-bottom: 20px;">Выбете сторону, в пользу которой выносится решение</p>
-        <div style="display: flex; gap: 12px; margin-bottom: 20px;">
-            <button id="verdictBuyerBtn" class="btn-sm btn-primary-sm" style="flex:1; font-size:14px; padding:14px 10px; border:none; background: linear-gradient(135deg, #00c853, #00e676);">
-                <i class="fas fa-user-check"></i> Правота Покупателя
-            </button>
-            <button id="verdictSellerBtn" class="btn-sm btn-primary-sm" style="flex:1; font-size:14px; padding:14px 10px; border:none; background: linear-gradient(135deg, #ff6d00, #ff9100);">
-                <i class="fas fa-store"></i> Правота Продавца
-            </button>
-        </div>
-        <div id="reasonBlock" style="display:none;">
-            <textarea id="verdictReason" rows="3" style="width:100%; background:rgba(0,10,20,0.6); border:1px solid rgba(0,255,255,0.3); border-radius:12px; padding:12px; color:#fff; font-size:14px; resize:vertical;" placeholder="Введите официальную причину закрытия спора"></textarea>
-            <div class="modal-buttons" style="margin-top:16px;">
-                <button class="btn-cancel" onclick="closeVerdictModal()">Отмена</button>
-                <button class="btn-confirm-danger" id="confirmVerdictBtn" style="background: linear-gradient(135deg, #00a3ff, #0066cc);">Подтвердить</button>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
 
 <script>
-    {% if is_disputes %}
-    let currentVerdictId = null;
-    let currentVerdictDecision = null;
-
-    function openVerdictModal(id, decision) {
-        currentVerdictId = id;
-        currentVerdictDecision = decision;
-        document.getElementById('verdictReason').value = '';
-        document.getElementById('reasonBlock').style.display = 'block';
-        document.getElementById('verdictModal').classList.add('active');
-        document.getElementById('verdictReason').focus();
-    }
-
-    document.getElementById('verdictBuyerBtn')?.addEventListener('click', function() {
-        openVerdictModal(currentVerdictId, 'buyer');
-    });
-
-    document.getElementById('verdictSellerBtn')?.addEventListener('click', function() {
-        openVerdictModal(currentVerdictId, 'seller');
-    });
-
-    function openTicket(id) {
-        currentVerdictId = id;
-        document.getElementById('verdictModal').classList.add('active');
-        document.getElementById('reasonBlock').style.display = 'none';
-        document.querySelector('#verdictModal .modal-window').dataset.disputeId = id;
-    }
-
-    function closeVerdictModal() {
-        document.getElementById('verdictModal').classList.remove('active');
-        document.getElementById('reasonBlock').style.display = 'none';
-        currentVerdictId = null;
-        currentVerdictDecision = null;
-    }
-
-    document.getElementById('confirmVerdictBtn')?.addEventListener('click', async function() {
-        const id = currentVerdictId;
-        const decision = currentVerdictDecision;
-        const reason = document.getElementById('verdictReason').value.trim();
-        if (!id || !decision) {
-            showToast('Ошибка: выбете сторону', 'error');
-            return;
-        }
-        document.getElementById('confirmVerdictBtn').disabled = true;
-        document.getElementById('confirmVerdictBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Обработка...';
-        try {
-            const r = await fetch(`/api/disputes/${id}/resolve/`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({decision: decision, reason: reason})
-            });
-            const d = await r.json();
-            if (d.success) {
-                const side = decision === 'buyer' ? 'покупателя' : 'продавца';
-                showToast(`Спор ${d.dispute_code || '#'+id} закрыт в пользу ${side}`, 'success');
-                setTimeout(() => location.reload(), 1500);
-            } else {
-                showToast('Ошибка: ' + (d.error || 'неизвестно'), 'error');
-            }
-        } catch(e) {
-            showToast('Ошибка соединения', 'error');
-        } finally {
-            document.getElementById('confirmVerdictBtn').disabled = false;
-            document.getElementById('confirmVerdictBtn').innerHTML = 'Подтвердить';
-            closeVerdictModal();
-        }
-    });
-    {% endif %}
-
     async function closeTicketSupport(id) {
         try {
             const r = await fetch(`/api/tickets/${id}/close/`, {method: 'POST'});
@@ -646,6 +580,7 @@
     function filterTickets() {
         const status = document.getElementById('statusFilter').value;
         const type = document.getElementById('typeFilter').value;
+        const priority = document.getElementById('priorityFilter').value;
         const search = document.getElementById('searchInput').value.toLowerCase();
         const rows = document.querySelectorAll('#ticketsBody tr');
         let all = 0, open = 0, progress = 0, closed = 0;
@@ -654,6 +589,7 @@
             if (!row.dataset.id) return;
             const rowStatus = row.dataset.status;
             const rowType = row.dataset.type;
+            const rowPriority = row.dataset.priority;
             const rowLogin = row.dataset.login;
             const rowId = row.dataset.id;
             let show = true;
@@ -662,6 +598,7 @@
                 if (type === 'buyer' && rowType !== 'buyer') show = false;
                 if (type === 'seller' && rowType !== 'seller') show = false;
             }
+            if (priority !== 'all' && rowPriority !== priority) show = false;
             if (search && !rowLogin.includes(search) && !rowId.includes(search)) show = false;
             row.style.display = show ? '' : 'none';
             if (show) {

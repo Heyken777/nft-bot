@@ -697,7 +697,12 @@ def user_ticket_detail_view(request, ticket_id):
         conn.close()
         return redirect('/usersite/tickets/')
     cur.execute("SELECT * FROM support_ticket_messages WHERE ticket_id=? ORDER BY created_at", (ticket_id,))
-    messages = [dict(m) for m in cur.fetchall()]
+    messages = []
+    for m in cur.fetchall():
+        md = dict(m)
+        raw = (md.get('attachments') or '').strip()
+        md['attachments_list'] = [a for a in raw.split(',') if a] if raw else []
+        messages.append(md)
 
     creator_login = None
     cur.execute("SELECT username FROM users WHERE user_id=?", (ticket['user_id'],))
@@ -747,9 +752,24 @@ def create_ticket(request):
         cur.execute("SELECT username FROM users WHERE user_id=?", (user_id,))
         row = cur.fetchone()
         user_login = row[0] if row else str(user_id)
+
+    # Save file attachments
+    attachments = []
+    media_dir = os.path.join(settings.MEDIA_ROOT, 'tickets', str(ticket_id))
+    os.makedirs(media_dir, exist_ok=True)
+    files = request.FILES.getlist('attachments')
+    for f in files:
+        ext = os.path.splitext(f.name)[1] or ''
+        safe_name = f"{len(attachments)}_{int(time.time())}{ext}"
+        dest = os.path.join(media_dir, safe_name)
+        with open(dest, 'wb+') as out:
+            for chunk in f.chunks():
+                out.write(chunk)
+        attachments.append(f"media/tickets/{ticket_id}/{safe_name}")
+
     cur.execute(
-        "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'user',?,?)",
-        (ticket_id, user_login, message)
+        "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message, attachments) VALUES (?,'user',?,?,?)",
+        (ticket_id, user_login, message, ','.join(attachments))
     )
 
     if is_vip:

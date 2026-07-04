@@ -1,7 +1,11 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.shortcuts import render, redirect
+from django.conf import settings
+from django.conf.urls.static import static
 from users import views
+from tickets import views as tickets_views
+from disputes import views as disputes_views
 from news import views as news_views
 
 
@@ -20,7 +24,7 @@ urlpatterns = [
     path('users/<int:telegram_id>/', views.user_detail_view, name='user_detail'),
     path('promocodes/', views.promocodes_view, name='promocodes'),
     path('broadcast/', views.broadcast_view, name='broadcast'),
-    path('disputes/', views.disputes_view, name='disputes'),
+    path('disputes/', disputes_views.disputes_view, name='disputes'),
     path('deals/', views.deals_list_view, name='deals_list'),
     path('withdrawals/', views.withdrawals_view, name='withdrawals'),
     path('api/withdrawals/<int:req_id>/approve/', views.withdrawal_approve_api),
@@ -70,8 +74,8 @@ urlpatterns = [
     path('api/admins/<str:username>/delete/', views.api_delete_admin),
 
     # API: споры / арбитраж
-    path('api/disputes/<int:dispute_id>/', views.dispute_detail_api),
-    path('api/disputes/<int:dispute_id>/resolve/', views.dispute_resolve_api),
+    path('api/disputes/<int:dispute_id>/', disputes_views.dispute_detail_api),
+    path('api/disputes/<int:dispute_id>/resolve/', disputes_views.dispute_resolve_api),
 
     # API: модерация отзывов
     path('api/reviews/<int:review_id>/moderate/', views.api_moderate_review, name='api_moderate_review'),
@@ -84,12 +88,12 @@ urlpatterns = [
     path('news/<int:news_id>/delete/', news_views.news_delete_view, name='news_delete'),
 
     # Тикеты поддержки (админка)
-    path('tickets/', views.admin_tickets_view, name='admin_tickets'),
-    path('tickets/<int:ticket_id>/', views.admin_ticket_detail_view, name='admin_ticket_detail'),
-    path('api/tickets/<int:ticket_id>/reply/', views.admin_ticket_reply_api, name='admin_ticket_reply'),
-    path('api/tickets/<int:ticket_id>/status/', views.admin_ticket_status_api, name='admin_ticket_status'),
-    path('api/tickets/<int:ticket_id>/assign/', views.admin_ticket_assign_api, name='admin_ticket_assign'),
-    path('api/tickets/<int:ticket_id>/close/', views.admin_ticket_close_api, name='admin_ticket_close'),
+    path('tickets/', tickets_views.admin_tickets_view, name='admin_tickets'),
+    path('tickets/<int:ticket_id>/', tickets_views.admin_ticket_detail_view, name='admin_ticket_detail'),
+    path('api/tickets/<int:ticket_id>/reply/', tickets_views.admin_ticket_reply_api, name='admin_ticket_reply'),
+    path('api/tickets/<int:ticket_id>/status/', tickets_views.admin_ticket_status_api, name='admin_ticket_status'),
+    path('api/tickets/<int:ticket_id>/assign/', tickets_views.admin_ticket_assign_api, name='admin_ticket_assign'),
+    path('api/tickets/<int:ticket_id>/close/', tickets_views.admin_ticket_close_api, name='admin_ticket_close'),
 
     # Сотрудничество (админка)
     path('news/partnership/', news_views.partnership_list_view, name='partnership_list'),
@@ -103,3 +107,6 @@ urlpatterns = [
     # Django admin
     path('django-admin/', admin.site.urls),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
