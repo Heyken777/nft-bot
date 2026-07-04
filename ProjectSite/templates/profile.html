@@ -81,7 +81,7 @@
                 <div class="col-6">
                     <div class="stat-card text-center p-3" style="background:rgba(0,0,0,0.3);">
                         <div class="text-cyan-300 small"><i class="fas fa-history me-1"></i> ДЕЙСТВИЙ</div>
-                        <div class="stat-value text-white" style="font-size:clamp(1.5rem, 6vw, 2rem);">{{ logs|length }}</div>
+                        <div class="stat-value text-white" style="font-size:clamp(1.5rem, 6vw, 2rem);">{{ total_actions|default:"0" }}</div>
                     </div>
                 </div>
             </div>
@@ -123,7 +123,7 @@
                 <div class="col-md-6">
                     <label class="form-label"><i class="fas fa-key me-1"></i> UUID ключ</label>
                     <div class="input-group">
-                        <input type="password" id="passwordDisplay" class="form-control" value="{{ admin_data.password|default:'••••••••••••••••' }}" disabled style="font-family:monospace;">
+                        <input type="password" id="passwordDisplay" class="form-control" value="{{ admin_data.password|default:'••••••••••••••••' }}" readonly style="font-family:monospace;">
                         <button class="btn-primary" onclick="togglePassword()" style="width:50px;"><i class="fas fa-eye"></i></button>
                     </div>
                     <div class="small text-cyan-300/50 mt-1">Ваш пароль для входа в админку</div>

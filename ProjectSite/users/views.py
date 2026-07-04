@@ -812,6 +812,7 @@ def profile_view(request):
     try:
         log_page_view(request, 'Просмотр Профиля', 'Администратор открыл свой профиль')
         tid = request.session.get('telegram_id')
+        session_uid = tid
         is_ceo = tid == OWNER_TELEGRAM_ID
 
         # Support viewing other admins via ?user=username
@@ -868,6 +869,9 @@ def profile_view(request):
         """, (tid,))
         closed_tickets = cur.fetchone()[0]
 
+        cur.execute("SELECT COUNT(*) FROM audit_logs WHERE user_id=?", (tid,))
+        total_actions = cur.fetchone()[0]
+
         cur.execute("SELECT * FROM audit_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 50", (tid,))
         raw_logs = cur.fetchall()
         conn.close()
@@ -882,19 +886,21 @@ def profile_view(request):
             'user_name': admin_name,
             'user_username': f'@{admin_name}' if tid == OWNER_TELEGRAM_ID else (('@' + db_telegram) if db_telegram else ''),
             'user_role': 'CEO / Владелец' if tid == OWNER_TELEGRAM_ID else db_role,
-            'is_ceo': tid == OWNER_TELEGRAM_ID,
+            'is_ceo': session_uid == OWNER_TELEGRAM_ID,
             'admin_data': {
                 'username': admin_name,
                 'role': display_role,
                 'custom_roles': parsed_custom_roles,
                 'telegram': db_telegram,
                 'id': tid,
+                'password': u.get('profile_password_hash', '') if user_row else '',
                 'created_at': u.get('created_at', '') if user_row else '',
             },
             'logs': logs,
             'tickets_assigned': tickets_assigned,
             'closed_tickets': closed_tickets,
-            'rating': min(100, len(logs)),
+            'total_actions': total_actions,
+            'rating': min(100, total_actions),
             'viewing_self': viewing_self,
         })
     except Exception as e:
@@ -903,7 +909,7 @@ def profile_view(request):
         'active_page': 'profile',
         'admin_name': get_admin_name(request),
         'admin_data': {'username': get_admin_name(request), 'role': 'Администратор', 'custom_roles': []},
-        'logs': [], 'tickets_assigned': 0, 'closed_tickets': 0,
+        'logs': [], 'tickets_assigned': 0, 'closed_tickets': 0, 'total_actions': 0,
         'rating': 0, 'viewing_self': True,
     })
 
