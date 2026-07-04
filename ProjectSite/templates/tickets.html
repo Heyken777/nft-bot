@@ -473,16 +473,24 @@
                     </td>
                     <td>{{ ticket.created_at|date:"d.m.Y H:i" }}</td>
                     <td style="white-space: nowrap;">
-                        <a href="/tickets/{{ ticket.id }}/" class="btn-sm btn-primary-sm" style="margin-right: 8px; text-decoration: none; display: inline-block;">
+                        <a href="{% url 'admin_ticket_detail' ticket.id %}" class="btn-sm btn-primary-sm" style="margin-right: 8px; text-decoration: none; display: inline-block;">
                             <i class="fas fa-external-link-alt"></i> Открыть
                         </a>
+                        {% if is_disputes %}
                         <button class="btn-sm btn-primary-sm" onclick="openTicket({{ ticket.id }})" style="margin-right: 8px;">
                             <i class="fas fa-gavel"></i> Вердикт
                         </button>
+                        {% endif %}
                         {% if ticket.status != 'closed' %}
+                        {% if is_disputes %}
                         <button class="btn-sm btn-outline-danger" onclick="event.stopPropagation(); openTicket({{ ticket.id }})">
                             <i class="fas fa-times-circle"></i> Закрыть
                         </button>
+                        {% else %}
+                        <button class="btn-sm btn-outline-danger" onclick="event.stopPropagation(); closeTicketSupport({{ ticket.id }})">
+                            <i class="fas fa-times-circle"></i> Закрыть
+                        </button>
+                        {% endif %}
                         {% endif %}
                     </td>
                 </tr>
@@ -501,6 +509,7 @@
     </div>
 </div>
 
+{% if is_disputes %}
 <!-- Модальное окно выбора вердикта спора -->
 <div id="verdictModal" class="modal-overlay">
     <div class="modal-window" style="max-width: 520px;">
@@ -524,8 +533,10 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <script>
+    {% if is_disputes %}
     let currentVerdictId = null;
     let currentVerdictDecision = null;
 
@@ -592,6 +603,22 @@
             closeVerdictModal();
         }
     });
+    {% endif %}
+
+    async function closeTicketSupport(id) {
+        try {
+            const r = await fetch(`/api/tickets/${id}/close/`, {method: 'POST'});
+            const d = await r.json();
+            if (d.success) {
+                showToast('Тикет закрыт', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Ошибка: ' + (d.error || 'неизвестно'), 'error');
+            }
+        } catch(e) {
+            showToast('Ошибка соединения', 'error');
+        }
+    }
 
     function showToast(msg, type) {
         const existing = document.querySelector('.toast-glass');

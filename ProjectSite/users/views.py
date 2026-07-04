@@ -975,6 +975,7 @@ def disputes_view(request):
         'active_page': 'tickets',
         'admin_name': get_admin_name(request),
         'tickets': disputes_data,
+        'is_disputes': True,
     })
 
 
@@ -1671,18 +1672,25 @@ def admins_view(request):
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT DISTINCT u.user_id, u.username, u.premium_tier FROM users u WHERE u.is_admin=1 OR u.user_id=? ORDER BY u.user_id DESC LIMIT 50",
-                    (OWNER_TELEGRAM_ID,))
+        cur.execute(
+            "SELECT u.user_id, u.username, u.admin_role FROM users u "
+            "WHERE u.admin_role IS NOT NULL AND u.admin_role != '' "
+            "ORDER BY u.user_id DESC LIMIT 50"
+        )
         rows = cur.fetchall()
-        if not rows:
-            cur.execute("SELECT u.user_id, u.username, u.premium_tier FROM users u ORDER BY u.user_id DESC LIMIT 50")
-            rows = cur.fetchall()
+        seen = set()
         for row in rows:
             r = dict(row)
+            uid = r['user_id']
+            if uid in seen:
+                continue
+            seen.add(uid)
+            role = 'CEO' if uid == OWNER_TELEGRAM_ID else (r.get('admin_role') or 'User')
+            display_name = r.get('username') or str(uid)
             admins_data.append({
-                'username': r.get('username') or f"User {r['user_id']}",
-                'role': 'CEO' if r['user_id'] == OWNER_TELEGRAM_ID else 'User',
-                'telegram': f"User {r['user_id']}",
+                'username': display_name,
+                'role': role,
+                'telegram': display_name,
             })
         conn.close()
     except Exception as e:
@@ -1841,7 +1849,7 @@ def admin_ticket_detail_view(request, ticket_id):
         ticket['user_login'] = urow[0] if urow else str(uid)
         cur.execute("SELECT * FROM support_ticket_messages WHERE ticket_id=? ORDER BY created_at", (ticket_id,))
         messages = [dict(m) for m in cur.fetchall()]
-        cur.execute("SELECT username FROM admins ORDER BY username")
+        cur.execute("SELECT user_id, username, admin_role FROM users WHERE admin_role IS NOT NULL AND admin_role != '' ORDER BY username")
         admins = [dict(a) for a in cur.fetchall()]
         conn.close()
         return render(request, 'ticket_detail_admin.html', {
