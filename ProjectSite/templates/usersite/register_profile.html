@@ -1,0 +1,115 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Завершение регистрации{% endblock %}
+{% block content %}
+<div class="hero" style="min-height:70vh;">
+    <div class="hero__content" style="max-width:480px;margin:0 auto;">
+        <div class="card text-center">
+            <div class="profile-avatar" style="width:80px;height:80px;margin:0 auto 24px;">
+                <i class="fas fa-user-check"></i>
+            </div>
+            <h1>Завершение регистрации</h1>
+            <p class="text-muted mb-4">
+                Вы успешно вошли через Telegram. Теперь создайте данные для входа по логину и паролю.
+            </p>
+
+            <form id="registerForm" onsubmit="return submitRegistration()">
+                {% csrf_token %}
+                <div class="text-start mb-3">
+                    <label class="form-label">Telegram ID</label>
+                    <input type="text" id="telegramId" class="form-control" value="{{ telegram_id }}" readonly disabled>
+                </div>
+                <div class="text-start mb-3">
+                    <label class="form-label">Telegram @username</label>
+                    <input type="text" class="form-control" value="@{{ username }}" readonly disabled>
+                </div>
+                <div class="text-start mb-3">
+                    <label class="form-label required">Логин</label>
+                    <input type="text" id="profileLogin" class="form-control" placeholder="Придумайте логин" required minlength="3" maxlength="32" pattern="[a-zA-Z0-9_]+">
+                    <small class="text-muted">Только латиница, цифры и _</small>
+                </div>
+                <div class="text-start mb-3">
+                    <label class="form-label">Email (необязательно)</label>
+                    <input type="email" id="profileEmail" class="form-control" placeholder="your@email.com">
+                </div>
+                <div class="text-start mb-3">
+                    <label class="form-label required">Пароль</label>
+                    <input type="password" id="profilePassword" class="form-control" placeholder="Минимум 6 символов" required minlength="6">
+                </div>
+                <div class="text-start mb-3">
+                    <label class="form-label required">Подтверждение пароля</label>
+                    <input type="password" id="profilePasswordConfirm" class="form-control" placeholder="Повторите пароль" required minlength="6">
+                </div>
+                <button type="submit" class="btn btn-primary w-100" id="registerBtn">
+                    <i class="fas fa-save me-2"></i> Сохранить и войти
+                </button>
+            </form>
+
+            <div class="mt-3">
+                <a href="/usersite/logout/" class="text-muted small">
+                    <i class="fas fa-arrow-left"></i> Вернуться на главную
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function submitRegistration() {
+    const login = document.getElementById('profileLogin').value.trim();
+    const email = document.getElementById('profileEmail').value.trim();
+    const password = document.getElementById('profilePassword').value;
+    const confirm = document.getElementById('profilePasswordConfirm').value;
+
+    if (!login) {
+        showToast('Введите логин', 'error');
+        return false;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(login)) {
+        showToast('Логин: только латиница, цифры и _', 'error');
+        return false;
+    }
+    if (login.length < 3) {
+        showToast('Логин: минимум 3 символа', 'error');
+        return false;
+    }
+    if (password.length < 6) {
+        showToast('Пароль: минимум 6 символов', 'error');
+        return false;
+    }
+    if (password !== confirm) {
+        showToast('Пароли не совпадают', 'error');
+        return false;
+    }
+
+    const btn = document.getElementById('registerBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Сохранение...';
+
+    try {
+        const res = await fetch('/usersite/api/save-profile/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || ''
+            },
+            body: JSON.stringify({ login, email, password })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Данные сохранены! Перенаправление...');
+            setTimeout(() => { window.location.href = '/usersite/dashboard/'; }, 1000);
+        } else {
+            showToast('Ошибка: ' + (data.error || 'Неизвестная ошибка'), 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save me-2"></i> Сохранить и войти';
+        }
+    } catch(e) {
+        showToast('Ошибка соединения', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save me-2"></i> Сохранить и войти';
+    }
+    return false;
+}
+</script>
+{% endblock %}

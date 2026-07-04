@@ -6,6 +6,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
@@ -13,8 +14,7 @@ DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
 import sys
 sys.path.insert(0, os.path.join(BASE_DIR, '..'))
 from users.crypto_utils import decrypt_value, is_encryption_enabled as _enc_enabled
-
-OWNER_TELEGRAM_ID = 1803437347
+from users.views import OWNER_TELEGRAM_ID
 
 
 def get_db():
@@ -44,7 +44,14 @@ def safe_db(func):
 
 
 def check_auth(request):
-    return request.session.get('user_id') is not None
+    uid = request.session.get('user_id')
+    if uid is not None:
+        return True
+    tid = request.session.get('telegram_id')
+    if tid:
+        request.session['user_id'] = tid
+        return True
+    return False
 
 
 def get_or_create_user(telegram_id, username=None):
@@ -59,7 +66,9 @@ def get_or_create_user(telegram_id, username=None):
         cur.execute("SELECT * FROM users WHERE user_id=?", (telegram_id,))
         user = cur.fetchone()
     conn.close()
-    return dict(user)
+    u = dict(user)
+    u['admin_role'] = u.get('admin_role') or None
+    return u
 
 
 def user_login_view(request):
@@ -85,6 +94,7 @@ def telegram_auth_view(request):
             request.session['user_id'] = user_id
             request.session['telegram_id'] = user_id
             request.session['username'] = user['username'] if user['username'] else str(user_id)
+            request.session['admin_role'] = user.get('admin_role') or None
             request.session['is_owner'] = True
             request.session['role'] = 'owner'
             request.session.modified = True
@@ -102,6 +112,7 @@ def telegram_auth_view(request):
             request.session['user_id'] = uid
             request.session['telegram_id'] = uid
             request.session['username'] = user.get('username', str(uid))
+            request.session['admin_role'] = user.get('admin_role') or None
             request.session.set_expiry(86400 * 7)
             if uid == OWNER_TELEGRAM_ID:
                 request.session['is_owner'] = True
@@ -111,10 +122,108 @@ def telegram_auth_view(request):
             cur.execute("DELETE FROM auth_codes WHERE code=?", (code,))
             conn.commit()
             conn.close()
+            # Если профиль ещё не заполнен → редирект на страницу регистрации
+            profile_complete = user.get('profile_setup_complete', 0)
+            if not profile_complete:
+                return redirect('/usersite/register/')
             return redirect('/usersite/dashboard/')
         conn.close()
 
     return redirect('/usersite/login/')
+
+
+def register_profile_view(request):
+    """Страница создания логина/пароля/email после Telegram-авторизации."""
+    uid = request.session.get('user_id')
+    username = request.session.get('username', '')
+    if not uid:
+        return redirect('/usersite/login/')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT profile_setup_complete FROM users WHERE user_id=?", (uid,))
+    row = cur.fetchone()
+    conn.close()
+    if row and row[0]:
+        return redirect('/usersite/dashboard/')
+    return render(request, 'usersite/register_profile.html', {
+        'telegram_id': uid,
+        'username': username,
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def save_profile_api(request):
+    """Сохранение логина, email и пароля после Telegram-авторизации."""
+    uid = request.session.get('user_id')
+    if not uid:
+        return JsonResponse({'success': False, 'error': 'Не авторизован'}, status=401)
+    data = json.loads(request.body)
+    login = data.get('login', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '')
+    if not login:
+        return JsonResponse({'success': False, 'error': 'Введите логин'}, status=400)
+    if not re.match(r'^[a-zA-Z0-9_]+$', login):
+        return JsonResponse({'success': False, 'error': 'Логин: только латиница, цифры и _'}, status=400)
+    if len(login) < 3 or len(login) > 32:
+        return JsonResponse({'success': False, 'error': 'Логин от 3 до 32 символов'}, status=400)
+    if len(password) < 6:
+        return JsonResponse({'success': False, 'error': 'Пароль минимум 6 символов'}, status=400)
+    if email and not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
+        return JsonResponse({'success': False, 'error': 'Некорректный email'}, status=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users WHERE profile_login=? AND user_id!=?", (login, uid))
+    if cur.fetchone():
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Этот логин уже занят'}, status=400)
+    password_hash = make_password(password)
+    cur.execute(
+        "UPDATE users SET profile_login=?, profile_password_hash=?, profile_email=?, profile_setup_complete=1 WHERE user_id=?",
+        (login, password_hash, email or None, uid)
+    )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def local_login_api(request):
+    """Вход по логину/email и паролю."""
+    data = json.loads(request.body)
+    login = data.get('login', '').strip().lower()
+    password = data.get('password', '')
+    if not login or not password:
+        return JsonResponse({'success': False, 'error': 'Заполните все поля'}, status=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT user_id, profile_login, profile_password_hash, username FROM users "
+        "WHERE (LOWER(profile_login)=? OR LOWER(profile_email)=?) AND profile_setup_complete=1",
+        (login, login)
+    )
+    user = cur.fetchone()
+    conn.close()
+    if not user:
+        return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
+    user_id, profile_login, password_hash, username = user
+    if not password_hash or not check_password(password, password_hash):
+        return JsonResponse({'success': False, 'error': 'Неверный пароль'}, status=401)
+    request.session['user_id'] = user_id
+    request.session['telegram_id'] = user_id
+    request.session['username'] = username or str(user_id)
+    conn2 = get_db()
+    cur2 = conn2.cursor()
+    cur2.execute("SELECT admin_role FROM users WHERE user_id=?", (user_id,))
+    row = cur2.fetchone()
+    request.session['admin_role'] = row[0] if row and row[0] else None
+    conn2.close()
+    request.session.set_expiry(86400 * 7)
+    request.session.modified = True
+    request.session.save()
+    return JsonResponse({'success': True})
 
 
 @csrf_exempt
@@ -169,9 +278,9 @@ def request_code_api(request):
     return JsonResponse({'success': True, 'message': 'Код отправлен'})
 
 
-CURRENCIES = ['RUB', 'USDT', 'STARS']
-CURRENCY_SYMBOLS = {'RUB': '₽', 'USDT': 'USDT', 'STARS': '⭐'}
-EXCHANGE_RATES = {'RUB': 1, 'USDT': 95, 'STARS': 0.02}
+CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'STARS']
+CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': "so'm", 'TON': 'TON', 'USDT': 'USDT', 'STARS': '⭐'}
+EXCHANGE_RATES = {'RUB': 1, 'USD': 90, 'EUR': 95, 'BYN': 28, 'UAH': 2.3, 'KZT': 0.19, 'UZS': 0.0075, 'TON': 500, 'USDT': 90, 'STARS': 1.5}
 TIER_BADGES = {'free': '⬜ FREE', 'premium': '⭐ PREMIUM', 'platinum': '💎 PLATINUM', 'vip': '👑 VIP'}
 TIER_COMMISSION = {'free': 4, 'premium': 2, 'platinum': 1, 'vip': 0}
 
@@ -194,6 +303,8 @@ def dashboard_view(request):
         cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
         user = cur.fetchone()
         user_dict = dict(user) if user else {}
+        if user_dict and 'user_id' in user_dict:
+            user_dict['telegram_id'] = user_dict.pop('user_id')
 
         cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 5", (user_id, user_id))
         deals = [dict(d) for d in cur.fetchall()]
@@ -286,6 +397,10 @@ def profile_view(request):
 
         cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
         user = cur.fetchone()
+        if user:
+            user_dict_raw = dict(user)
+            user_dict_raw['telegram_id'] = user_dict_raw.pop('user_id')
+            user = user_dict_raw
 
         cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 20", (user_id, user_id))
         deals = [dict(d) for d in cur.fetchall()]
@@ -293,7 +408,7 @@ def profile_view(request):
         cur.execute("SELECT * FROM users WHERE referred_by=?", (user_id,))
         referrals = [dict(r) for r in cur.fetchall()]
 
-        cur.execute("SELECT r.*, d.item AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.deal_id WHERE r.reviewed_id=? ORDER BY r.created_at DESC LIMIT 10", (user_id,))
+        cur.execute("SELECT r.*, d.item AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.id WHERE r.reviewed_id=? ORDER BY r.created_at DESC LIMIT 10", (user_id,))
         reviews = [dict(r) for r in cur.fetchall()]
 
         cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (user_id,))
@@ -347,6 +462,8 @@ def logout_view(request):
 
 
 def user_profile_redirect(request, user_id):
+    if request.session.get('admin_role') is None:
+        return redirect('/usersite/profile/')
     return redirect(f'/users/{user_id}/')
 
 
@@ -581,10 +698,21 @@ def user_ticket_detail_view(request, ticket_id):
         return redirect('/usersite/tickets/')
     cur.execute("SELECT * FROM support_ticket_messages WHERE ticket_id=? ORDER BY created_at", (ticket_id,))
     messages = [dict(m) for m in cur.fetchall()]
+
+    creator_login = None
+    cur.execute("SELECT username FROM users WHERE user_id=?", (ticket['user_id'],))
+    row = cur.fetchone()
+    if row:
+        creator_login = row[0]
+
+    viewer_is_admin = request.session.get('admin_role') is not None
+
     conn.close()
     return render(request, 'usersite/ticket_detail.html', {
         'ticket': dict(ticket),
         'messages': messages,
+        'creator_login': creator_login,
+        'viewer_is_admin': viewer_is_admin,
     })
 
 
@@ -615,9 +743,13 @@ def create_ticket(request):
         (user_id, f"{vip_tag}{subject}", subject, user_type, order_number)
     )
     ticket_id = cur.lastrowid
+    if not user_login:
+        cur.execute("SELECT username FROM users WHERE user_id=?", (user_id,))
+        row = cur.fetchone()
+        user_login = row[0] if row else str(user_id)
     cur.execute(
         "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'user',?,?)",
-        (ticket_id, user_login or f'User {user_id}', message)
+        (ticket_id, user_login, message)
     )
 
     if is_vip:
@@ -647,9 +779,12 @@ def add_ticket_reply(request, ticket_id):
     if ticket['status'] == 'closed':
         conn.close()
         return JsonResponse({'success': False, 'error': 'Ticket closed'}, status=400)
+    cur.execute("SELECT username FROM users WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    sender_name = row[0] if row else str(user_id)
     cur.execute(
         "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'user',?,?)",
-        (ticket_id, f'User {user_id}', message)
+        (ticket_id, sender_name, message)
     )
     cur.execute("UPDATE support_tickets SET updated_at=datetime('now') WHERE id=?", (ticket_id,))
     conn.commit()
@@ -819,13 +954,13 @@ def reviews_view(request):
         cur = conn.cursor()
 
         cur.execute("SELECT r.*, d.item AS deal_item, u.username AS reviewer_name FROM reviews r "
-                    "LEFT JOIN deals d ON r.deal_id = d.deal_id "
+                    "LEFT JOIN deals d ON r.deal_id = d.id "
                     "LEFT JOIN users u ON r.reviewer_id = u.user_id "
                     "WHERE r.reviewed_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
         received = [dict(r) for r in cur.fetchall()]
 
         cur.execute("SELECT r.*, d.item AS deal_item, u.username AS reviewed_name FROM reviews r "
-                    "LEFT JOIN deals d ON r.deal_id = d.deal_id "
+                    "LEFT JOIN deals d ON r.deal_id = d.id "
                     "LEFT JOIN users u ON r.reviewed_id = u.user_id "
                     "WHERE r.reviewer_id = ? ORDER BY r.created_at DESC LIMIT 50", (user_id,))
         given = [dict(r) for r in cur.fetchall()]

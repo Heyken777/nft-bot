@@ -23,8 +23,8 @@ def ensure_tables():
     conn.close()
 
 
-OWNER_TELEGRAM_ID = 1803437347
-CEO_USERNAME = 'Arkadiex'
+OWNER_TELEGRAM_ID = int(os.getenv("OWNER_TELEGRAM_ID", "1803437347"))
+CEO_USERNAME = os.getenv("CEO_USERNAME", "Arkadiex")
 
 
 def seed_ceo_profile():

@@ -9,7 +9,7 @@ from django.db import transaction
 from .jwt_auth import create_jwt, decode_jwt, JWTAuthentication
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'novixgift.db')
-OWNER_TELEGRAM_ID = 1803437347
+from users.views import OWNER_TELEGRAM_ID
 
 
 def get_db():

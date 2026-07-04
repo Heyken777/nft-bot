@@ -18,7 +18,7 @@
                     <div class="text-cyan-300">ID: <a href="https://t.me/{{ user.telegram_id }}" target="_blank" style="color:#00ffcc;">{{ user.telegram_id }}</a></div>
                     <div class="text-cyan-300/50">Регистрация: {{ user.created_at|date:"d.m.Y H:i"|default:"—" }}</div>
                     <div class="text-cyan-300/50">Активность: {{ user.last_activity|date:"d.m.Y H:i"|default:"—" }}</div>
-                    <div class="text-cyan-300/50">Реф. код: <code>{{ user.referral_code|default:"—" }}</code></div>
+                    <div class="text-cyan-300/50">Реф. код: <code id="refCode">{{ user.referral_code|default:"—" }}</code></div>
                 </div>
                 <div class="ms-auto text-end">
                     <div style="font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,#00a3ff,#00ffcc);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">{{ user.total_rub|floatformat:2 }} ₽</div>
@@ -126,13 +126,29 @@
             </div>
         </div>
         <div class="stat-card">
-            <h3 class="mb-3"><i class="fas fa-users text-cyan-300"></i> Рефералы</h3>
+            <h3 class="mb-3"><i class="fas fa-users text-cyan-300"></i> Реферальная система</h3>
             <div class="row g-3 mb-3">
+                <div class="col-6">
+                    <label class="form-label">🔗 Реферальная ссылка</label>
+                    <div class="input-group">
+                        <input type="text" id="refLink" class="form-control" value="{{ referral_link }}" readonly style="font-size:12px;">
+                        <button class="btn-primary" onclick="copyRefLink()" style="width:50px;"><i class="fas fa-copy"></i></button>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">🏷️ Реферальный код</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" value="{{ user.referral_code|default:'—' }}" readonly>
+                        <button class="btn-primary" onclick="copyText('{{ user.referral_code|default:'' }}')" style="width:50px;"><i class="fas fa-copy"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="row g-3">
                 <div class="col-4"><div class="text-center p-3" style="background:rgba(0,0,0,0.3);border-radius:16px;"><div class="text-cyan-300 small">ПРИГЛАСИЛ</div><div class="stat-value">{% if inviter %}{{ inviter.telegram_id }}{% else %}—{% endif %}</div><div class="small">@{{ inviter.username|default:"нет" }}</div></div></div>
                 <div class="col-4"><div class="text-center p-3" style="background:rgba(0,0,0,0.3);border-radius:16px;"><div class="text-cyan-300 small">ПРИГЛАШЕНО</div><div class="stat-value">{{ invited_users|length }}</div></div></div>
                 <div class="col-4"><div class="text-center p-3" style="background:rgba(0,0,0,0.3);border-radius:16px;"><div class="text-cyan-300 small">РЕФЕРАЛЬНЫХ</div><div class="stat-value">{{ user.referral_earnings|default:"0" }}</div></div></div>
             </div>
-            {% if invited_users %}<div class="table-responsive" style="max-height:200px;overflow-y:auto;"><table class="table-custom w-100"><thead><tr><th>ID</th><th>Username</th><th>Регистрация</th></tr></thead><tbody>{% for inv in invited_users %}<tr onclick="window.location.href='/users/{{ inv.telegram_id }}/'" style="cursor:pointer;"><td>{{ inv.telegram_id }}</td><td>@{{ inv.username|default:"нет" }}</td><td>{{ inv.created_at|date:"d.m.Y"|default:"—" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+            {% if invited_users %}<div class="table-responsive" style="max-height:200px;overflow-y:auto;margin-top:16px;"><table class="table-custom w-100"><thead><tr><th>ID</th><th>Username</th><th>Регистрация</th></tr></thead><tbody>{% for inv in invited_users %}<tr onclick="window.location.href='/users/{{ inv.telegram_id }}/'" style="cursor:pointer;"><td>{{ inv.telegram_id }}</td><td>@{{ inv.username|default:"нет" }}</td><td>{{ inv.created_at|date:"d.m.Y"|default:"—" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
         </div>
     </div>
     <div class="col-lg-4">
@@ -165,14 +181,24 @@
             </div>
             {% empty %}<div class="text-cyan-300/50 text-center py-3">Нет отзывов</div>{% endfor %}
         </div>
-        <div class="stat-card" style="display:flex;flex-direction:column;">
+        <div class="stat-card" style="display:flex;flex-direction:column;height:600px;">
             <h3 class="mb-3"><i class="fas fa-comment-dots text-cyan-300"></i> Чат с пользователем</h3>
-            <div id="chatMessages" style="flex:1;max-height:500px;overflow-y:auto;margin-bottom:16px;">
-                <div class="text-center text-cyan-300 py-5">Чат временно отключён</div>
+            <div id="chatMessages" style="flex:1;overflow-y:auto;margin-bottom:16px;padding:12px;background:rgba(0,0,0,0.2);border-radius:16px;display:flex;flex-direction:column;gap:8px;">
+                {% for m in user_messages %}
+                <div class="chat-msg {% if m.sender_type == 'admin' %}chat-admin{% else %}chat-user{% endif %}">
+                    <div class="chat-sender">{{ m.sender_type|yesno:"Админ,Пользователь"|default:"Пользователь" }}</div>
+                    <div class="chat-text">{{ m.text }}</div>
+                    <div class="chat-time">{{ m.timestamp|date:"d.m H:i"|default:"" }}</div>
+                </div>
+                {% empty %}
+                <div class="text-center text-cyan-300 py-5" id="chatEmpty">Нет сообщений</div>
+                {% endfor %}
             </div>
-            <textarea id="chatInput" class="form-control" rows="3" placeholder="Введите сообщение..." style="margin-bottom:12px;"></textarea>
-            <button class="btn-primary" onclick="sendMessage()"><i class="fas fa-paper-plane"></i> Отправить</button>
-            <div class="small text-cyan-300/50 mt-2">Сообщение будет отправлено через Telegram бота</div>
+            <div class="d-flex gap-2">
+                <textarea id="chatInput" class="form-control" rows="2" placeholder="Введите сообщение..." style="resize:none;"></textarea>
+                <button class="btn-primary" onclick="sendMsg()" style="white-space:nowrap;"><i class="fas fa-paper-plane me-1"></i>Отправить</button>
+            </div>
+            <div class="small text-cyan-300/50 mt-2">Сообщение будет отправлено пользователю в Telegram</div>
         </div>
     </div>
 </div>
@@ -190,6 +216,25 @@
 
 
 
+<style>
+.chat-msg {
+    max-width:85%; padding:10px 14px; border-radius:16px;
+    font-size:14px; word-break:break-word; position:relative;
+    animation:fadeIn 0.3s ease;
+}
+.chat-user {
+    align-self:flex-start; background:rgba(0,255,255,0.08);
+    border:1px solid rgba(0,255,255,0.15); border-bottom-left-radius:4px;
+}
+.chat-admin {
+    align-self:flex-end; background:rgba(0,163,255,0.12);
+    border:1px solid rgba(0,163,255,0.2); border-bottom-right-radius:4px;
+}
+.chat-sender { font-size:11px; color:#00ffcc; margin-bottom:4px; font-weight:600; }
+.chat-text { color:#e2e8f0; line-height:1.4; }
+.chat-time { font-size:10px; color:rgba(255,255,255,0.3); margin-top:4px; text-align:right; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+</style>
 <script>
 const USER_ID = {{ user.telegram_id }};
 let pendingAction = null;
@@ -256,7 +301,6 @@ async function removePremium() {
     else { showToast('Ошибка', 'error'); }
 }
 
-// Новые tier-функции
 async function grantTier() {
     const tier = document.getElementById('tierSelect').value;
     const days = parseInt(document.getElementById('tierDays').value);
@@ -282,14 +326,6 @@ async function restoreBalance() {
     const r = await api(`/api/users/${USER_ID}/restore-balance/`, {});
     if (r.success) { showToast(r.message); setTimeout(() => location.reload(), 1500); }
     else { showToast('Ошибка: ' + (r.error || 'нет бэкапа'), 'error'); }
-}
-
-async function sendMessage() {
-    const message = document.getElementById('chatInput').value.trim();
-    if (!message) { showToast('Введите сообщение', 'error'); return; }
-    const r = await api(`/api/users/${USER_ID}/send-message/`, {message});
-    if (r.success) { showToast('Сообщение залогировано'); document.getElementById('chatInput').value = ''; }
-    else { showToast('Ошибка', 'error'); }
 }
 
 document.getElementById('modalConfirmBtn').addEventListener('click', function() {
@@ -329,6 +365,89 @@ function deleteReview(id) {
         }
     );
 }
+
+// ===================== CHAT =====================
+function chatScrollDown() {
+    const el = document.getElementById('chatMessages');
+    el.scrollTop = el.scrollHeight;
+}
+
+function chatAddMessage(sender, text, time) {
+    const el = document.getElementById('chatMessages');
+    const empty = document.getElementById('chatEmpty');
+    if (empty) empty.remove();
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + (sender === 'admin' ? 'chat-admin' : 'chat-user');
+    div.innerHTML = '<div class="chat-sender">' + (sender === 'admin' ? 'Админ' : 'Пользователь') + '</div>' +
+        '<div class="chat-text">' + escapeHtml(text) + '</div>' +
+        '<div class="chat-time">' + time + '</div>';
+    el.appendChild(div);
+    chatScrollDown();
+}
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+async function sendMsg() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) { showToast('Введите сообщение', 'error'); return; }
+    input.disabled = true;
+    const r = await api(`/api/users/${USER_ID}/send-message/`, {message: text});
+    input.disabled = false;
+    if (r.success) {
+        const now = new Date();
+        const ts = String(now.getDate()).padStart(2,'0') + '.' + String(now.getMonth()+1).padStart(2,'0') + ' ' + String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+        chatAddMessage('admin', text, ts);
+        input.value = '';
+        input.focus();
+        showToast('✅ Сообщение отправлено');
+    } else {
+        showToast('❌ Ошибка: ' + (r.error || 'неизвестная'), 'error');
+    }
+}
+
+let chatLastId = 0;
+{% if user_messages %}
+chatLastId = {{ user_messages|length|add:1 }};
+{% endif %}
+
+async function chatPoll() {
+    try {
+        const res = await fetch(`/api/users/${USER_ID}/messages/`, {
+            headers: {'X-CSRFToken': getCSRF()}
+        });
+        const data = await res.json();
+        if (data.messages && data.messages.length > chatLastId) {
+            for (let i = chatLastId; i < data.messages.length; i++) {
+                const m = data.messages[i];
+                chatAddMessage(m.sender_type, m.text, m.timestamp ? m.timestamp.slice(5,16) : '');
+            }
+            chatLastId = data.messages.length;
+        }
+    } catch(e) { /* silent */ }
+}
+
+// Referral
+function copyRefLink() {
+    const el = document.getElementById('refLink');
+    el.select(); el.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(el.value).then(() => showToast('✅ Ссылка скопирована'));
+}
+
+function copyText(t) {
+    navigator.clipboard.writeText(t).then(() => showToast('✅ Скопировано'));
+}
+
+// Init
+chatScrollDown();
+setInterval(chatPoll, 5000);
+document.getElementById('chatInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
 </script>
 {% else %}
 <div class="stat-card text-center">

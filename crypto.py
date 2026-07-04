@@ -1,6 +1,6 @@
 """AES-256 шифрование敏感ных полей БД через Fernet (cryptography)."""
 
-import os, base64, logging
+import os, base64, logging, secrets, string
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,6 +8,11 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 _ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+
+def generate_dispute_id() -> str:
+    alphabet = string.ascii_letters + string.digits + "$#@!%&"
+    return ''.join(secrets.choice(alphabet) for _ in range(12))
+
 
 def is_encryption_enabled() -> bool:
     return bool(_ENCRYPTION_KEY)

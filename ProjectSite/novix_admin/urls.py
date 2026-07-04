@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from users import views
 from news import views as news_views
 
@@ -9,6 +9,9 @@ handler404 = 'novix_admin.views.custom_404'
 handler500 = 'novix_admin.views.custom_500'
 
 urlpatterns = [
+    # Ручной /login/ → редирект на главную админки
+    path('login/', lambda request: redirect('/')),
+
     # Админ-панель
     path('', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
@@ -32,6 +35,7 @@ urlpatterns = [
     # API: пользователи
     path('api/users/<int:telegram_id>/balance/', views.api_change_balance),
     path('api/users/<int:telegram_id>/send-message/', views.api_send_message),
+    path('api/users/<int:telegram_id>/messages/', views.api_get_user_messages),
     path('api/users/<int:telegram_id>/grant-premium/', views.api_grant_premium),
     path('api/users/<int:telegram_id>/backup-balance/', views.api_backup_balance),
     path('api/users/<int:telegram_id>/restore-balance/', views.api_restore_balance),

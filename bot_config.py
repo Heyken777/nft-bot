@@ -6,6 +6,8 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(","))) if os.getenv("ADMIN_IDS") else []
+_owner_id = os.getenv("OWNER_TELEGRAM_ID")
+OWNER_TELEGRAM_ID = int(_owner_id) if _owner_id else 0
 SECRET_KEY = os.getenv("SECRET_KEY")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "")

@@ -441,7 +441,7 @@
             <tbody id="ticketsBody">
                 {% for ticket in tickets %}
                 <tr data-id="{{ ticket.id }}" data-status="{{ ticket.status }}" data-type="{{ ticket.user_type }}" data-login="{{ ticket.user_login|default:''|lower }}" data-id-str="{{ ticket.id }}">
-                    <td>#{{ ticket.id }}</td>
+                    <td>{% firstof ticket.dispute_code ticket.id %}</td>
                     <td>
                         <div class="user-cell">
                             <div class="user-avatar">
@@ -473,11 +473,14 @@
                     </td>
                     <td>{{ ticket.created_at|date:"d.m.Y H:i" }}</td>
                     <td style="white-space: nowrap;">
+                        <a href="/tickets/{{ ticket.id }}/" class="btn-sm btn-primary-sm" style="margin-right: 8px; text-decoration: none; display: inline-block;">
+                            <i class="fas fa-external-link-alt"></i> Открыть
+                        </a>
                         <button class="btn-sm btn-primary-sm" onclick="openTicket({{ ticket.id }})" style="margin-right: 8px;">
-                            <i class="fas fa-eye"></i> Открыть
+                            <i class="fas fa-gavel"></i> Вердикт
                         </button>
                         {% if ticket.status != 'closed' %}
-                        <button class="btn-sm btn-outline-danger" onclick="event.stopPropagation(); showCloseConfirm({{ ticket.id }})">
+                        <button class="btn-sm btn-outline-danger" onclick="event.stopPropagation(); openTicket({{ ticket.id }})">
                             <i class="fas fa-times-circle"></i> Закрыть
                         </button>
                         {% endif %}
@@ -498,53 +501,121 @@
     </div>
 </div>
 
-<!-- Модальное окно подтверждения -->
-<div id="closeModal" class="modal-overlay">
-    <div class="modal-window">
-        <i class="fas fa-question-circle" style="font-size: 48px; color: #ffc107; margin-bottom: 16px;"></i>
-        <h3>Закрыть тикет?</h3>
-        <p style="color: #8892a4;">После закрытия нельзя будет отправить сообщение</p>
-        <div class="modal-buttons">
-            <button class="btn-cancel" onclick="closeModal()">Отмена</button>
-            <button class="btn-confirm-danger" id="confirmCloseBtn">Закрыть</button>
+<!-- Модальное окно выбора вердикта спора -->
+<div id="verdictModal" class="modal-overlay">
+    <div class="modal-window" style="max-width: 520px;">
+        <i class="fas fa-gavel" style="font-size: 48px; color: #ffc107; margin-bottom: 16px;"></i>
+        <h3>Закрытие спора</h3>
+        <p style="color: #8892a4; margin-bottom: 20px;">Выбете сторону, в пользу которой выносится решение</p>
+        <div style="display: flex; gap: 12px; margin-bottom: 20px;">
+            <button id="verdictBuyerBtn" class="btn-sm btn-primary-sm" style="flex:1; font-size:14px; padding:14px 10px; border:none; background: linear-gradient(135deg, #00c853, #00e676);">
+                <i class="fas fa-user-check"></i> Правота Покупателя
+            </button>
+            <button id="verdictSellerBtn" class="btn-sm btn-primary-sm" style="flex:1; font-size:14px; padding:14px 10px; border:none; background: linear-gradient(135deg, #ff6d00, #ff9100);">
+                <i class="fas fa-store"></i> Правота Продавца
+            </button>
+        </div>
+        <div id="reasonBlock" style="display:none;">
+            <textarea id="verdictReason" rows="3" style="width:100%; background:rgba(0,10,20,0.6); border:1px solid rgba(0,255,255,0.3); border-radius:12px; padding:12px; color:#fff; font-size:14px; resize:vertical;" placeholder="Введите официальную причину закрытия спора"></textarea>
+            <div class="modal-buttons" style="margin-top:16px;">
+                <button class="btn-cancel" onclick="closeVerdictModal()">Отмена</button>
+                <button class="btn-confirm-danger" id="confirmVerdictBtn" style="background: linear-gradient(135deg, #00a3ff, #0066cc);">Подтвердить</button>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-    let closeTicketId = null;
-    
+    let currentVerdictId = null;
+    let currentVerdictDecision = null;
+
+    function openVerdictModal(id, decision) {
+        currentVerdictId = id;
+        currentVerdictDecision = decision;
+        document.getElementById('verdictReason').value = '';
+        document.getElementById('reasonBlock').style.display = 'block';
+        document.getElementById('verdictModal').classList.add('active');
+        document.getElementById('verdictReason').focus();
+    }
+
+    document.getElementById('verdictBuyerBtn')?.addEventListener('click', function() {
+        openVerdictModal(currentVerdictId, 'buyer');
+    });
+
+    document.getElementById('verdictSellerBtn')?.addEventListener('click', function() {
+        openVerdictModal(currentVerdictId, 'seller');
+    });
+
     function openTicket(id) {
-        const action = prompt('Выплатить продавцу (seller) или вернуть покупателю (buyer)?', 'seller');
-        if (!action) return;
-        if (!confirm(`Подтвердите решение: выплатить ${action === 'seller' ? 'продавцу' : 'покупателю'}?`)) return;
-        fetch(`/api/disputes/${id}/resolve/`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({decision: action})
-        }).then(r => r.json()).then(d => {
-            if (d.success) { showToast('Спор разрешён'); location.reload(); }
-            else showToast('Ошибка: ' + (d.error || 'неизвестно'), 'error');
-        }).catch(() => showToast('Ошибка соединения', 'error'));
+        currentVerdictId = id;
+        document.getElementById('verdictModal').classList.add('active');
+        document.getElementById('reasonBlock').style.display = 'none';
+        document.querySelector('#verdictModal .modal-window').dataset.disputeId = id;
     }
-    
-    function showCloseConfirm(id) {
-        closeTicketId = id;
-        document.getElementById('closeModal').classList.add('active');
+
+    function closeVerdictModal() {
+        document.getElementById('verdictModal').classList.remove('active');
+        document.getElementById('reasonBlock').style.display = 'none';
+        currentVerdictId = null;
+        currentVerdictDecision = null;
     }
-    
-    function closeModal() {
-        document.getElementById('closeModal').classList.remove('active');
-        closeTicketId = null;
-    }
-    
-    document.getElementById('confirmCloseBtn')?.addEventListener('click', async function() {
-        if (closeTicketId) {
-            openTicket(closeTicketId);
-            closeModal();
+
+    document.getElementById('confirmVerdictBtn')?.addEventListener('click', async function() {
+        const id = currentVerdictId;
+        const decision = currentVerdictDecision;
+        const reason = document.getElementById('verdictReason').value.trim();
+        if (!id || !decision) {
+            showToast('Ошибка: выбете сторону', 'error');
+            return;
+        }
+        document.getElementById('confirmVerdictBtn').disabled = true;
+        document.getElementById('confirmVerdictBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Обработка...';
+        try {
+            const r = await fetch(`/api/disputes/${id}/resolve/`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({decision: decision, reason: reason})
+            });
+            const d = await r.json();
+            if (d.success) {
+                const side = decision === 'buyer' ? 'покупателя' : 'продавца';
+                showToast(`Спор ${d.dispute_code || '#'+id} закрыт в пользу ${side}`, 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                showToast('Ошибка: ' + (d.error || 'неизвестно'), 'error');
+            }
+        } catch(e) {
+            showToast('Ошибка соединения', 'error');
+        } finally {
+            document.getElementById('confirmVerdictBtn').disabled = false;
+            document.getElementById('confirmVerdictBtn').innerHTML = 'Подтвердить';
+            closeVerdictModal();
         }
     });
-    
+
+    function showToast(msg, type) {
+        const existing = document.querySelector('.toast-glass');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.className = 'toast-glass';
+        const borderColor = type === 'error' ? '#ff4757' : '#00e676';
+        const shadowColor = type === 'error' ? 'rgba(255,71,87,0.5)' : 'rgba(0,230,118,0.5)';
+        toast.innerHTML = `<i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'check-circle'} me-2"></i> ${msg}`;
+        Object.assign(toast.style, {
+            position: 'fixed', bottom: '30px', right: '30px', zIndex: '9999',
+            background: 'rgba(10, 20, 40, 0.85)', backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            border: `2px solid ${borderColor}`, borderRadius: '16px',
+            padding: '16px 28px', color: '#ffffff', fontSize: '15px',
+            fontWeight: '500', boxShadow: `0 0 30px ${shadowColor}`,
+            animation: 'slideIn 0.35s ease', cursor: 'pointer',
+            fontFamily: "'Segoe UI', system-ui, sans-serif"
+        });
+        document.body.appendChild(toast);
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 4000);
+        toast.onclick = () => toast.remove();
+    }
+
     function filterTickets() {
         const status = document.getElementById('statusFilter').value;
         const type = document.getElementById('typeFilter').value;
@@ -554,12 +625,10 @@
         
         rows.forEach(row => {
             if (!row.dataset.id) return;
-            
             const rowStatus = row.dataset.status;
             const rowType = row.dataset.type;
             const rowLogin = row.dataset.login;
             const rowId = row.dataset.id;
-            
             let show = true;
             if (status !== 'all' && rowStatus !== status) show = false;
             if (type !== 'all') {
@@ -567,9 +636,7 @@
                 if (type === 'seller' && rowType !== 'seller') show = false;
             }
             if (search && !rowLogin.includes(search) && !rowId.includes(search)) show = false;
-            
             row.style.display = show ? '' : 'none';
-            
             if (show) {
                 all++;
                 if (rowStatus === 'open') open++;
@@ -577,23 +644,23 @@
                 else if (rowStatus === 'closed') closed++;
             }
         });
-        
         document.getElementById('statAll').innerText = all;
         document.getElementById('statOpen').innerText = open;
         document.getElementById('statProgress').innerText = progress;
         document.getElementById('statClosed').innerText = closed;
     }
     
-    function showToast(msg, type = 'success') {
-        const toast = document.createElement('div');
-        toast.className = 'toast-custom';
-        toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i> ${msg}`;
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 3000);
-    }
-    
     document.getElementById('searchInput')?.addEventListener('input', filterTickets);
-    
     filterTickets();
 </script>
+
+<style>
+    .toast-glass {
+        animation: slideIn 0.35s ease !important;
+    }
+    @keyframes slideIn {
+        from { transform: translateX(120px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+</style>
 {% endblock %}

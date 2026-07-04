@@ -399,13 +399,17 @@
                     </div>
                 </div>
                 
-                <!-- Создатель (кликабельный) -->
+                <!-- Создатель (кликабельный только для админов) -->
                 <div class="info-section">
                     <div class="info-label">СОЗДАТЕЛЬ</div>
                     <div class="info-value">
+                        {% if viewer_is_admin %}
                         <a href="/usersite/profile/{{ ticket.user_id }}/" target="_blank">
-                            {{ ticket.user_login|default:user.username|default:"Пользователь" }}
+                            {{ creator_login|default:"Пользователь" }}
                         </a>
+                        {% else %}
+                        {{ creator_login|default:"Пользователь" }}
+                        {% endif %}
                     </div>
                     <div class="info-label mt-2">ID ПОЛЬЗОВАТЕЛЯ</div>
                     <div class="info-value"><small>{{ ticket.user_id }}</small></div>

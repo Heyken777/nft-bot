@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, List, Dict
 from bot_config import *
 from currency_api import currency_api, PREMIUM_RATES, PREMIUM_PRICES_RUB
-from crypto import encrypt_value, decrypt_value, is_encryption_enabled
+from crypto import encrypt_value, decrypt_value, is_encryption_enabled, generate_dispute_id
 from aiohttp import ClientTimeout
 import qrcode
 
@@ -459,7 +459,11 @@ class Database:
             "premium_granted_at": "TIMESTAMP",
             "premium_duration_days": "INTEGER DEFAULT 0",
             "last_activity": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-            "ton": "TEXT"
+            "ton": "TEXT",
+            "profile_login": "TEXT",
+            "profile_password_hash": "TEXT",
+            "profile_email": "TEXT",
+            "profile_setup_complete": "INTEGER DEFAULT 0"
         }
         
         for col_name, col_type in columns_to_add.items():
@@ -531,13 +535,22 @@ class Database:
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS disputes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dispute_code TEXT UNIQUE,
                 deal_id INTEGER,
                 opened_by INTEGER,
                 reason TEXT,
                 status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TIMESTAMP,
+                resolved_by INTEGER,
+                resolution_reason TEXT
             )
         """)
+        self.add_column_if_not_exists("disputes", "dispute_code", "TEXT")
+        self.add_column_if_not_exists("disputes", "resolved_at", "TIMESTAMP")
+        self.add_column_if_not_exists("disputes", "resolved_by", "INTEGER")
+        self.add_column_if_not_exists("disputes", "resolution_reason", "TEXT")
+        self.cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_dispute_code ON disputes(dispute_code)")
         
         # Таблица уведомлений
         self.cursor.execute("""
@@ -776,6 +789,9 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Уникальный индекс для profile_login
+        self.cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_profile_login ON users(profile_login) WHERE profile_login IS NOT NULL")
 
         # Таблица кодов авторизации
         self.cursor.execute("""
@@ -1164,12 +1180,16 @@ class Database:
         }
 
     def add_dispute(self, did, uid, reason):
-        self.cursor.execute("INSERT INTO disputes (deal_id, opened_by, reason) VALUES (?, ?, ?)", (did, uid, reason))
+        code = generate_dispute_id()
+        self.cursor.execute("INSERT INTO disputes (dispute_code, deal_id, opened_by, reason) VALUES (?, ?, ?, ?)", (code, did, uid, reason))
         self.conn.commit()
+        return code
 
     def get_disputes(self):
         self.cursor.execute("SELECT d.*, dl.item FROM disputes d JOIN deals dl ON d.deal_id = dl.id WHERE d.status = 'pending'")
-        return self.cursor.fetchall()
+        rows = self.cursor.fetchall()
+        col_names = [desc[0] for desc in self.cursor.description]
+        return [dict(zip(col_names, r)) if isinstance(r, sqlite3.Row) else r for r in rows]
 
     def resolve_dispute(self, did):
         self.cursor.execute("UPDATE disputes SET status = 'resolved' WHERE id = ?", (did,))
@@ -1359,17 +1379,21 @@ class Database:
         row = self.cursor.fetchone()
         if not row or row[0] in ('completed', 'cancelled', 'disputed'):
             return False
+        code = generate_dispute_id()
         self.cursor.execute("UPDATE deals SET status = 'disputed', disputed_at = CURRENT_TIMESTAMP WHERE id = ?", (deal_id,))
-        self.cursor.execute("INSERT INTO disputes (deal_id, opened_by, reason) VALUES (?, ?, ?)", (deal_id, opened_by, reason))
+        self.cursor.execute("INSERT INTO disputes (dispute_code, deal_id, opened_by, reason) VALUES (?, ?, ?, ?)", (code, deal_id, opened_by, reason))
         self.conn.commit()
         return True
 
-    def resolve_dispute_with_decision(self, dispute_id: int, decision: str) -> Optional[dict]:
-        self.cursor.execute("SELECT deal_id FROM disputes WHERE id = ? AND status = 'pending'", (dispute_id,))
+    def resolve_dispute_with_decision(self, dispute_id: int, decision: str, resolved_by: int = 0, reason: str = '') -> Optional[dict]:
+        self.cursor.execute("SELECT * FROM disputes WHERE id = ? AND status = 'pending'", (dispute_id,))
         row = self.cursor.fetchone()
         if not row:
             return None
-        deal_id = row[0]
+        col_names = [desc[0] for desc in self.cursor.description]
+        dispute = dict(zip(col_names, row))
+        deal_id = dispute['deal_id']
+        dispute_code = dispute.get('dispute_code', str(dispute_id))
         deal = self.get_deal(deal_id)
         if not deal:
             return None
@@ -1390,18 +1414,26 @@ class Database:
         else:
             return None
 
-        self.cursor.execute("UPDATE deals SET status = ?, completed = CURRENT_TIMESTAMP WHERE id = ?", (new_status, deal_id))
-        self.cursor.execute("UPDATE disputes SET status = 'resolved' WHERE id = ?", (dispute_id,))
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.cursor.execute("UPDATE deals SET status = ?, completed = ? WHERE id = ?", (new_status, now, deal_id))
+        self.cursor.execute(
+            "UPDATE disputes SET status = ?, resolved_at = ?, resolved_by = ?, resolution_reason = ? WHERE id = ?",
+            (decision, now, resolved_by, reason, dispute_id)
+        )
         self.conn.commit()
         return {
+            'dispute_id': dispute_id,
+            'dispute_code': dispute_code,
             'deal_id': deal_id,
             'seller_id': seller_id,
             'buyer_id': buyer_id,
             'currency': currency,
             'amount': amount,
             'seller_amount': seller_amount,
+            'commission': commission,
             'decision': decision,
-            'status': new_status
+            'status': new_status,
+            'reason': reason
         }
 
     def create_promocode_with_expires(self, code: str, amount: float, max_uses: int, expires_at: str = None, created_by: int = 0):
@@ -1873,16 +1905,28 @@ async def auto_resolve_stale_disputes():
     """Авто-разрешение спорів бездействия > 72ч."""
     try:
         db.cursor.execute(
-            "SELECT d.id, d.buyer, d.seller, d.amount, d.currency "
+            "SELECT ds.id, ds.dispute_code, d.id as deal_id, d.buyer, d.seller, d.amount, d.currency "
             "FROM disputes ds JOIN deals d ON ds.deal_id = d.id "
             "WHERE ds.status = 'pending' AND ds.created_at < datetime('now', '-72 hours')"
         )
-        stale = db.cursor.fetchall()
-        for deal_id, buyer, seller, amount, currency in stale:
-            db.cursor.execute("UPDATE disputes SET status = 'resolved_buyer', resolved_at = datetime('now') WHERE deal_id = ?", (deal_id,))
-            db.cursor.execute("UPDATE deals SET status = 'completed', completed = datetime('now') WHERE id = ?", (deal_id,))
-            asyncio.create_task(bot.send_message(buyer, f"✅ Спор по сделке #{deal_id} автоматически решён в вашу пользу (тайм-аут 72ч)."))
-            asyncio.create_task(bot.send_message(seller, f"⚠️ Спор по сделке #{deal_id} автоматически решён в пользу покупателя (тайм-аут 72ч)."))
+        col_names = [desc[0] for desc in db.cursor.description]
+        stale = [dict(zip(col_names, r)) for r in db.cursor.fetchall()]
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for row in stale:
+            dispute_id = row['id']
+            dc = row.get('dispute_code') or f"#{dispute_id}"
+            deal_id = row['deal_id']
+            buyer = row['buyer']
+            seller = row['seller']
+            amount = row['amount']
+            currency = row['currency']
+            db.cursor.execute(
+                "UPDATE disputes SET status = 'buyer', resolved_at = ?, resolution_reason = 'Автоматическое решение (тайм-аут 72ч)' WHERE id = ?",
+                (now, dispute_id)
+            )
+            db.cursor.execute("UPDATE deals SET status = 'completed', completed = ? WHERE id = ?", (now, deal_id))
+            asyncio.create_task(bot.send_message(buyer, f"✅ Спор {dc} по сделке #{deal_id} автоматически решён в вашу пользу (тайм-аут 72ч)."))
+            asyncio.create_task(bot.send_message(seller, f"⚠️ Спор {dc} по сделке #{deal_id} автоматически решён в пользу покупателя (тайм-аут 72ч)."))
         if stale:
             db.conn.commit()
             logger.info(f"Авто-разрешено споров: {len(stale)}")
@@ -3487,28 +3531,29 @@ async def dispute_msg(msg: types.Message, state: FSMContext):
             await state.clear()
             return
 
-        db.cursor.execute("SELECT last_insert_rowid()")
-        dispute_id = db.cursor.fetchone()[0]
+        db.cursor.execute("SELECT dispute_code FROM disputes WHERE deal_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", (deal_id,))
+        dispute_row = db.cursor.fetchone()
+        dispute_code = dispute_row[0] if dispute_row else str(deal_id)
 
     admin_kb_markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Выплатить продавцу", callback_data=f"dispute_decide_seller_{dispute_id}"),
-         InlineKeyboardButton(text="↩️ Вернуть покупателю", callback_data=f"dispute_decide_buyer_{dispute_id}")]
+        [InlineKeyboardButton(text="✅ Выплатить продавцу", callback_data=f"dispute_decide_seller_{dispute_code}"),
+         InlineKeyboardButton(text="↩️ Вернуть покупателю", callback_data=f"dispute_decide_buyer_{dispute_code}")]
     ])
 
     for admin in ADMIN_IDS:
         await notify_user(
             admin,
-            f"⚠️ *Новый спор*\n\nСделка #{deal_id}\nОткрыл: `{msg.from_user.id}`\nПричина: {escape_md(reason)}",
+            f"⚠️ *Новый спор*\n\nСпор #{dispute_code}\nСделка #{deal_id}\nОткрыл: `{msg.from_user.id}`\nПричина: {escape_md(reason)}",
             reply_markup=admin_kb_markup
         )
 
     counterpart_id = deal['buyer'] if msg.from_user.id == deal['seller'] else deal['seller']
     if counterpart_id:
-        await notify_user(counterpart_id, f"⚖️ *По сделке #{deal_id} открыт спор.*\n\nСредства временно заморожены.")
+        await notify_user(counterpart_id, f"⚖️ *По сделке #{deal_id} открыт спор {dispute_code}.*\n\nСредства временно заморожены.")
 
     await state.clear()
     await msg.answer(
-        "✅ *Спор открыт!*\nАдминистратор рассмотрит его, пока сделка заморожена.",
+        f"✅ *Спор {dispute_code} открыт!*\nАдминистратор рассмотрит его, пока сделка заморожена.",
         parse_mode="Markdown",
         reply_markup=back_kb()
     )
@@ -5128,26 +5173,60 @@ async def dispute_decide_cb(call: CallbackQuery):
 
     parts = call.data.split("_")
     decision = parts[2]
-    dispute_id = int(parts[3])
+    dispute_code = parts[3]
 
-    async with deal_lock:
-        result = db.resolve_dispute_with_decision(dispute_id, decision)
-
-    if not result:
+    db.cursor.execute("SELECT id FROM disputes WHERE dispute_code = ? AND status = 'pending'", (dispute_code,))
+    row = db.cursor.fetchone()
+    if not row:
         await call.answer("❌ Спор уже обработан или данные некорректны", show_alert=True)
         return
+    dispute_id = row[0]
+
+    async with deal_lock:
+        result = db.resolve_dispute_with_decision(dispute_id, decision, resolved_by=call.from_user.id)
+
+    if not result:
+        await call.answer("❌ Ошибка при закрытии спора", show_alert=True)
+        return
+
+    dc = result['dispute_code']
+    reason_text = result.get('reason', 'Решение администрации.')
 
     if result['decision'] == 'seller':
-        await notify_user(result['seller_id'], f"✅ *Спор по сделке #{result['deal_id']} решён в вашу пользу.*\n\nНачислено {fmt_num(result['seller_amount'])} {result['currency']}")
+        await notify_user(
+            result['seller_id'],
+            f"✅ *Спор #{dc} по сделке #{result['deal_id']} успешно закрыт.*\n\n"
+            f"Мнение всех администраторов пало на правоту продавца.\n"
+            f"Вам зачислена сумма: {fmt_num(result['seller_amount'])} {result['currency']}\n"
+            f"Официальная причина: {escape_md(reason_text)}"
+        )
         if result.get('buyer_id'):
-            await notify_user(result['buyer_id'], f"⚖️ *Спор по сделке #{result['deal_id']} закрыт.*\n\nРешение: выплата продавцу.")
+            await notify_user(
+                result['buyer_id'],
+                f"⚖️ *Спор #{dc} закрыт.*\n\n"
+                f"Решением администрации победа присуждена Продавцу.\n"
+                f"Официальная причина: {escape_md(reason_text)}"
+            )
     else:
         if result.get('buyer_id'):
-            await notify_user(result['buyer_id'], f"↩️ *Спор по сделке #{result['deal_id']} решён в вашу пользу.*\n\nВозврат: {fmt_num(result['amount'])} {result['currency']}")
-        await notify_user(result['seller_id'], f"⚖️ *Спор по сделке #{result['deal_id']} закрыт.*\n\nРешение: возврат покупателю.")
+            await notify_user(
+                result['buyer_id'],
+                f"↩️ *Спор #{dc} по сделке #{result['deal_id']} успешно закрыт.*\n\n"
+                f"Мнение всех администраторов пало на правоту покупателя.\n"
+                f"Вам зачислена сумма: {fmt_num(result['amount'])} {result['currency']}\n"
+                f"Официальная причина: {escape_md(reason_text)}"
+            )
+        await notify_user(
+            result['seller_id'],
+            f"⚖️ *Спор #{dc} закрыт.*\n\n"
+            f"Решением администрации победа присуждена Покупателю.\n"
+            f"Официальная причина: {escape_md(reason_text)}"
+        )
 
     await call.message.edit_text(
-        f"✅ *Спор #{dispute_id} обработан.*\n\nСделка #{result['deal_id']}\nРешение: {'выплата продавцу' if decision == 'seller' else 'возврат покупателю'}",
+        f"✅ *Спор #{dc} обработан.*\n\nСделка #{result['deal_id']}\n"
+        f"Решение: {'выплата продавцу' if decision == 'seller' else 'возврат покупателю'}\n"
+        f"Причина: {escape_md(reason_text)}",
         parse_mode="Markdown"
     )
     await call.answer("✅ Решение применено", show_alert=True)
@@ -5198,6 +5277,30 @@ async def confirm_transaction_cb(call: CallbackQuery):
         await call.answer("❌ Ошибка подтверждения", show_alert=True)
 
     await call.answer()
+
+
+# ========== ЧАТ ПОДДЕРЖКИ: перехват сообщений от пользователя ==========
+@dp.message()
+async def user_message_catchall(message: types.Message, state: FSMContext):
+    if not message.text or message.text.startswith('/'):
+        return
+    current_state = await state.get_state()
+    if current_state is not None:
+        return
+    user_id = message.from_user.id
+    encrypted = encrypt_value(message.text)
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        conn = sqlite3.connect("novixgift.db", timeout=10)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO user_messages (user_id, sender_type, text, timestamp) VALUES (?, 'user', ?, ?)",
+            (user_id, encrypted, now)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"user_message_catchall: {e}")
 
 
 def build_deal_payload(deal: dict, viewer_id: int) -> dict:
@@ -5749,12 +5852,13 @@ async def handle_admin_disputes(request):
     result = []
     for d in disputes:
         result.append({
-            'dispute_id': d[0],
-            'deal_id': d[1],
-            'opened_by': d[2],
-            'reason': d[3],
-            'status': d[4],
-            'created_at': str(d[5])
+            'dispute_id': d['id'],
+            'dispute_code': d.get('dispute_code', ''),
+            'deal_id': d['deal_id'],
+            'opened_by': d['opened_by'],
+            'reason': d['reason'],
+            'status': d['status'],
+            'created_at': str(d.get('created_at', ''))
         })
     return JSONResponse(content={'disputes': result})
 
@@ -5766,41 +5870,63 @@ async def handle_admin_resolve_dispute(request):
 
     try:
         data = await request.json()
-        dispute_id = int(data.get('dispute_id', 0))
+        dispute_code = data.get('dispute_code', '')
         decision = data.get('decision', '')
+        reason = (data.get('reason', '') or '').strip()
 
-        if not dispute_id or decision not in ('seller', 'buyer'):
+        if not dispute_code or decision not in ('seller', 'buyer'):
             return JSONResponse(content={'success': False, 'error': 'Invalid params'}, status_code=400)
 
+        db.cursor.execute("SELECT id FROM disputes WHERE dispute_code = ? AND status = 'pending'", (dispute_code,))
+        row = db.cursor.fetchone()
+        if not row:
+            return JSONResponse(content={'success': False, 'error': 'Dispute already resolved or invalid'})
+        dispute_id = row[0]
+        admin_id = admin.get('id', 0)
+
         async with deal_lock:
-            result = db.resolve_dispute_with_decision(dispute_id, decision)
+            result = db.resolve_dispute_with_decision(dispute_id, decision, resolved_by=admin_id, reason=reason)
 
         if not result:
-            return JSONResponse(content={'success': False, 'error': 'Dispute already resolved or invalid'})
+            return JSONResponse(content={'success': False, 'error': 'Failed to resolve dispute'})
+
+        dc = result['dispute_code']
+        reason_text = reason or 'Решение администрации.'
 
         if result['decision'] == 'seller':
             asyncio.create_task(notify_user(
                 result['seller_id'],
-                f"✅ *Спор по сделке #{result['deal_id']} решён в вашу пользу.*\n\nНачислено {fmt_num(result['seller_amount'])} {result['currency']}"
+                f"✅ *Спор #{dc} по сделке #{result['deal_id']} успешно закрыт.*\n\n"
+                f"Мнение всех администраторов пало на правоту продавца.\n"
+                f"Вам зачислена сумма: {fmt_num(result['seller_amount'])} {result['currency']}\n"
+                f"Официальная причина: {escape_md(reason_text)}"
             ))
             if result.get('buyer_id'):
                 asyncio.create_task(notify_user(
                     result['buyer_id'],
-                    f"⚖️ *Спор по сделке #{result['deal_id']} закрыт.*\n\nРешение: выплата продавцу."
+                    f"⚖️ *Спор #{dc} закрыт.*\n\n"
+                    f"Решением администрации победа присуждена Продавцу.\n"
+                    f"Официальная причина: {escape_md(reason_text)}"
                 ))
         else:
             if result.get('buyer_id'):
                 asyncio.create_task(notify_user(
                     result['buyer_id'],
-                    f"↩️ *Спор по сделке #{result['deal_id']} решён в вашу пользу.*\n\nВозврат: {fmt_num(result['amount'])} {result['currency']}"
+                    f"↩️ *Спор #{dc} по сделке #{result['deal_id']} успешно закрыт.*\n\n"
+                    f"Мнение всех администраторов пало на правоту покупателя.\n"
+                    f"Вам зачислена сумма: {fmt_num(result['amount'])} {result['currency']}\n"
+                    f"Официальная причина: {escape_md(reason_text)}"
                 ))
             asyncio.create_task(notify_user(
                 result['seller_id'],
-                f"⚖️ *Спор по сделке #{result['deal_id']} закрыт.*\n\nРешение: возврат покупателю."
+                f"⚖️ *Спор #{dc} закрыт.*\n\n"
+                f"Решением администрации победа присуждена Покупателю.\n"
+                f"Официальная причина: {escape_md(reason_text)}"
             ))
 
         return JSONResponse(content={
             'success': True,
+            'dispute_code': dc,
             'deal_id': result['deal_id'],
             'decision': decision,
             'status': result['status']

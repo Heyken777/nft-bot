@@ -41,7 +41,7 @@
                         <span class="review-stars">⭐ {{ r.rating }}/5</span>
                         <span class="review-date">{{ r.created_at|date:"d.m.Y H:i" }}</span>
                     </div>
-                    <div class="review-meta">Сделка: {{ r.deal_item|default:"#" }}{{ r.deal_id }}</div>
+                    <div class="review-meta">Сделка: {% if r.deal_item %}{{ r.deal_item }}{% else %}#{{ r.deal_id }}{% endif %}</div>
                     {% if r.comment %}
                     <div class="review-comment">"{{ r.comment }}"</div>
                     {% endif %}
@@ -63,7 +63,7 @@
                         <span class="review-date">{{ r.created_at|date:"d.m.Y H:i" }}</span>
                     </div>
                     <div class="review-meta">Пользователю: @{{ r.reviewed_name|default:r.reviewed_id }}</div>
-                    <div class="review-meta">Сделка: {{ r.deal_item|default:"#" }}{{ r.deal_id }}</div>
+                    <div class="review-meta">Сделка: {% if r.deal_item %}{{ r.deal_item }}{% else %}#{{ r.deal_id }}{% endif %}</div>
                     <div class="review-comment" id="comment-{{ r.id }}">{% if r.comment %}"{{ r.comment }}"{% endif %}</div>
                     <div class="review-actions mt-2">
                         <button class="btn btn-sm btn-outline" onclick="editReview({{ r.id }})"><i class="fas fa-edit"></i> Изменить</button>

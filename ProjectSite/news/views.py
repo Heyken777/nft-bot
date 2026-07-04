@@ -6,11 +6,10 @@ from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 import json, os, sqlite3
 from .models import News, Partnership, PartnershipMessage
-from users.views import has_permission, OWNER_TELEGRAM_ID as CEO_ID
+from users.views import has_permission, OWNER_TELEGRAM_ID
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
-OWNER_TELEGRAM_ID = 1803437347
 
 
 def _get_client_ip(request):
@@ -28,15 +27,17 @@ def _log_admin_action(request, action: str, target_id=None):
     admin_id = request.session.get('telegram_id', 0)
     admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
     ip = _get_client_ip(request)
+    now = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
         conn = sqlite3.connect(DB_PATH, timeout=40)
         cur = conn.cursor()
         desc = f"CEO / Владелец Heyken совершил действие: {action}" if admin_id == OWNER_TELEGRAM_ID else action
         if target_id:
             desc += f" | id={target_id}"
+        desc += f" | IP: {ip}"
         cur.execute(
-            "INSERT INTO audit_logs (user_id, username, action_type, description, ip_address) VALUES (?, ?, ?, ?, ?)",
-            (admin_id, admin_name, action, desc, ip)
+            "INSERT INTO audit_logs (timestamp, user_id, username, action_type, description, ip_address) VALUES (?, ?, ?, ?, ?, ?)",
+            (now, admin_id, admin_name, action, desc, ip)
         )
         conn.commit()
         conn.close()
@@ -44,17 +45,18 @@ def _log_admin_action(request, action: str, target_id=None):
         pass
 
 
-def _log_page_view(request, page_name: str):
+def _log_page_view(request, action_type: str, description: str):
     admin_id = request.session.get('telegram_id', 0)
     admin_name = 'Arkadiex' if admin_id == OWNER_TELEGRAM_ID else request.session.get('username', '')
     ip = _get_client_ip(request)
+    now = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
         conn = sqlite3.connect(DB_PATH, timeout=40)
         cur = conn.cursor()
-        desc = f"👑 CEO перешёл на страницу: {page_name}" if admin_id == OWNER_TELEGRAM_ID else f"📄 Просмотр страницы: {page_name}"
+        desc = f"👑 {description} | IP: {ip}" if admin_id == OWNER_TELEGRAM_ID else f"{description} | IP: {ip}"
         cur.execute(
-            "INSERT INTO audit_logs (user_id, username, action_type, description, ip_address) VALUES (?, ?, ?, ?, ?)",
-            (admin_id, admin_name, 'page_view', desc, ip)
+            "INSERT INTO audit_logs (timestamp, user_id, username, action_type, description, ip_address) VALUES (?, ?, ?, ?, ?, ?)",
+            (now, admin_id, admin_name, action_type, desc, ip)
         )
         conn.commit()
         conn.close()
@@ -67,7 +69,7 @@ def news_list_view(request):
     """Список новостей"""
     if not request.session.get('telegram_id'):
         return redirect('/')
-    _log_page_view(request, 'Новости')
+    _log_page_view(request, 'Просмотр Новостей', 'Администратор открыл список новостей')
     news_list = []
     try:
         news_list = News.objects.all().order_by('-created_at')
@@ -83,7 +85,7 @@ def news_create_view(request):
     """Создание новости"""
     if not request.session.get('telegram_id'):
         return redirect('/')
-    _log_page_view(request, 'Создание новости')
+    _log_page_view(request, 'Просмотр Создания Новости', 'Администратор открыл страницу создания новости')
     try:
         if request.method == 'POST':
             title = request.POST.get('title')
@@ -116,7 +118,7 @@ def news_edit_view(request, news_id):
     """Редактирование новости"""
     if not request.session.get('telegram_id'):
         return redirect('/')
-    _log_page_view(request, 'Редактирование новости', target_id=news_id)
+    _log_page_view(request, 'Просмотр Редактирования Новости', f'Администратор открыл редактирование новости #{news_id}')
     news = None
     try:
         news = get_object_or_404(News, id=news_id)
@@ -160,7 +162,7 @@ def partnership_list_view(request):
     """Список заявок на сотрудничество (админка)"""
     if not request.session.get('telegram_id'):
         return redirect('/')
-    _log_page_view(request, 'Заявки на сотрудничество')
+    _log_page_view(request, 'Просмотр Заявок', 'Администратор открыл список заявок на сотрудничество')
     partnerships = []
     try:
         partnerships = Partnership.objects.all().order_by('-created_at')
@@ -176,7 +178,7 @@ def partnership_detail_view(request, partnership_id):
     """Детальный просмотр заявки с чатом (админка)"""
     if not request.session.get('telegram_id'):
         return redirect('/')
-    _log_page_view(request, 'Заявка на сотрудничество', target_id=partnership_id)
+    _log_page_view(request, 'Просмотр Заявки', f'Администратор открыл заявку на сотрудничество #{partnership_id}')
     partnership = get_object_or_404(Partnership, id=partnership_id)
     messages = PartnershipMessage.objects.filter(partnership=partnership).order_by('created_at')
     

@@ -3,7 +3,7 @@ from django.http import HttpRequest
 from .models import User
 from .crypto_utils import decrypt_value
 
-OWNER_TELEGRAM_ID = 1803437347
+from users.views import OWNER_TELEGRAM_ID
 
 
 @admin.register(User)

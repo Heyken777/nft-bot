@@ -1,4 +1,4 @@
-OWNER_TELEGRAM_ID = 1803437347
+from users.views import OWNER_TELEGRAM_ID
 
 
 def ceo_context(request):

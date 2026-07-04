@@ -20,6 +20,11 @@ urlpatterns = [
     path('partnership/my/', news_views.partnership_my_view, name='partnership_my'),
     path('partnership/<int:partnership_id>/', news_views.partnership_user_detail_view, name='partnership_user_detail'),
 
+    # Регистрация профиля (после Telegram-входа)
+    path('register/', views.register_profile_view, name='register_profile'),
+    path('api/save-profile/', views.save_profile_api, name='save_profile'),
+    path('api/local-login/', views.local_login_api, name='local_login'),
+
     # Premium wizard
     path('premium/', views.premium_wizard_view, name='premium_wizard'),
 
