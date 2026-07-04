@@ -869,8 +869,13 @@ def profile_view(request):
         closed_tickets = cur.fetchone()[0]
 
         cur.execute("SELECT * FROM audit_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 50", (tid,))
-        logs = cur.fetchall()
+        raw_logs = cur.fetchall()
         conn.close()
+        logs = []
+        for r in raw_logs:
+            d = dict(r)
+            d['action'] = d.get('description', '—')
+            logs.append(d)
         return render(request, 'profile.html', {
             'active_page': 'profile',
             'admin_name': admin_name,
@@ -886,7 +891,7 @@ def profile_view(request):
                 'id': tid,
                 'created_at': u.get('created_at', '') if user_row else '',
             },
-            'logs': [dict(l) for l in logs],
+            'logs': logs,
             'tickets_assigned': tickets_assigned,
             'closed_tickets': closed_tickets,
             'rating': min(100, len(logs)),

@@ -443,7 +443,7 @@ async function loadCharts() {
                         </div>
                         <div style="margin-top:16px; display:flex; gap:8px;">
                             <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); resetUUID('${a.name}')">Новый UUID</button>
-                            ${a.name !== 'Heyken' ? `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); api('/api/admins/${a.name}','DELETE').then(()=>navigate('admins'))">Удалить</button>` : ''}
+                            ${a.role !== 'CEO' ? `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); api('/api/admins/${a.name}','DELETE').then(()=>navigate('admins'))">Удалить</button>` : ''}
                         </div>
                     </div>
                 </div>

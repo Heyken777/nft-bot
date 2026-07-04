@@ -55,7 +55,7 @@
                 <button class="btn-primary btn-sm" onclick="resetAdminPassword('{{ admin.username }}')">
                     <i class="fas fa-key"></i> Сброс пароля
                 </button>
-                {% if admin.username != 'Heyken' %}
+                {% if admin.role != 'CEO' %}
                 <button class="btn-danger btn-sm" onclick="deleteAdmin('{{ admin.username }}')">
                     <i class="fas fa-trash"></i> Удалить
                 </button>

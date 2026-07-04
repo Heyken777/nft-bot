@@ -95,7 +95,7 @@
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label"><i class="fas fa-user me-1"></i> Имя (логин)</label>
-                    <input type="text" id="editName" class="form-control" value="{{ admin_data.username }}" {% if not viewing_self and request.session.admin != 'Heyken' %}disabled{% endif %}>
+                    <input type="text" id="editName" class="form-control" value="{{ admin_data.username }}" {% if not viewing_self and not is_ceo %}disabled{% endif %}>
                     <div class="small text-cyan-300/50 mt-1">Используется для входа в админку</div>
                 </div>
                 
@@ -107,7 +107,7 @@
                 
                 <div class="col-md-6">
                     <label class="form-label"><i class="fas fa-shield-alt me-1"></i> Роль</label>
-                    {% if viewing_self or request.session.admin == 'Heyken' %}
+                    {% if viewing_self or is_ceo %}
                     <select id="editRole" class="form-control">
                         <option value="Admin" {% if admin_data.role == 'Admin' %}selected{% endif %}>🔹 Admin</option>
                         <option value="Moderator" {% if admin_data.role == 'Moderator' %}selected{% endif %}>🟢 Moderator</option>
@@ -229,7 +229,7 @@
 
 <script>
 const TOKEN = localStorage.getItem('admin_token');
-const ADMIN_NAME = "{{ request.session.admin|default:'Heyken' }}";
+const ADMIN_NAME = "{{ request.session.admin|default:'' }}";
 const VIEWING_USER = "{{ admin_data.username|default:'' }}";
 const IS_SELF = {{ viewing_self|yesno:"true,false" }};
 
