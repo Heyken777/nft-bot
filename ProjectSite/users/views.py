@@ -630,12 +630,23 @@ def withdrawals_view(request):
         cur.execute(f"SELECT COUNT(*) FROM withdrawal_requests {where}", params)
         total = cur.fetchone()[0] or 0
         cur.execute(f"SELECT * FROM withdrawal_requests {where} ORDER BY created_at DESC LIMIT ? OFFSET ?", params + [per_page, offset])
-        requests = cur.fetchall()
+        rows = cur.fetchall()
         conn.close()
+        requests_data = []
+        for r in rows:
+            d = dict(r)
+            if d.get('breakdown'):
+                try:
+                    d['breakdown'] = json.loads(d['breakdown'])
+                except Exception:
+                    d['breakdown'] = {}
+            else:
+                d['breakdown'] = {}
+            requests_data.append(d)
         ctx = {
             'active_page': 'withdrawals',
             'admin_name': get_admin_name(request),
-            'requests': [dict(r) for r in requests],
+            'requests': requests_data,
             'status_filter': status_filter,
             'page': page,
             'total_pages': max(1, (total + per_page - 1) // per_page),
@@ -650,6 +661,7 @@ def withdrawals_view(request):
 @require_http_methods(["POST"])
 @require_permission('withdrawals')
 def withdrawal_approve_api(request, req_id):
+    from decimal import Decimal
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -659,14 +671,92 @@ def withdrawal_approve_api(request, req_id):
             conn.close()
             return JsonResponse({'error': 'Not found'}, status=404)
         req = dict(row)
-        cur.execute("UPDATE withdrawal_requests SET status='approved' WHERE id=?", (req_id,))
-        cur.execute("UPDATE users SET balance_RUB = balance_RUB - ? WHERE user_id=?", (req['amount'], req['user_id']))
+
+        amount = Decimal(str(req['amount']))
+        user_id = req['user_id']
+
+        # Get exchange rates from currency_api (synchronous stale cache)
+        from currency_api import currency_api
+        raw_rates = currency_api.get_stale_cache("RUB")
+        rates = {c: Decimal(str(raw_rates.get(c, 1))) for c in CURRENCY_LIST}
+
+        # Fetch user
+        cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+        user = cur.fetchone()
+        if not user:
+            conn.close()
+            return JsonResponse({'error': 'User not found'}, status=404)
+        u = dict(user)
+
+        # Build list of (currency, balance, rub_equivalent) for non-zero balances
+        purse = []
+        total_rub = Decimal('0')
+        for c in CURRENCY_LIST:
+            val = Decimal(str(u.get(f'balance_{c}', 0) or 0))
+            if val > 0:
+                rub_val = val * rates[c]
+                purse.append((c, val, rub_val))
+                total_rub += rub_val
+
+        if total_rub < amount:
+            conn.close()
+            log_admin_action(request, "withdrawal_approve_failed_insufficient", user_id, float(amount))
+            return JsonResponse({
+                'error': f'Недостаточно средств. RUB-эквивалент баланса: {total_rub:.2f}, требуется: {amount:.2f}'
+            }, status=400)
+
+        # Deduction order: RUB first, then by descending rub-value (most valuable first)
+        purse.sort(key=lambda x: (0 if x[0] == 'RUB' else 1, -x[2]))
+
+        remaining = amount
+        deductions = {}
+        for c, bal, rub_bal in purse:
+            if remaining <= 0:
+                break
+            rate = rates[c]
+
+            if rub_bal >= remaining:
+                # This currency covers the rest
+                take_amount = remaining / rate  # full Decimal precision
+                if take_amount > bal:
+                    take_amount = bal
+                new_bal = bal - take_amount
+                cur.execute(f"UPDATE users SET balance_{c}=? WHERE user_id=?", (float(new_bal), user_id))
+                deducted_rub = take_amount * rate
+                deductions[c] = {'amount': float(take_amount), 'rub_value': float(deducted_rub)}
+                remaining = Decimal('0')
+            else:
+                # Take entire balance of this currency
+                cur.execute(f"UPDATE users SET balance_{c}=0 WHERE user_id=?", (user_id,))
+                deductions[c] = {'amount': float(bal), 'rub_value': float(rub_bal)}
+                remaining -= rub_bal
+
+        # Tiny remainder from Decimal division — sweep into last deducted currency
+        if remaining > 0 and deductions:
+            last_cur = list(deductions.keys())[-1]
+            rate = rates[last_cur]
+            extra = remaining / rate
+            deductions[last_cur]['amount'] = round(deductions[last_cur]['amount'] + float(extra), 8)
+            deductions[last_cur]['rub_value'] = round(deductions[last_cur]['rub_value'] + float(remaining), 8)
+            cur.execute(
+                f"UPDATE users SET balance_{last_cur} = balance_{last_cur} - ? WHERE user_id=?",
+                (float(extra), user_id)
+            )
+            remaining = Decimal('0')
+
+        # Save breakdown + approve
+        breakdown_json = json.dumps(deductions, ensure_ascii=False, default=str)
+        cur.execute(
+            "UPDATE withdrawal_requests SET status='approved', breakdown=? WHERE id=?",
+            (breakdown_json, req_id)
+        )
         conn.commit()
         conn.close()
-        log_admin_action(request, f"withdrawal_approve", req['user_id'], req['amount'])
-        return JsonResponse({'success': True})
+        log_admin_action(request, "withdrawal_approve", user_id, float(amount))
+        return JsonResponse({'success': True, 'breakdown': deductions})
     except Exception as e:
         print(f"[withdrawal_approve] Error: {e}")
+        import traceback; traceback.print_exc()
         return JsonResponse({'error': 'Server error'}, status=500)
 
 

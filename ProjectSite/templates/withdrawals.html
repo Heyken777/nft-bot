@@ -23,6 +23,7 @@
                     <th>#</th>
                     <th>Пользователь</th>
                     <th>Сумма</th>
+                    <th>Списание</th>
                     <th>Тип</th>
                     <th>Реквизиты</th>
                     <th>Статус</th>
@@ -36,6 +37,16 @@
                     <td>{{ r.id }}</td>
                     <td><a href="/users/{{ r.user_id }}/">{{ r.user_id }}</a></td>
                     <td>{{ r.amount|floatformat:2 }} ₽</td>
+                    <td>
+                        {% if r.breakdown and r.breakdown.items %}
+                        <span class="breakdown-cell" style="cursor:help;font-size:12px;border-bottom:1px dashed rgba(0,255,255,0.3);"
+                              onclick="alert('{% for cur, info in r.breakdown.items %}{{ info.amount|floatformat:2 }} {{ cur }} = {{ info.rub_value|floatformat:2 }} ₽\n{% endfor %}')">
+                            🧾 {% for cur, info in r.breakdown.items %}{{ info.amount|floatformat:2 }} {{ cur }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                        </span>
+                        {% else %}
+                        <span class="text-cyan-300/50">—</span>
+                        {% endif %}
+                    </td>
                     <td>{{ r.wallet_type }}</td>
                     <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;">{{ r.wallet_address }}</td>
                     <td>
