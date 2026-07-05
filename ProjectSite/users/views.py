@@ -1909,9 +1909,8 @@ def api_reported_reviews(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 @session_required
+@require_permission('users')
 def api_delete_user_avatar(request, telegram_id):
-    perm = require_permission('users')
-    perm(request)
     try:
         conn = get_db()
         cur = conn.cursor()
