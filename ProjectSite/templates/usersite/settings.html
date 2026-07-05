@@ -11,8 +11,27 @@
     .field-group input { width: 100%; }
     .field-hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
     .btn-save { width: 100%; padding: 12px; font-size: 15px; margin-top: 8px; }
-    .toast-settings { margin-top: 12px; }
     .divider-settings { border: none; border-top: 1px solid var(--border-color); margin: 8px 0; }
+
+    .field-disabled input { opacity: 0.6; cursor: not-allowed; }
+    .field-disabled input:focus { box-shadow: none !important; border-color: var(--border-color) !important; }
+
+    .password-strength { margin-top: 8px; }
+    .strength-bar { display: flex; gap: 4px; margin-bottom: 8px; }
+    .strength-bar span { flex: 1; height: 4px; border-radius: 4px; background: var(--border-color); transition: background 0.3s; }
+    .strength-bar span.active.weak { background: #ef4444; }
+    .strength-bar span.active.medium { background: #f59e0b; }
+    .strength-bar span.active.strong { background: #22c55e; }
+    .strength-label { font-size: 12px; font-weight: 600; }
+    .strength-label.weak { color: #ef4444; }
+    .strength-label.medium { color: #f59e0b; }
+    .strength-label.strong { color: #22c55e; }
+
+    .checks-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+    .check-item { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+    .check-item .icon { width: 14px; text-align: center; font-size: 11px; }
+    .check-item.done { color: var(--text-secondary); }
+    .check-item.done .icon { color: var(--success); }
 </style>
 {% endblock %}
 
@@ -25,10 +44,10 @@
 
             <hr class="divider-settings">
 
-            <div class="field-group">
-                <label for="fieldLogin">Логин</label>
-                <input type="text" id="fieldLogin" class="form-control" value="{{ profile_login }}" placeholder="Придумайте логин" minlength="3" maxlength="32" pattern="[a-zA-Z0-9_]+">
-                <span class="field-hint">Только латиница, цифры и _</span>
+            <div class="field-group field-disabled">
+                <label>Telegram ID (логин)</label>
+                <input type="text" class="form-control" value="{{ telegram_id }}" readonly tabindex="-1">
+                <span class="field-hint">Логин привязан к вашему Telegram ID и не может быть изменён</span>
             </div>
 
             <div class="field-group">
@@ -47,13 +66,29 @@
 
             <div class="field-group">
                 <label for="fieldPassword">Новый пароль</label>
-                <input type="password" id="fieldPassword" class="form-control" placeholder="Оставьте пустым, чтобы не менять" minlength="6">
-                <span class="field-hint">Минимум 6 символов</span>
+                <input type="password" id="fieldPassword" class="form-control" placeholder="Оставьте пустым, чтобы не менять" oninput="checkStrength(this.value)">
+                <div class="password-strength" id="strengthSection" style="display:none;">
+                    <div class="strength-bar">
+                        <span id="str1"></span>
+                        <span id="str2"></span>
+                        <span id="str3"></span>
+                        <span id="str4"></span>
+                    </div>
+                    <div class="strength-label" id="strengthLabel"></div>
+                    <div class="checks-list" id="checksList">
+                        <div class="check-item" id="checkLength"><span class="icon">○</span> Минимум 6 символов</div>
+                        <div class="check-item" id="checkLower"><span class="icon">○</span> Строчная буква (а-я)</div>
+                        <div class="check-item" id="checkUpper"><span class="icon">○</span> Заглавная буква (А-Я)</div>
+                        <div class="check-item" id="checkDigit"><span class="icon">○</span> Цифра (0-9)</div>
+                        <div class="check-item" id="checkSpecial"><span class="icon">○</span> Спецсимвол (!@#...)</div>
+                    </div>
+                </div>
             </div>
 
             <div class="field-group">
                 <label for="fieldPassword2">Повторите пароль</label>
-                <input type="password" id="fieldPassword2" class="form-control" placeholder="Повторите новый пароль">
+                <input type="password" id="fieldPassword2" class="form-control" placeholder="Повторите новый пароль" oninput="checkMatch()">
+                <span class="field-hint" id="matchHint"></span>
             </div>
 
             <button class="btn btn-primary btn-save" onclick="saveSettings()">💾 Сохранить</button>
@@ -62,19 +97,88 @@
 </div>
 
 <script>
+function checkStrength(pass) {
+    var section = document.getElementById('strengthSection');
+    if (!pass) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+
+    var len = pass.length >= 6;
+    var lower = /[a-zа-я]/.test(pass);
+    var upper = /[A-ZА-Я]/.test(pass);
+    var digit = /\d/.test(pass);
+    var special = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pass);
+
+    var set = function(id, ok) {
+        var el = document.getElementById(id);
+        el.className = 'check-item' + (ok ? ' done' : '');
+        el.querySelector('.icon').textContent = ok ? '✓' : '○';
+    };
+    set('checkLength', len);
+    set('checkLower', lower);
+    set('checkUpper', upper);
+    set('checkDigit', digit);
+    set('checkSpecial', special);
+
+    var bars = [document.getElementById('str1'), document.getElementById('str2'), document.getElementById('str3'), document.getElementById('str4')];
+    var score = (len ? 1 : 0) + (lower ? 1 : 0) + (upper ? 1 : 0) + (digit ? 1 : 0) + (special ? 1 : 0);
+    var label = document.getElementById('strengthLabel');
+
+    bars.forEach(function(b) { b.className = ''; });
+
+    if (score <= 1) {
+        bars[0].className = 'active weak';
+        label.textContent = 'Очень слабый';
+        label.className = 'strength-label weak';
+    } else if (score <= 2) {
+        bars[0].className = 'active weak';
+        bars[1].className = 'active weak';
+        label.textContent = 'Слабый';
+        label.className = 'strength-label weak';
+    } else if (score <= 3) {
+        bars[0].className = 'active medium';
+        bars[1].className = 'active medium';
+        bars[2].className = 'active medium';
+        label.textContent = 'Средний';
+        label.className = 'strength-label medium';
+    } else if (score <= 4) {
+        bars[0].className = 'active strong';
+        bars[1].className = 'active strong';
+        bars[2].className = 'active strong';
+        bars[3].className = 'active strong';
+        label.textContent = 'Надёжный';
+        label.className = 'strength-label strong';
+    } else {
+        bars.forEach(function(b) { b.className = 'active strong'; });
+        label.textContent = 'Очень надёжный';
+        label.className = 'strength-label strong';
+    }
+}
+
+function checkMatch() {
+    var p1 = document.getElementById('fieldPassword').value;
+    var p2 = document.getElementById('fieldPassword2').value;
+    var hint = document.getElementById('matchHint');
+    if (!p1 && !p2) { hint.textContent = ''; return; }
+    if (p1 !== p2) {
+        hint.textContent = '⚠️ Пароли не совпадают';
+        hint.style.color = 'var(--danger)';
+    } else {
+        hint.textContent = '✅ Пароли совпадают';
+        hint.style.color = 'var(--success)';
+    }
+}
+
 async function saveSettings() {
-    var login = document.getElementById('fieldLogin').value.trim();
     var email = document.getElementById('fieldEmail').value.trim();
     var name = document.getElementById('fieldName').value.trim();
     var pass1 = document.getElementById('fieldPassword').value;
     var pass2 = document.getElementById('fieldPassword2').value;
 
-    if (!login) { showToast('Введите логин', 'error'); return; }
-    if (!/^[a-zA-Z0-9_]+$/.test(login)) { showToast('Логин: только латиница, цифры и _', 'error'); return; }
-    if (login.length < 3 || login.length > 32) { showToast('Логин от 3 до 32 символов', 'error'); return; }
     if (email && !/^[^@]+@[^@]+\.[^@]+$/.test(email)) { showToast('Некорректный email', 'error'); return; }
-    if (pass1 && pass1.length < 6) { showToast('Пароль минимум 6 символов', 'error'); return; }
-    if (pass1 !== pass2) { showToast('Пароли не совпадают', 'error'); return; }
+    if (pass1) {
+        if (pass1.length < 6) { showToast('Пароль минимум 6 символов', 'error'); return; }
+        if (pass1 !== pass2) { showToast('Пароли не совпадают', 'error'); return; }
+    }
 
     var btn = document.querySelector('.btn-save');
     btn.disabled = true;
@@ -87,7 +191,7 @@ async function saveSettings() {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': '{{ csrf_token }}'
             },
-            body: JSON.stringify({ login: login, email: email, name: name, password: pass1 })
+            body: JSON.stringify({ email: email, name: name, password: pass1 })
         });
         var data = await res.json();
         if (data.success) {

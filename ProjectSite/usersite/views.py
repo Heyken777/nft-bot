@@ -473,12 +473,12 @@ def settings_view(request):
     user_id = request.session.get('user_id')
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT profile_login, profile_email, username FROM users WHERE user_id=?", (user_id,))
+    cur.execute("SELECT profile_email, username FROM users WHERE user_id=?", (user_id,))
     row = cur.fetchone()
     conn.close()
-    ctx = {'profile_login': '', 'profile_email': '', 'username': ''}
+    ctx = {'telegram_id': str(user_id), 'profile_email': '', 'username': ''}
     if row:
-        ctx = {'profile_login': row[0] or '', 'profile_email': row[1] or '', 'username': row[2] or ''}
+        ctx = {'telegram_id': str(user_id), 'profile_email': row[0] or '', 'username': row[1] or ''}
     return render(request, 'usersite/settings.html', ctx)
 
 
@@ -489,29 +489,18 @@ def api_update_profile(request):
         return JsonResponse({'success': False, 'error': 'Не авторизован'}, status=401)
     uid = request.session.get('user_id')
     data = json.loads(request.body)
-    login = data.get('login', '').strip()
     email = data.get('email', '').strip()
     name = data.get('name', '').strip()
     password = data.get('password', '')
 
-    if not login:
-        return JsonResponse({'success': False, 'error': 'Введите логин'}, status=400)
-    if not re.match(r'^[a-zA-Z0-9_]+$', login):
-        return JsonResponse({'success': False, 'error': 'Логин: только латиница, цифры и _'}, status=400)
-    if len(login) < 3 or len(login) > 32:
-        return JsonResponse({'success': False, 'error': 'Логин от 3 до 32 символов'}, status=400)
     if email and not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
         return JsonResponse({'success': False, 'error': 'Некорректный email'}, status=400)
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT user_id FROM users WHERE profile_login=? AND user_id!=?", (login, uid))
-    if cur.fetchone():
-        conn.close()
-        return JsonResponse({'success': False, 'error': 'Этот логин уже занят'}, status=400)
 
-    updates = ["profile_login=?", "profile_email=?", "username=?"]
-    vals = [login, email or None, name or None]
+    updates = ["profile_email=?", "username=?"]
+    vals = [email or None, name or None]
 
     if password:
         if len(password) < 6:
@@ -525,8 +514,9 @@ def api_update_profile(request):
     conn.commit()
     conn.close()
 
-    request.session['username'] = name or login
-    request.session.modified = True
+    if name:
+        request.session['username'] = name
+        request.session.modified = True
     return JsonResponse({'success': True})
 
 
