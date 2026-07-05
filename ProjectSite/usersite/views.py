@@ -623,7 +623,7 @@ def forbes_view(request):
         })
     conn.close()
 
-    return render(request, 'usersite/forbes.html', {
+    return render(request, 'usersite/top.html', {
         'rankings': rankings, 'page': page, 'total_pages': total_pages,
         'total_users': total_users,
     })

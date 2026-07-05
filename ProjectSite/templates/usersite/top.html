@@ -1,7 +1,7 @@
 {% extends 'usersite/base.html' %}
 {% load static %}
 {% load dict_filters %}
-{% block title %}Топ пользователей | Forbes{% endblock %}
+{% block title %}Топ пользователей{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -53,7 +53,7 @@
     <div class="forbes-list">
         <div class="card" style="padding:0;overflow:hidden;">
             <div style="padding:16px 20px;border-bottom:1px solid var(--border-color);">
-                <h3 style="font-size:1rem;font-weight:600;">🏆 Forbes — Рейтинг пользователей</h3>
+                <h3 style="font-size:1rem;font-weight:600;">🏆 Топ — Рейтинг пользователей</h3>
                 <div class="text-muted" style="font-size:12px;margin-top:2px;">Всего участников: {{ total_users }}</div>
             </div>
             {% for r in rankings %}
