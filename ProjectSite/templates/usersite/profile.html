@@ -84,15 +84,15 @@
             <div class="balances-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px;">
                 {% for b in balances %}
                 <div class="balance-chip" style="background:rgba(0,255,200,0.06);border:1px solid rgba(0,255,200,0.12);border-radius:12px;padding:12px;text-align:center;">
-                    <div style="font-size:1.1rem;font-weight:700;color:#fff;">{{ b.amount|floatformat:2 }}</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:#fff;">{% if b.amount < 0 %}0.00{% else %}{{ b.amount|floatformat:2 }}{% endif %}</div>
                     <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">{{ b.symbol }}</div>
-                    {% if b.currency != 'RUB' %}<div style="font-size:0.75rem;color:var(--accent);margin-top:2px;">≈ {{ b.rub_value|floatformat:0 }} ₽</div>{% endif %}
+                    {% if b.currency != 'RUB' %}<div style="font-size:0.75rem;color:var(--accent);margin-top:2px;">≈ {% if b.rub_value < 0 %}0{% else %}{{ b.rub_value|floatformat:0 }}{% endif %} ₽</div>{% endif %}
                 </div>
                 {% empty %}
                 <div class="text-muted" style="font-size:13px;">Нет активов</div>
                 {% endfor %}
             </div>
-            <div style="margin-top:12px;font-size:0.9rem;color:var(--accent);font-weight:600;">💵 Общий баланс: {{ total_rub|floatformat:2 }} ₽</div>
+            <div style="margin-top:12px;font-size:0.9rem;color:var(--accent);font-weight:600;">💵 Общий баланс: {% if total_rub < 0 %}0.00{% else %}{{ total_rub|floatformat:2 }}{% endif %} ₽</div>
         </div>
 
         <!-- Тариф -->
@@ -162,7 +162,7 @@
             <h4>⭐ Отзывы <span class="text-muted small">(средний {{ avg_rating }})</span></h4>
             <div class="mt-2">
                 {% for r in reviews %}
-                <div style="padding:10px 0;border-bottom:1px solid var(--border);">
+                <div style="padding:10px 0;border-bottom:1px solid var(--border-color);">
                     <div style="display:flex;justify-content:space-between;">
                         <span style="font-weight:600;">⭐ {{ r.rating }}/5</span>
                         <span class="text-muted small">{{ r.created_at|date:"d.m.Y" }}</span>
@@ -219,23 +219,23 @@ function copyRefLink() {
 </script>
 
 <style>
-.card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:24px; }
+.card { background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:24px; }
 .profile-avatar { width:100px; height:100px; background:linear-gradient(135deg,var(--accent),#4a90e2); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:36px; font-weight:600; color:white; margin:0 auto; }
-.info-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); }
+.info-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border-color); }
 .info-row:last-child { border-bottom:none; }
 .info-label { color:var(--text-muted); font-size:13px; }
 .info-value { font-weight:500; color:var(--text-primary); }
 .input-group { display:flex; gap:8px; }
 .input-group .form-control { flex:1; }
 .table-custom { width:100%; border-collapse:collapse; }
-.table-custom th { text-align:left; padding:12px 8px; color:var(--text-muted); font-weight:500; font-size:12px; border-bottom:1px solid var(--border); }
-.table-custom td { padding:12px 8px; border-bottom:1px solid var(--border); color:var(--text-secondary); }
+.table-custom th { text-align:left; padding:12px 8px; color:var(--text-muted); font-weight:500; font-size:12px; border-bottom:1px solid var(--border-color); }
+.table-custom td { padding:12px 8px; border-bottom:1px solid var(--border-color); color:var(--text-secondary); }
 .table-custom tr:last-child td { border-bottom:none; }
 .badge { display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:600; }
-.badge-success { background:rgba(0,255,100,.15); color:#00ff66; }
-.badge-warning { background:rgba(255,193,7,.15); color:#ffc107; }
-.badge-danger { background:rgba(255,71,87,.15); color:#ff4757; }
-.badge-info { background:rgba(13,110,253,.15); color:var(--accent); }
-.alert-info { background:rgba(13,110,253,.1); border:1px solid rgba(13,110,253,.2); border-radius:8px; padding:12px; color:var(--accent); }
+.badge-success { background:rgba(22,163,74,.12); color:var(--success); }
+.badge-warning { background:rgba(245,158,11,.12); color:var(--warning); }
+.badge-danger { background:rgba(220,38,38,.12); color:var(--danger); }
+.badge-info { background:var(--accent-soft); color:var(--accent); }
+.alert-info { background:var(--accent-soft); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:12px; color:var(--accent); }
 </style>
 {% endblock %}

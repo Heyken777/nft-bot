@@ -1,0 +1,358 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Спор #{{ dispute.id }} | Heyken Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .gradient-text { background: linear-gradient(135deg, #ff0066, #ff6600, #ffcc00, #00cc66, #0066ff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .detail-container { max-width: 1600px; margin: 0 auto; }
+    .detail-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,100,0,0.2); }
+    .detail-main { display: flex; gap: 24px; flex-wrap: wrap; }
+    .chats-column { flex: 3; min-width: 500px; display: flex; flex-direction: column; gap: 24px; }
+    .sidebar-column { flex: 1.2; min-width: 320px; }
+    .chat-card { background: rgba(10,20,40,0.75); backdrop-filter: blur(20px); border: 1px solid rgba(255,100,0,0.2); border-radius: 20px; overflow: hidden; }
+    .chat-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid rgba(255,100,0,0.15); flex-wrap: wrap; gap: 8px; }
+    .chat-header h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0.5px; }
+    .chat-messages { height: 300px; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+    .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 13px; word-break: break-word; }
+    .msg-admin { align-self: flex-end; background: rgba(0,163,255,0.12); border: 1px solid rgba(0,163,255,0.2); border-bottom-right-radius: 4px; }
+    .msg-user { align-self: flex-start; background: rgba(0,255,255,0.08); border: 1px solid rgba(0,255,255,0.15); border-bottom-left-radius: 4px; }
+    .msg-sender { font-size: 10px; font-weight: 600; margin-bottom: 2px; }
+    .msg-seller .msg-sender { color: #ff6600; }
+    .msg-buyer .msg-sender { color: #00a3ff; }
+    .msg-text { color: #e2e8f0; line-height: 1.4; font-size: 13px; }
+    .msg-time { font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 2px; text-align: right; }
+    .chat-input-area { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid rgba(255,100,0,0.15); }
+    .chat-input-area textarea { flex: 1; background: rgba(0,10,20,0.6); border: 1px solid rgba(255,100,0,0.2); border-radius: 12px; padding: 10px 14px; color: #fff; font-size: 13px; resize: none; font-family: inherit; }
+    .chat-input-area textarea:focus { outline: none; border-color: #ff6600; }
+    .chat-input-area button { padding: 10px 18px; border-radius: 12px; border: none; cursor: pointer; font-weight: 600; font-size: 13px; white-space: nowrap; }
+    .btn-seller { background: linear-gradient(135deg, #ff6600, #cc4400); color: #fff; }
+    .btn-buyer { background: linear-gradient(135deg, #00a3ff, #0066cc); color: #fff; }
+    .btn-seller:hover, .btn-buyer:hover { transform: translateY(-1px); }
+    .info-panel { background: rgba(10,20,40,0.75); backdrop-filter: blur(20px); border: 1px solid rgba(255,100,0,0.2); border-radius: 20px; padding: 20px; margin-bottom: 24px; }
+    .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,100,0,0.1); gap: 16px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: #8892b0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; }
+    .info-value { text-align: right; font-weight: 500; color: #e2e8f0; font-size: 13px; word-break: break-word; }
+    .verdict-panel { margin-top: 16px; }
+    .verdict-panel select, .verdict-panel textarea { width: 100%; background: rgba(0,10,20,0.6); border: 1px solid rgba(255,100,0,0.3); border-radius: 12px; padding: 10px 14px; color: #fff; margin-bottom: 12px; font-size: 13px; }
+    .verdict-panel textarea { min-height: 80px; resize: vertical; }
+    .verdict-btn { width: 100%; padding: 12px; border-radius: 14px; border: none; cursor: pointer; font-weight: 700; font-size: 14px; background: linear-gradient(135deg, #ff6600, #ff0066); color: #fff; box-shadow: 0 0 20px rgba(255,100,0,0.3); }
+    .verdict-btn:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(255,100,0,0.5); }
+    .verdict-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+    .badge-pending { background: rgba(255,193,7,0.2); color: #ffc107; }
+    .badge-seller { background: rgba(255,100,0,0.2); color: #ff6600; }
+    .badge-buyer { background: rgba(0,163,255,0.2); color: #00a3ff; }
+    .priority-critical { color: #ff4757; font-weight: 700; }
+    .priority-high { color: #ffa502; font-weight: 600; }
+    .priority-medium { color: #ffcc00; font-weight: 500; }
+    .priority-low { color: #8892b0; }
+    .empty-chat { text-align: center; padding: 40px 20px; color: #8892b0; font-size: 13px; }
+    .resolved-banner { background: rgba(0,255,200,0.08); border: 1px solid rgba(0,255,200,0.15); border-radius: 14px; padding: 16px; margin-top: 16px; text-align: center; }
+    .resolved-banner h4 { color: #00ffcc; margin-bottom: 8px; }
+    .resolved-banner p { color: #8892b0; font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="detail-container">
+    <div class="detail-header">
+        <div>
+            <h1 class="gradient-text">⚖️ Спор #{{ dispute.id }}</h1>
+            <div class="d-flex gap-3 mt-2 flex-wrap">
+                <span class="badge {% if dispute.status == 'pending' %}badge-pending{% elif dispute.status == 'seller' %}badge-seller{% elif dispute.status == 'buyer' %}badge-buyer{% endif %}">
+                    {% if dispute.status == 'pending' %}🟡 Ожидает решения
+                    {% elif dispute.status == 'seller' %}👑 Победа продавца
+                    {% elif dispute.status == 'buyer' %}🛒 Победа покупателя
+                    {% else %}🔴 Закрыт{% endif %}
+                </span>
+                <span class="small" style="color: #8892b0;">
+                    Код: <strong>{{ dispute.dispute_code }}</strong>
+                </span>
+                <span class="small" style="color: #8892b0;">
+                    Приоритет: <strong class="{{ dispute.priority_class }}">{{ dispute.priority_label }}</strong>
+                </span>
+            </div>
+        </div>
+        <a href="/disputes/" class="btn-primary btn-sm" style="text-decoration: none; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,100,0,0.3); border-radius: 10px; padding: 8px 16px; color: #e2e8f0;">
+            <i class="fas fa-arrow-left"></i> К списку
+        </a>
+    </div>
+
+    {% if dispute %}
+    <div class="detail-main">
+        <div class="chats-column">
+            <!-- Чат продавца -->
+            <div class="chat-card">
+                <div class="chat-header">
+                    <h3>👤 Продавец{% if seller_info %} — @{{ seller_info.username|default:seller_info.telegram_id }}{% endif %}</h3>
+                    <div>
+                        {% if seller_info %}
+                        <a href="/users/{{ seller_info.telegram_id }}/" class="small" style="color: #ff6600; text-decoration: none;">
+                            <i class="fas fa-external-link-alt"></i> Карточка
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="chat-messages" id="sellerChat">
+                    {% for m in seller_messages %}
+                    <div class="msg msg-{{ m.sender_type }} msg-seller">
+                        <div class="msg-sender">{{ m.sender_type|yesno:"Админ,Продавец" }}</div>
+                        <div class="msg-text">{{ m.text }}</div>
+                        <div class="msg-time">{{ m.timestamp|date:"d.m H:i"|default:"" }}</div>
+                    </div>
+                    {% empty %}
+                    <div class="empty-chat">Нет сообщений с продавцом</div>
+                    {% endfor %}
+                </div>
+                {% if dispute.status == 'pending' %}
+                <div class="chat-input-area">
+                    <textarea id="sellerMsg" rows="2" placeholder="Сообщение продавцу..."></textarea>
+                    <button class="btn-seller" onclick="sendToSeller({{ dispute.id }})">Отправить</button>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Чат покупателя -->
+            <div class="chat-card">
+                <div class="chat-header">
+                    <h3>🛒 Покупатель{% if buyer_info %} — @{{ buyer_info.username|default:buyer_info.telegram_id }}{% endif %}</h3>
+                    <div>
+                        {% if buyer_info %}
+                        <a href="/users/{{ buyer_info.telegram_id }}/" class="small" style="color: #00a3ff; text-decoration: none;">
+                            <i class="fas fa-external-link-alt"></i> Карточка
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="chat-messages" id="buyerChat">
+                    {% for m in buyer_messages %}
+                    <div class="msg msg-{{ m.sender_type }} msg-buyer">
+                        <div class="msg-sender">{{ m.sender_type|yesno:"Админ,Покупатель" }}</div>
+                        <div class="msg-text">{{ m.text }}</div>
+                        <div class="msg-time">{{ m.timestamp|date:"d.m H:i"|default:"" }}</div>
+                    </div>
+                    {% empty %}
+                    <div class="empty-chat">Нет сообщений с покупателем</div>
+                    {% endfor %}
+                </div>
+                {% if dispute.status == 'pending' %}
+                <div class="chat-input-area">
+                    <textarea id="buyerMsg" rows="2" placeholder="Сообщение покупателю..."></textarea>
+                    <button class="btn-buyer" onclick="sendToBuyer({{ dispute.id }})">Отправить</button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="sidebar-column">
+            <!-- Информация о споре -->
+            <div class="info-panel">
+                <h3 class="gradient-text mb-3">📋 Информация</h3>
+                <div class="info-row">
+                    <span class="info-label">Статус</span>
+                    <span class="info-value">
+                        {% if dispute.status == 'pending' %}🟡 Ожидает
+                        {% elif dispute.status == 'seller' %}👑 Продавец прав
+                        {% elif dispute.status == 'buyer' %}🛒 Покупатель прав
+                        {% else %}🔴 Закрыт{% endif %}
+                    </span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Приоритет</span>
+                    <span class="info-value {{ dispute.priority_class }}">{{ dispute.priority_label }}</span>
+                </div>
+                {% if deal %}
+                <div class="info-row">
+                    <span class="info-label">Сделка</span>
+                    <span class="info-value">#{{ deal.id }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Товар</span>
+                    <span class="info-value">{{ deal.item|default:"—" }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Сумма</span>
+                    <span class="info-value">{{ deal.amount }} {{ deal.currency }}</span>
+                </div>
+                {% endif %}
+                <div class="info-row">
+                    <span class="info-label">Причина</span>
+                    <span class="info-value">{{ dispute.reason|default:"Не указана" }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Создан</span>
+                    <span class="info-value">{{ dispute.created_at|date:"d.m.Y H:i" }}</span>
+                </div>
+                {% if dispute.resolved_at %}
+                <div class="info-row">
+                    <span class="info-label">Решён</span>
+                    <span class="info-value">{{ dispute.resolved_at|date:"d.m.Y H:i" }}</span>
+                </div>
+                {% endif %}
+                {% if dispute.resolution_reason %}
+                <div class="info-row">
+                    <span class="info-label">Вердикт</span>
+                    <span class="info-value">{{ dispute.resolution_reason }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Вердикт (только для открытых споров) -->
+            {% if dispute.status == 'pending' %}
+            <div class="info-panel verdict-panel">
+                <h3 class="gradient-text mb-3">⚖️ Вынести вердикт</h3>
+                <select id="decisionSelect">
+                    <option value="seller">👑 Победа продавца</option>
+                    <option value="buyer">🛒 Победа покупателя</option>
+                </select>
+                <textarea id="reasonInput" placeholder="Причина решения (будет отправлена обеим сторонам)..."></textarea>
+                {% if deal %}
+                <div class="small mb-3" style="color: #8892b0;">
+                    <div>Сумма сделки: <strong>{{ deal.amount }} {{ deal.currency }}</strong></div>
+                    <div>Комиссия: <span id="commissionDisplay">—</span></div>
+                    <div>К выплате: <span id="payoutDisplay">—</span></div>
+                </div>
+                {% endif %}
+                <button class="verdict-btn" id="verdictBtn" onclick="submitVerdict({{ dispute.id }})">
+                    <i class="fas fa-gavel"></i> Подтвердить вердикт
+                </button>
+            </div>
+            {% else %}
+            <div class="info-panel resolved-banner">
+                <h4>⚖️ Спор решён</h4>
+                <p>
+                    {% if dispute.status == 'seller' %}
+                    Победа продавца. Средства переведены продавцу с учётом комиссии.
+                    {% elif dispute.status == 'buyer' %}
+                    Победа покупателя. Средства возвращены покупателю в полном объёме.
+                    {% endif %}
+                </p>
+                {% if dispute.resolution_reason %}
+                <p style="font-style: italic; color: #e2e8f0;">"{{ dispute.resolution_reason }}"</p>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5">
+        <h2 class="gradient-text">❌ Спор не найден</h2>
+        <a href="/disputes/" class="btn-primary btn-sm" style="display: inline-block; margin-top: 16px;">Вернуться</a>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    {% if deal %}
+    document.getElementById('decisionSelect')?.addEventListener('change', function() {
+        var decision = this.value;
+        var amount = {{ deal.amount }};
+        var currency = '{{ deal.currency }}';
+        var commissionRate = 0.10;
+        // Try to get seller tier
+        {% if seller_info %}
+        var tier = '{{ seller_info.premium_tier|default:"free" }}';
+        var rates = { 'free': 0.10, 'premium': 0.05, 'platinum': 0.03, 'vip': 0.0 };
+        commissionRate = rates[tier] || 0.10;
+        {% endif %}
+        var commission = amount * commissionRate;
+        var payout = amount - commission;
+        document.getElementById('commissionDisplay').innerText = commission.toFixed(2) + ' ' + currency;
+        if (decision === 'seller') {
+            document.getElementById('payoutDisplay').innerText = payout.toFixed(2) + ' ' + currency + ' (продавцу)';
+        } else {
+            document.getElementById('payoutDisplay').innerText = amount.toFixed(2) + ' ' + currency + ' (покупателю)';
+        }
+    });
+    document.getElementById('decisionSelect')?.dispatchEvent(new Event('change'));
+    {% endif %}
+
+    function scrollChat(id) {
+        var el = document.getElementById(id);
+        if (el) el.scrollTop = el.scrollHeight;
+    }
+    scrollChat('sellerChat');
+    scrollChat('buyerChat');
+
+    function getCSRF() {
+        var m = document.cookie.match(/csrftoken=([^;]+)/);
+        return m ? m[1] : '';
+    }
+
+    async function sendToSeller(disputeId) {
+        var msg = document.getElementById('sellerMsg').value.trim();
+        if (!msg) { showToast('Введите сообщение', 'error'); return; }
+        {% if seller_info %}
+        var r = await fetch('/api/users/{{ seller_info.telegram_id }}/send-message/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+            body: JSON.stringify({ message: '[Спор #{{ dispute.id }}] ' + msg })
+        });
+        var data = await r.json();
+        if (data.success) {
+            showToast('✅ Сообщение продавцу отправлено');
+            document.getElementById('sellerMsg').value = '';
+            setTimeout(function() { location.reload(); }, 1000);
+        } else {
+            showToast('❌ Ошибка: ' + (data.error || 'неизвестная'), 'error');
+        }
+        {% else %}
+        showToast('❌ Продавец не указан', 'error');
+        {% endif %}
+    }
+
+    async function sendToBuyer(disputeId) {
+        var msg = document.getElementById('buyerMsg').value.trim();
+        if (!msg) { showToast('Введите сообщение', 'error'); return; }
+        {% if buyer_info %}
+        var r = await fetch('/api/users/{{ buyer_info.telegram_id }}/send-message/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+            body: JSON.stringify({ message: '[Спор #{{ dispute.id }}] ' + msg })
+        });
+        var data = await r.json();
+        if (data.success) {
+            showToast('✅ Сообщение покупателю отправлено');
+            document.getElementById('buyerMsg').value = '';
+            setTimeout(function() { location.reload(); }, 1000);
+        } else {
+            showToast('❌ Ошибка: ' + (data.error || 'неизвестная'), 'error');
+        }
+        {% else %}
+        showToast('❌ Покупатель не указан', 'error');
+        {% endif %}
+    }
+
+    async function submitVerdict(disputeId) {
+        var decision = document.getElementById('decisionSelect').value;
+        var reason = document.getElementById('reasonInput').value.trim();
+
+        var btn = document.getElementById('verdictBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Обработка...';
+
+        try {
+            var r = await fetch('/api/disputes/' + disputeId + '/resolve/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+                body: JSON.stringify({ decision: decision, reason: reason })
+            });
+            var data = await r.json();
+            if (data.success) {
+                showToast('✅ Вердикт вынесен. Победил ' + data.winner_side);
+                setTimeout(function() { location.reload(); }, 1500);
+            } else {
+                showToast('❌ ' + (data.error || 'Ошибка'), 'error');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-gavel"></i> Подтвердить вердикт';
+            }
+        } catch(e) {
+            showToast('❌ Ошибка сервера', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-gavel"></i> Подтвердить вердикт';
+        }
+    }
+</script>
+{% endblock %}

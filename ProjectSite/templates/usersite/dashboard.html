@@ -1,195 +1,156 @@
 {% extends 'usersite/base.html' %}
 {% load static %}
 {% block title %}Главная{% endblock %}
-{% block extra_css %}
-<style>
-:root { --stat-cols: repeat(auto-fit, minmax(180px, 1fr)); }
-.hero-stats { display:grid; grid-template-columns:var(--stat-cols); gap:16px; margin:24px 0; }
-.stat-card { background:var(--bg-card); backdrop-filter:blur(12px); border:1px solid var(--border); border-radius:var(--radius); padding:20px; text-align:center; transition:var(--transition); }
-.stat-card:hover { transform:translateY(-3px); border-color:var(--accent); }
-.stat-value { font-size:1.8rem; font-weight:700; color:var(--accent); }
-.stat-label { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-top:4px; }
-.stat-sub { font-size:11px; color:var(--text-muted); margin-top:2px; }
-.balances-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; margin:20px 0; }
-.balance-chip { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; text-align:center; transition:var(--transition); }
-.balance-chip:hover { border-color:var(--accent); }
-.balance-amount { font-size:1.2rem; font-weight:600; }
-.balance-currency { font-size:11px; color:var(--text-muted); text-transform:uppercase; }
-.balance-rub { font-size:10px; color:var(--text-secondary); opacity:0.7; }
-.deal-row { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); }
-.deal-row:last-child { border-bottom:none; }
-.deal-id { font-weight:600; font-size:13px; }
-.deal-amount { font-weight:600; }
-.action-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:24px 0; }
-.action-btn { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px; text-align:center; text-decoration:none; color:var(--text-primary); transition:var(--transition); cursor:pointer; }
-.action-btn:hover { border-color:var(--accent); transform:translateY(-2px); color:var(--accent); }
-.action-btn i { font-size:24px; display:block; margin-bottom:6px; }
-.action-btn span { font-size:12px; display:block; }
-.notif-item { padding:10px 0; border-bottom:1px solid var(--border); }
-.notif-item:last-child { border-bottom:none; }
-.notif-title { font-weight:600; font-size:13px; }
-.notif-date { font-size:11px; color:var(--text-muted); }
-.badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:600; }
-.badge-success { background:rgba(40,167,69,.15); color:#28a745; }
-.badge-warning { background:rgba(255,193,7,.15); color:#ffc107; }
-.badge-danger { background:rgba(220,53,69,.15); color:#dc3545; }
-.badge-info { background:rgba(13,110,253,.15); color:var(--accent); }
-.table-custom { width:100%; border-collapse:collapse; }
-.table-custom th { text-align:left; padding:10px 8px; color:var(--text-muted); font-weight:500; font-size:12px; border-bottom:1px solid var(--border); }
-.table-custom td { padding:10px 8px; border-bottom:1px solid var(--border); color:var(--text-secondary); font-size:13px; }
-.table-custom tr:last-child td { border-bottom:none; }
-</style>
-{% endblock %}
 {% block content %}
 {% with u=user %}
-<div class="hero" style="margin-bottom:24px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
-        <div>
-            <h1 style="font-size:1.8rem;font-weight:700;">
-                👋 {{ u.username|default:u.telegram_id }}
-                {% if tier_active %}<span class="badge {% if tier == 'vip' %}badge-danger{% elif tier == 'platinum' %}badge-info{% else %}badge-success{% endif %}">{{ tier_badge }}</span>{% endif %}
-            </h1>
-            <p class="text-muted" style="margin-top:4px;font-size:13px;">
-                ID: {{ u.telegram_id }} · 
-                Рефералов: {{ referrals_count }} · 
-                Сделок: {{ purchases|add:sales }}
-                {% if unread_notifications > 0 %}
-                · <span style="color:var(--accent);font-weight:600;">🔔 {{ unread_notifications }} уведомлений</span>
-                {% endif %}
-            </p>
-        </div>
-        <div style="font-size:1.5rem;font-weight:700;color:var(--accent);">
-            {{ total_rub|floatformat:2 }} ₽
-        </div>
+<div class="flex-between mb-4" style="flex-wrap:wrap;gap:16px;">
+    <div>
+        <h1>
+            👋 {{ u.username|default:u.telegram_id }}
+            {% if tier_active %}<span class="badge {% if tier == 'vip' %}badge-danger{% elif tier == 'platinum' %}badge-info{% else %}badge-success{% endif %}">{{ tier_badge }}</span>{% endif %}
+        </h1>
+        <p class="text-muted text-sm" style="margin-top:4px;">
+            ID: {{ u.telegram_id }} ·
+            Рефералов: {{ referrals_count }} ·
+            Сделок: {{ purchases|add:sales }}
+            {% if unread_notifications > 0 %}
+            · <span class="text-accent" style="font-weight:600;">🔔 {{ unread_notifications }} уведомлений</span>
+            {% endif %}
+        </p>
+    </div>
+    <div style="font-size:1.6rem;font-weight:700;color:var(--accent);font-family:var(--font-display);letter-spacing:-0.02em;">
+        {% if total_rub < 0 %}0.00{% else %}{{ total_rub|floatformat:2 }}{% endif %} ₽
     </div>
 </div>
 
-<!-- Балансы -->
-<h2 style="font-size:1.2rem;font-weight:600;margin-bottom:8px;">💰 Балансы</h2>
-<div class="balances-grid">
-    {% for b in balances %}
-    <div class="balance-chip">
-        <div class="balance-amount">{{ b.amount|floatformat:2 }}</div>
-        <div class="balance-currency">{{ b.symbol }}</div>
-        {% if b.currency != 'RUB' %}<div class="balance-rub">≈ {{ b.rub_value|floatformat:0 }} ₽</div>{% endif %}
+<section class="section">
+    <h2 style="font-size:1.15rem;font-weight:600;margin-bottom:14px;font-family:var(--font-display);">💰 Балансы</h2>
+    <div class="balances-grid">
+        {% for b in balances %}
+        <div class="balance-chip">
+            <div class="balance-amount">{% if b.amount < 0 %}0.00{% else %}{{ b.amount|floatformat:2 }}{% endif %}</div>
+            <div class="balance-currency">{{ b.symbol }}</div>
+            {% if b.currency != 'RUB' %}<div class="balance-rub">≈ {% if b.rub_value < 0 %}0{% else %}{{ b.rub_value|floatformat:0 }}{% endif %} ₽</div>{% endif %}
+        </div>
+        {% endfor %}
     </div>
-    {% endfor %}
-</div>
+</section>
 
-<!-- Быстрые действия -->
-<div class="action-grid">
-    <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-btn">
-        <i class="fas fa-plus-circle"></i><span>Пополнить</span>
-    </a>
-    <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-btn">
-        <i class="fas fa-minus-circle"></i><span>Вывести</span>
-    </a>
-    <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-btn">
-        <i class="fas fa-handshake"></i><span>Создать сделку</span>
-    </a>
-    <a href="/usersite/tickets/new/" class="action-btn">
-        <i class="fas fa-headset"></i><span>Поддержка</span>
-        {% if open_tickets > 0 %}<span class="badge badge-danger" style="margin-top:4px;">{{ open_tickets }} открыто</span>{% endif %}
-    </a>
-</div>
+<section class="section">
+    <div class="action-grid">
+        <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-btn">
+            <i class="fas fa-plus-circle"></i><span>Пополнить</span>
+        </a>
+        <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-btn">
+            <i class="fas fa-minus-circle"></i><span>Вывести</span>
+        </a>
+        <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-btn">
+            <i class="fas fa-handshake"></i><span>Создать сделку</span>
+        </a>
+        <a href="/usersite/tickets/new/" class="action-btn">
+            <i class="fas fa-headset"></i><span>Поддержка</span>
+            {% if open_tickets > 0 %}<span class="badge badge-danger" style="margin-top:4px;">{{ open_tickets }} открыто</span>{% endif %}
+        </a>
+    </div>
+</section>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px;">
-    <!-- Последние сделки -->
-    <div class="stat-card" style="text-align:left;padding:20px;">
-        <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;">📋 Последние сделки</h3>
+<div class="grid-2">
+    <div class="card" style="padding:22px;">
+        <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;font-family:var(--font-display);">📋 Последние сделки</h3>
         {% if deals %}
         {% for d in deals %}
         <div class="deal-row">
             <div>
                 <div class="deal-id">#{{ d.id }}</div>
-                <div style="font-size:11px;color:var(--text-muted);">{% if d.buyer == u.telegram_id %}Покупка{% else %}Продажа{% endif %} · {{ d.created|date:"d.m H:i" }}</div>
+                <div class="text-xs text-muted" style="margin-top:2px;">{% if d.buyer == u.telegram_id %}Покупка{% else %}Продажа{% endif %} · {{ d.created|date:"d.m H:i" }}</div>
             </div>
-            <div style="text-align:right;">
+            <div class="text-right">
                 <div class="deal-amount">{{ d.amount }} {{ d.currency }}</div>
                 <span class="badge {% if d.status == 'completed' %}badge-success{% elif d.status == 'awaiting' %}badge-warning{% elif d.status == 'cancelled' or d.status == 'disputed' %}badge-danger{% else %}badge-info{% endif %}">{{ d.status }}</span>
             </div>
         </div>
         {% endfor %}
         {% else %}
-        <p class="text-muted" style="font-size:13px;">У вас пока нет сделок</p>
+        <p class="text-muted text-sm">У вас пока нет сделок</p>
         {% endif %}
     </div>
 
-    <!-- Уведомления -->
-    <div class="stat-card" style="text-align:left;padding:20px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-            <h3 style="font-size:1rem;font-weight:600;">🔔 Уведомления</h3>
+    <div class="card" style="padding:22px;">
+        <div class="flex-between mb-2">
+            <h3 style="font-size:1rem;font-weight:600;font-family:var(--font-display);">🔔 Уведомления</h3>
             {% if unread_notifications > 0 %}
-            <button class="btn btn-sm" style="font-size:11px;" onclick="markRead()">✔ Прочитать все</button>
+            <button class="btn btn-sm" onclick="markRead()">✔ Прочитать все</button>
             {% endif %}
         </div>
         {% if notifications %}
         {% for n in notifications %}
-        <div class="notif-item" {% if not n.is_read %}style="background:rgba(13,110,253,.05);margin:0 -16px;padding:10px 16px;border-radius:8px;"{% endif %}>
+        <div class="notif-item" {% if not n.is_read %}style="background:var(--accent-soft);margin:0 -16px;padding:12px 16px;border-radius:8px;"{% endif %}>
             <div class="notif-title">{{ n.title }}</div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">{{ n.message|truncatechars:80 }}</div>
+            <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;line-height:1.5;">{{ n.message|truncatechars:80 }}</div>
             <div class="notif-date">{{ n.created_at|date:"d.m H:i" }}</div>
         </div>
         {% endfor %}
         {% else %}
-        <p class="text-muted" style="font-size:13px;">Нет уведомлений</p>
+        <p class="text-muted text-sm">Нет уведомлений</p>
         {% endif %}
     </div>
 </div>
 
-<!-- Статистика -->
-<div class="hero-stats" style="margin-top:32px;">
-    <div class="stat-card">
-        <div class="stat-value">{{ purchases }}</div>
-        <div class="stat-label">Покупок</div>
+<section class="section">
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ purchases }}</div>
+            <div class="stat-label">Покупок</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ sales }}</div>
+            <div class="stat-label">Продаж</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ active_deals }}</div>
+            <div class="stat-label">Активных сделок</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ referrals_count }}</div>
+            <div class="stat-label">Рефералов</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ tickets_count }}</div>
+            <div class="stat-label">Обращений</div>
+        </div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value">{{ sales }}</div>
-        <div class="stat-label">Продаж</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-value">{{ active_deals }}</div>
-        <div class="stat-label">Активных сделок</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-value">{{ referrals_count }}</div>
-        <div class="stat-label">Рефералов</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-value">{{ tickets_count }}</div>
-        <div class="stat-label">Обращений</div>
-    </div>
-</div>
+</section>
 
-<!-- Топ-10 продавцов -->
 {% if top_sellers %}
-<div class="stat-card" style="text-align:left;padding:20px;margin-top:24px;">
-    <h4 style="font-size:1.1rem;font-weight:600;margin-bottom:16px;">🏆 Топ-10 верифицированных продавцов</h4>
-    <div class="table-responsive">
-        <table class="table-custom" style="width:100%;border-collapse:collapse;">
-            <thead>
-                <tr>
-                    <th>#</th>
-                    <th>Продавец</th>
-                    <th>⭐ Рейтинг</th>
-                    <th>Отзывов</th>
-                    <th>Сделок</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for s in top_sellers %}
-                <tr>
-                    <td>{{ forloop.counter }}</td>
-                    <td>@{{ s.username|default:s.user_id }}</td>
-                    <td><span style="font-weight:700;color:var(--accent);">⭐ {{ s.avg_rating|floatformat:1 }}</span></td>
-                    <td>{{ s.reviews_count }}</td>
-                    <td>{{ s.completed_deals }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+<section class="section">
+    <div class="card" style="padding:22px;">
+        <h3 style="font-size:1.1rem;font-weight:600;margin-bottom:16px;font-family:var(--font-display);">🏆 Топ-10 верифицированных продавцов</h3>
+        <div class="table-responsive">
+            <table class="table-custom">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Продавец</th>
+                        <th>⭐ Рейтинг</th>
+                        <th>Отзывов</th>
+                        <th>Сделок</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in top_sellers %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td>@{{ s.username|default:s.user_id }}</td>
+                        <td><span class="text-accent" style="font-weight:700;">⭐ {{ s.avg_rating|floatformat:1 }}</span></td>
+                        <td>{{ s.reviews_count }}</td>
+                        <td>{{ s.completed_deals }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-</div>
+</section>
 {% endif %}
 {% endwith %}
 

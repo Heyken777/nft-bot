@@ -39,7 +39,7 @@
             <input type="file" id="avatarInput" class="hidden-input" accept="image/*" style="display:none;">
             {% endif %}
             
-            <h2 class="mt-4 mb-2" style="font-size:clamp(1.2rem, 5vw, 1.8rem);">{{ admin_data.username }}</h2>
+            <h2 class="gradient-text mt-4 mb-2" style="font-size:clamp(1.2rem, 5vw, 1.8rem);">{{ admin_data.username }}</h2>
             
             <div class="role-badge" style="display:inline-block; padding:8px 24px; border-radius:30px; margin-bottom:16px; {% if admin_data.role == 'CEO' %}background:rgba(212,175,55,0.15); border:1px solid rgba(212,175,55,0.3);{% else %}background:rgba(255,0,102,0.15);{% endif %}">
                 <i class="fas fa-shield-alt me-2"></i> {% if admin_data.role == 'CEO' %}👑 CEO / Владелец{% else %}{{ admin_data.role|default:"Администратор" }}{% endif %}
@@ -90,7 +90,7 @@
     
     <div class="col-xl-8 col-lg-7 col-md-12">
         <div class="stat-card mb-4">
-            <h3 class="mb-4" style="font-size:clamp(1.1rem, 4vw, 1.5rem);"><i class="fas fa-user-edit text-cyan-300 me-2"></i> Редактирование профиля</h3>
+            <h3 class="gradient-text mb-4" style="font-size:clamp(1.1rem, 4vw, 1.5rem);"><i class="fas fa-user-edit text-cyan-300 me-2"></i> Редактирование профиля</h3>
             
             <div class="row g-3">
                 <div class="col-md-6">
@@ -179,7 +179,7 @@
         </div>
         
         <div class="stat-card">
-            <h3 class="mb-3" style="font-size:clamp(1rem, 4vw, 1.3rem);"><i class="fas fa-history text-cyan-300 me-2"></i> История действий</h3>
+            <h3 class="gradient-text mb-3" style="font-size:clamp(1rem, 4vw, 1.3rem);"><i class="fas fa-history text-cyan-300 me-2"></i> История действий</h3>
             <div class="table-responsive" style="max-height:400px; overflow-y:auto;">
                 <table class="table-custom w-100">
                     <thead>
@@ -206,7 +206,7 @@
 
 <div id="passwordModal" class="modal-overlay" style="display:none;">
     <div class="modal-window" style="max-width:450px;">
-        <h3 class="mb-3">Сменить пароль</h3>
+        <h3 class="gradient-text mb-3">Сменить пароль</h3>
         <label class="form-label">Новый UUID пароль (минимум 20 символов)</label>
         <input type="password" id="newPasswordInput" class="form-control mb-3" placeholder="Введите новый пароль...">
         <div class="d-flex gap-2 justify-content-end">
@@ -218,7 +218,7 @@
 
 <div id="removeRoleModal" class="modal-overlay" style="display:none;">
     <div class="modal-window" style="max-width:400px;">
-        <h3 class="mb-3">Удалить роль</h3>
+        <h3 class="gradient-text mb-3">Удалить роль</h3>
         <p class="text-cyan-300/70 mb-4">Удалить роль "<span id="removeRoleName"></span>"?</p>
         <div class="d-flex gap-2 justify-content-end">
             <button class="btn-primary" onclick="document.getElementById('removeRoleModal').style.display='none'" style="background:rgba(255,255,255,0.1);">Отмена</button>
@@ -564,7 +564,7 @@ updateRolesList();
 {% else %}
 <div class="stat-card text-center py-5">
     <i class="fas fa-user-slash" style="font-size:64px; color:#ff4757;"></i>
-    <h3 class="mt-4">Администратор не найден</h3>
+    <h3 class="gradient-text mt-4">Администратор не найден</h3>
     <p class="text-cyan-300/50 mt-2">Пользователь с таким именем не существует</p>
     <a href="/admins/" class="btn-primary mt-3"><i class="fas fa-arrow-left me-2"></i>Вернуться к списку</a>
 </div>

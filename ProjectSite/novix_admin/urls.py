@@ -25,6 +25,7 @@ urlpatterns = [
     path('promocodes/', views.promocodes_view, name='promocodes'),
     path('broadcast/', views.broadcast_view, name='broadcast'),
     path('disputes/', disputes_views.disputes_view, name='disputes'),
+    path('disputes/<int:dispute_id>/', disputes_views.dispute_detail_view, name='dispute_detail'),
     path('deals/', views.deals_list_view, name='deals_list'),
     path('withdrawals/', views.withdrawals_view, name='withdrawals'),
     path('api/withdrawals/<int:req_id>/approve/', views.withdrawal_approve_api),

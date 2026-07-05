@@ -91,6 +91,24 @@
         border-color: #00a3ff;
     }
     
+    .btn-back {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 8px 18px;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        font-size: 13px;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-back:hover {
+        background: rgba(255,255,255,0.18);
+        border-color: rgba(255,255,255,0.2);
+        color: #fff;
+        transform: translateY(-2px);
+    }
+    
     .info-panel {
         background: rgba(10, 20, 40, 0.75);
         border: 1px solid rgba(0, 255, 255, 0.2);
@@ -176,7 +194,7 @@
 <div class="ticket-container">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="gradient-text">Тикет #{{ ticket.id }}</h1>
-        <a href="/tickets/" class="btn" style="background: rgba(255,255,255,0.1);">← Назад к списку</a>
+        <a href="/tickets/" class="btn-back">← Назад к списку</a>
     </div>
     
     <div class="row g-4">

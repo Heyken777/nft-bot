@@ -9,7 +9,7 @@
         display: flex;
         gap: 0;
         margin-bottom: 32px;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--border-color);
         padding-bottom: 16px;
     }
     .step {
@@ -27,16 +27,16 @@
     .form-step.active-step { display: block; }
     .ql-editor { min-height: 200px; }
     .file-attachments {
-        border: 1px dashed var(--border);
+        border: 1px dashed var(--border-color);
         border-radius: var(--radius-sm);
         padding: 24px;
         text-align: center;
         cursor: pointer;
-        transition: var(--transition);
+        transition: var(--transition-color);
     }
     .file-attachments:hover {
         border-color: var(--accent);
-        background: var(--accent-dim);
+        background: var(--accent-soft);
     }
     .file-list {
         display: flex;

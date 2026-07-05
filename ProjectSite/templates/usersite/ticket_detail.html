@@ -4,279 +4,61 @@
 
 {% block extra_css %}
 <style>
-    /* FunPay стиль — приглушённые цвета */
-    .ticket-container {
-        max-width: 1400px;
-        margin: 0 auto;
-    }
+    .ticket-container { max-width: 1400px; margin: 0 auto; }
+    .ticket-header { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border-color); }
+    .ticket-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
     
-    .ticket-header {
-        margin-bottom: 24px;
-        padding-bottom: 16px;
-        border-bottom: 1px solid var(--border);
-    }
+    .status-badge { display: inline-block; padding: 6px 14px; border-radius: 30px; font-size: 12px; font-weight: 500; }
+    .status-open { background: var(--accent-soft); color: var(--accent); }
+    .status-review { background: rgba(245,158,11,.1); color: var(--warning); }
+    .status-considered { background: rgba(22,163,74,.1); color: var(--success); }
+    .status-approved { background: var(--accent-soft); color: var(--accent); }
+    .status-closed { background: var(--bg-tertiary); color: var(--text-muted); }
     
-    .ticket-title {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 16px;
-        margin-bottom: 16px;
-    }
+    .ticket-main { display: flex; gap: 32px; flex-wrap: wrap; }
+    .ticket-chat { flex: 2; min-width: 300px; }
+    .ticket-sidebar { flex: 1; min-width: 280px; }
     
-    /* Приглушённые статусы */
-    .status-badge {
-        display: inline-block;
-        padding: 6px 14px;
-        border-radius: 30px;
-        font-size: 12px;
-        font-weight: 500;
-    }
-    .status-open { background: #e3f2fd; color: #1565c0; }
-    .status-review { background: #fff3e0; color: #e65100; }
-    .status-considered { background: #e8f5e9; color: #2e7d32; }
-    .status-approved { background: #e3f2fd; color: #1565c0; }
-    .status-closed { background: #eceff1; color: #546e7a; }
+    .info-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; margin-bottom: 24px; }
+    .info-section { border-bottom: 1px solid var(--border-color); padding: 16px 20px; }
+    .info-section:last-child { border-bottom: none; }
+    .info-label { font-size: 11px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 8px; }
+    .info-value { font-size: 14px; font-weight: 500; color: var(--text-primary); word-break: break-word; }
+    .info-value a { color: var(--accent); text-decoration: none; }
+    .info-value a:hover { text-decoration: underline; }
     
-    /* Основной контент */
-    .ticket-main {
-        display: flex;
-        gap: 32px;
-        flex-wrap: wrap;
-    }
+    .chat-messages { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); height: 500px; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; margin-bottom: 16px; }
+    .message { max-width: 85%; padding: 12px 16px; border-radius: var(--radius-md); position: relative; }
+    .message-user { align-self: flex-end; background: var(--accent); color: white; border-bottom-right-radius: 4px; }
+    .message-admin { align-self: flex-start; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); border-bottom-left-radius: 4px; }
+    .message-header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; font-size: 12px; }
+    .message-author { font-weight: 600; }
+    .message-role { font-size: 10px; opacity: 0.7; }
+    .message-time { font-size: 10px; opacity: 0.5; }
+    .message-text { font-size: 14px; line-height: 1.5; word-break: break-word; }
+    .message-system { align-self: center; background: rgba(201, 168, 76, 0.08); border: 1px solid rgba(201, 168, 76, 0.15); color: #c9a84c; text-align: center; max-width: 70%; }
+    .message-system .message-header { justify-content: center; }
+    .message-system .message-time { display: none; }
     
-    .ticket-chat {
-        flex: 2;
-        min-width: 300px;
-    }
+    .attachment-link { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--accent-soft); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--accent); font-size: 12px; text-decoration: none; transition: var(--transition-color); }
+    .attachment-link:hover { background: var(--accent); color: white; }
     
-    .ticket-sidebar {
-        flex: 1;
-        min-width: 280px;
-    }
+    .chat-input-wrapper { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; }
+    .chat-input { width: 100%; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 16px; color: var(--text-primary); font-family: inherit; font-size: 14px; resize: vertical; transition: var(--transition-color); }
+    .chat-input:focus { outline: none; border-color: var(--accent); }
+    .chat-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; flex-wrap: wrap; gap: 12px; }
     
-    /* Информационная панель (FunPay стиль — светло-голубая) */
-    .info-panel {
-        background: #f5f8fc;
-        border: 1px solid #e1e8f0;
-        border-radius: 12px;
-        overflow: hidden;
-        margin-bottom: 24px;
-    }
+    .btn { padding: 8px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; transition: var(--transition-color); border: none; font-family: var(--font-sans); }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-danger { background: rgba(220,38,38,.08); color: var(--danger); border: 1px solid rgba(220,38,38,.15); }
+    .btn-danger:hover { background: var(--danger); color: white; }
     
-    .info-section {
-        border-bottom: 1px solid #e1e8f0;
-        padding: 16px 20px;
-    }
+    .assign-save { margin-top: 8px; padding: 4px 12px; font-size: 11px; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; }
     
-    .info-section:last-child {
-        border-bottom: none;
-    }
-    
-    .info-label {
-        font-size: 11px;
-        text-transform: uppercase;
-        color: #5a6e85;
-        letter-spacing: 0.5px;
-        margin-bottom: 8px;
-    }
-    
-    .info-value {
-        font-size: 14px;
-        font-weight: 500;
-        color: #1a2a3a;
-        word-break: break-word;
-    }
-    
-    .info-value a {
-        color: #1565c0;
-        text-decoration: none;
-    }
-    
-    .info-value a:hover {
-        text-decoration: underline;
-    }
-    
-    /* Чат — сообщения пользователя белые, админа светло-голубые */
-    .chat-messages {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        height: 500px;
-        overflow-y: auto;
-        padding: 20px;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        margin-bottom: 16px;
-    }
-    
-    .message {
-        max-width: 85%;
-        padding: 12px 16px;
-        border-radius: 12px;
-        position: relative;
-    }
-    
-    .message-user {
-        align-self: flex-end;
-        background: #ffffff;
-        color: #1a2a3a;
-        border: 1px solid #e1e8f0;
-        border-bottom-right-radius: 4px;
-    }
-    
-    .message-admin {
-        align-self: flex-start;
-        background: #e3f2fd;
-        color: #1a2a3a;
-        border: 1px solid #bbd4fb;
-        border-bottom-left-radius: 4px;
-    }
-    
-    .message-header {
-        display: flex;
-        align-items: baseline;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-bottom: 6px;
-        font-size: 12px;
-    }
-    
-    .message-author {
-        font-weight: 600;
-    }
-    
-    .message-role {
-        font-size: 10px;
-        opacity: 0.7;
-    }
-    
-    .message-time {
-        font-size: 10px;
-        opacity: 0.5;
-    }
-    
-    .message-text {
-        font-size: 14px;
-        line-height: 1.5;
-        word-break: break-word;
-    }
-    .attachment-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 10px;
-        background: rgba(0, 163, 255, 0.1);
-        border: 1px solid rgba(0, 163, 255, 0.3);
-        border-radius: 8px;
-        color: var(--accent, #00a3ff);
-        font-size: 12px;
-        text-decoration: none;
-        transition: all 0.2s;
-    }
-    .attachment-link:hover {
-        background: rgba(0, 163, 255, 0.2);
-    }
-    
-    /* Форма ввода */
-    .chat-input-wrapper {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 16px;
-    }
-    
-    .chat-input {
-        width: 100%;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-light);
-        border-radius: 10px;
-        padding: 12px 16px;
-        color: var(--text-primary);
-        font-family: inherit;
-        font-size: 14px;
-        resize: vertical;
-    }
-    
-    .chat-input:focus {
-        outline: none;
-        border-color: var(--accent);
-    }
-    
-    .chat-actions {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-top: 12px;
-        flex-wrap: wrap;
-        gap: 12px;
-    }
-    
-    /* Кнопки */
-    .btn {
-        padding: 8px 20px;
-        border-radius: 8px;
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s;
-        border: none;
-    }
-    
-    .btn-primary {
-        background: var(--accent);
-        color: white;
-    }
-    
-    .btn-primary:hover {
-        background: var(--accent-hover);
-        transform: translateY(-1px);
-    }
-    
-    .btn-outline {
-        background: transparent;
-        border: 1px solid var(--border);
-        color: var(--text-secondary);
-    }
-    
-    .btn-outline:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-    }
-    
-    .btn-danger {
-        background: #ffebee;
-        color: #c62828;
-        border: 1px solid #ffcdd2;
-    }
-    
-    .btn-danger:hover {
-        background: #c62828;
-        color: white;
-    }
-    
-    .assign-save {
-        margin-top: 8px;
-        padding: 4px 12px;
-        font-size: 11px;
-        background: var(--accent);
-        color: white;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-    }
-    
-    .ticket-status-select {
-        background: #ffffff;
-        border: 1px solid #e1e8f0;
-        border-radius: 8px;
-        padding: 8px 12px;
-        font-size: 13px;
-        width: 100%;
-        cursor: pointer;
-    }
+    .ticket-status-select { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; width: 100%; cursor: pointer; color: var(--text-primary); }
     
     .toast-custom {
         position: fixed;
@@ -317,6 +99,9 @@
             </div>
             <div class="text-muted small">
                 Создан: {{ ticket.created_at|date:"d.m.Y, H:i" }}
+                {% if ticket.updated_at and ticket.updated_at|date:"U" != ticket.created_at|date:"U" %}
+                · Обновлён: {{ ticket.updated_at|date:"d.m.Y, H:i" }}
+                {% endif %}
             </div>
         </div>
     </div>
@@ -331,7 +116,9 @@
                     <div class="message-header">
                         <span class="message-author">{{ msg.sender_name|default:"Пользователь" }}</span>
                         <span class="message-role">
-                            {% if msg.sender_type == 'admin' %}
+                            {% if msg.sender_type == 'system' %}
+                                🖥️ Система
+                            {% elif msg.sender_type == 'admin' %}
                                 {% if msg.sender_role == 'CEO' %}👑 Владелец
                                 {% else %}{{ msg.sender_role|default:"Администратор" }}{% endif %}
                             {% else %}
@@ -626,7 +413,7 @@
             box.innerHTML = `
                 <i class="fas fa-exclamation-triangle" style="font-size:48px;color:#ffc107;margin-bottom:16px;"></i>
                 <h3 style="margin-bottom:20px;color:#fff;">Подтверждение</h3>
-                <p style="color:#8892b0;margin-bottom:24px;">${msg}</p>
+                <p style="color:var(--text-secondary);margin-bottom:24px;">${msg}</p>
                 <div style="display:flex;gap:12px;justify-content:center;">
                     <button id="confirmNo" style="background:rgba(255,255,255,0.1);border:none;border-radius:12px;padding:10px 24px;color:#fff;cursor:pointer;font-weight:600;">Отмена</button>
                     <button id="confirmYes" style="background:linear-gradient(135deg,#ff4757,#c0392b);border:none;border-radius:12px;padding:10px 24px;color:#fff;cursor:pointer;font-weight:600;">Закрыть</button>

@@ -850,24 +850,24 @@ class Database:
 
     def update_balance(self, uid, currency, delta):
         col_name = f"balance_{currency}"
-        self.cursor.execute("BEGIN IMMEDIATE")
+        self.cursor.execute("SAVEPOINT sp_update_balance")
         try:
             self.cursor.execute(f"SELECT {col_name} FROM users WHERE user_id = ?", (uid,))
             current = self.cursor.fetchone()
             if current is None:
-                self.conn.rollback()
+                self.cursor.execute("ROLLBACK TO sp_update_balance")
                 return False
             new_balance = (current[0] or 0) + delta
             if new_balance < 0:
-                self.conn.rollback()
+                self.cursor.execute("ROLLBACK TO sp_update_balance")
                 return False
             self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (new_balance, uid))
-            self.conn.commit()
+            self.cursor.execute("RELEASE sp_update_balance")
             tx_type = 'deposit' if delta > 0 else 'withdrawal'
             self.add_transaction(uid, delta, currency, tx_type, f"{'Пополнение' if delta > 0 else 'Списание'} баланса")
             return True
         except Exception as e:
-            self.conn.rollback()
+            self.cursor.execute("ROLLBACK TO sp_update_balance")
             logger.error(f"update_balance error (uid={uid}, cur={currency}, delta={delta}): {e}")
             return False
 
@@ -1065,9 +1065,11 @@ class Database:
             "label": self.get_tier_label(tier)
         }
 
+    get_premium_info = get_tier_info
+
     def set_premium_tier(self, user_id: int, tier: str, days: int, granted_by: int):
         if tier not in TIER_CONFIG or tier == 'free':
-            self.cursor.execute("BEGIN IMMEDIATE")
+            self.cursor.execute("SAVEPOINT sp_set_premium_free")
             try:
                 self.cursor.execute("""
                     UPDATE users SET
@@ -1079,12 +1081,12 @@ class Database:
                         premium_duration_days = NULL
                     WHERE user_id = ?
                 """, (user_id,))
-                self.conn.commit()
+                self.cursor.execute("RELEASE sp_set_premium_free")
             except Exception as e:
-                self.conn.rollback()
+                self.cursor.execute("ROLLBACK TO sp_set_premium_free")
                 logger.error(f"set_premium_tier(free) error: {e}")
             return
-        self.cursor.execute("BEGIN IMMEDIATE")
+        self.cursor.execute("SAVEPOINT sp_set_premium")
         try:
             expires = datetime.now() + timedelta(days=days)
             self.cursor.execute("""
@@ -1097,9 +1099,9 @@ class Database:
                     premium_duration_days = ?
                 WHERE user_id = ?
             """, (tier, expires, granted_by, days, user_id))
-            self.conn.commit()
+            self.cursor.execute("RELEASE sp_set_premium")
         except Exception as e:
-            self.conn.rollback()
+            self.cursor.execute("ROLLBACK TO sp_set_premium")
             logger.error(f"set_premium_tier error: {e}")
 
     def set_premium(self, user_id: int, days: int, granted_by: int):
@@ -5827,7 +5829,8 @@ async def verify_ton_usdt_payment(deal_id: int, tx_hash: str) -> dict:
                     "amount_ton": value_ton,
                     "source": source,
                     "timestamp": tx.get("utime", 0)
-                }
+        }
+
     except Exception as e:
         return {"verified": False, "error": str(e)}
 

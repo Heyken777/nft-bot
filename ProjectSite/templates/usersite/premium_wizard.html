@@ -114,10 +114,10 @@
 <style>
 .tier-option { cursor:pointer; }
 .tier-option input { display:none; }
-.tier-option input:checked + .tier-card { border-color:var(--accent); background:var(--accent-dim); }
+.tier-option input:checked + .tier-card { border-color:var(--accent); background:var(--accent-soft); }
 .tier-card {
-    background:var(--bg-card);
-    border:2px solid var(--border);
+    background:var(--bg-secondary);
+    border:2px solid var(--border-color);
     border-radius:var(--radius-sm);
     padding:14px 18px;
     transition:0.2s;
@@ -129,10 +129,10 @@
 .currency-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:10px; }
 .cur-option { cursor:pointer; }
 .cur-option input { display:none; }
-.cur-option input:checked + .cur-card { border-color:var(--accent); background:var(--accent-dim); }
+.cur-option input:checked + .cur-card { border-color:var(--accent); background:var(--accent-soft); }
 .cur-card {
-    background:var(--bg-card);
-    border:2px solid var(--border);
+    background:var(--bg-secondary);
+    border:2px solid var(--border-color);
     border-radius:var(--radius-sm);
     padding:12px 10px;
     text-align:center;
@@ -149,7 +149,7 @@
 .order-row {
     display:flex;justify-content:space-between;
     padding:10px 0;
-    border-bottom:1px solid var(--border);
+    border-bottom:1px solid var(--border-color);
     font-size:14px;
 }
 </style>

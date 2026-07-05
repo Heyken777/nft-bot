@@ -15,7 +15,7 @@
     {% for tariff in tariffs %}
     <div class="col-md-6 col-lg-4">
         <div class="tariff-card" data-id="{{ tariff.id }}">
-            <h3 class="fw-bold mb-1">{{ tariff.name }}</h3>
+            <h3 class="gradient-text fw-bold mb-1">{{ tariff.name }}</h3>
             <p class="text-cyan-300 small mb-2">Код: {{ tariff.code }}</p>
             <p class="text-cyan-300/50 small mb-3">{{ tariff.description|default:"—" }}</p>
             <div class="d-flex flex-wrap gap-2 mb-4">
@@ -43,7 +43,7 @@
 <!-- Модальное окно -->
 <div id="tariffModal" class="modal-overlay" style="display:none;">
     <div class="modal-window">
-        <h3 id="modalTitle">Добавить тариф</h3>
+        <h3 id="modalTitle" class="gradient-text">Добавить тариф</h3>
         <input type="hidden" id="tariffId">
         <input type="text" id="tName" class="form-control mb-2" placeholder="Название">
         <input type="text" id="tCode" class="form-control mb-2" placeholder="Код">

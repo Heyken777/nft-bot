@@ -50,6 +50,17 @@ def check_auth(request):
     tid = request.session.get('telegram_id')
     if tid:
         request.session['user_id'] = tid
+        if 'admin_role' not in request.session:
+            try:
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute("SELECT admin_role FROM users WHERE user_id=?", (tid,))
+                row = cur.fetchone()
+                conn.close()
+                if row and row[0]:
+                    request.session['admin_role'] = row[0]
+            except Exception:
+                pass
         return True
     return False
 
@@ -668,9 +679,9 @@ def fmt_price_site(v: float) -> str:
 # ============= TICKET PAGES =============
 
 def user_tickets_view(request):
-    user_id = request.session.get('user_id')
-    if not user_id:
+    if not check_auth(request):
         return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM support_tickets WHERE user_id=? ORDER BY updated_at DESC", (user_id,))
@@ -680,15 +691,15 @@ def user_tickets_view(request):
 
 
 def user_ticket_new_view(request):
-    if not request.session.get('user_id'):
+    if not check_auth(request):
         return redirect('/usersite/login/')
     return render(request, 'usersite/ticket_new.html')
 
 
 def user_ticket_detail_view(request, ticket_id):
-    user_id = request.session.get('user_id')
-    if not user_id:
+    if not check_auth(request):
         return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM support_tickets WHERE id=? AND user_id=?", (ticket_id, user_id))
@@ -725,9 +736,9 @@ def user_ticket_detail_view(request, ticket_id):
 
 @csrf_exempt
 def create_ticket(request):
-    user_id = request.session.get('user_id')
-    if not user_id:
+    if not check_auth(request):
         return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
+    user_id = request.session.get('user_id')
     subject = request.POST.get('subject', '')
     message = request.POST.get('message', '')
     user_login = request.POST.get('user_login', '')
@@ -782,9 +793,9 @@ def create_ticket(request):
 
 @csrf_exempt
 def add_ticket_reply(request, ticket_id):
-    user_id = request.session.get('user_id')
-    if not user_id:
+    if not check_auth(request):
         return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
+    user_id = request.session.get('user_id')
     data = json.loads(request.body)
     message = data.get('message', '').strip()
     if not message:
@@ -814,9 +825,9 @@ def add_ticket_reply(request, ticket_id):
 
 @csrf_exempt
 def close_ticket(request, ticket_id):
-    user_id = request.session.get('user_id')
-    if not user_id:
+    if not check_auth(request):
         return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
+    user_id = request.session.get('user_id')
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT user_id FROM support_tickets WHERE id=?", (ticket_id,))

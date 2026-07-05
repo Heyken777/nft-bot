@@ -1226,6 +1226,24 @@ def api_change_balance(request, telegram_id):
                          target_id=telegram_id, amount=amount)
         conn.commit()
         conn.close()
+
+        try:
+            bot_token = os.getenv('BOT_TOKEN') or getattr(settings, 'BOT_TOKEN', '')
+            if bot_token:
+                sign = '+' if amount > 0 else ''
+                tg_text = (
+                    f"💳 <b>Изменение баланса</b>\n\n"
+                    f"Сумма: {sign}{amount} {currency}\n"
+                    f"Причина: {reason or 'Без причины'}"
+                )
+                requests.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={'chat_id': telegram_id, 'text': tg_text, 'parse_mode': 'HTML'},
+                    timeout=10
+                )
+        except Exception as tg_err:
+            print(f"[change_balance] TG notify error: {tg_err}")
+
         return JsonResponse({'success': True})
     except Exception as e:
         print(f"[change_balance] Error: {e}")
@@ -1344,6 +1362,28 @@ def api_grant_premium(request, telegram_id):
         conn.commit()
         log_admin_action(request, action, target_id=telegram_id)
         conn.close()
+
+        try:
+            bot_token = os.getenv('BOT_TOKEN') or getattr(settings, 'BOT_TOKEN', '')
+            if bot_token:
+                if tier == 'free' or days <= 0:
+                    tg_text = f"❌ <b>Подписка отключена</b>\n\nВаш тариф сброшен на Free администратором."
+                else:
+                    tier_label = TIER_BADGES.get(tier, tier)
+                    tg_text = (
+                        f"🎉 <b>Подписка выдана</b>\n\n"
+                        f"Тариф: {tier_label}\n"
+                        f"Дней: {days}\n"
+                        f"Действует до: {new_expiry[:10] if not isinstance(new_expiry, str) else new_expiry[:10]}"
+                    )
+                requests.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={'chat_id': telegram_id, 'text': tg_text, 'parse_mode': 'HTML'},
+                    timeout=10
+                )
+        except Exception as tg_err:
+            print(f"[grant_premium] TG notify error: {tg_err}")
+
         return JsonResponse({'success': True})
     except Exception as e:
         print(f"[grant_premium] Error: {e}")

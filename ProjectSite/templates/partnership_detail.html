@@ -57,18 +57,22 @@
         width: 100%;
         cursor: pointer;
     }
+    @media (max-width: 768px) {
+        .row-custom { flex-direction: column; }
+        .message { max-width: 95%; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-lg-8">
+<div class="row row-custom" style="display: flex; gap: 24px; flex-wrap: wrap;">
+    <div class="col-chat" style="flex: 2; min-width: 300px;">
         <div class="stat-card">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2>Заявка на сотрудничество #{{ partnership.id }}</h2>
+            <div class="d-flex justify-content-between align-items-center mb-4" style="flex-wrap: wrap; gap: 12px;">
+                <h2 class="gradient-text">Заявка на сотрудничество #{{ partnership.id }}</h2>
                 <a href="/news/partnership/" class="btn-primary btn-sm">← Назад</a>
             </div>
-            
+
             <div class="chat-messages" id="chatMessages">
                 {% for msg in messages %}
                 <div class="message message-{{ msg.sender_type }}{% if msg.sender_name == 'Система' %} message-system{% endif %}">
@@ -79,21 +83,21 @@
                 </div>
                 {% endfor %}
             </div>
-            
-            <textarea id="replyMessage" class="form-control" rows="3" placeholder="Введите ответ..."></textarea>
+
+            <textarea id="replyMessage" class="form-control" rows="3" placeholder="Введите ответ..." style="width: 100%;"></textarea>
             <div class="mt-3">
                 <button class="btn-primary" onclick="sendReply()">Отправить ответ</button>
             </div>
         </div>
     </div>
-    
-    <div class="col-lg-4">
+
+    <div class="col-info" style="flex: 1; min-width: 280px;">
         <div class="info-panel">
             <h4 class="mb-3">Информация</h4>
-            
+
             <div class="info-row">
                 <div class="info-label">Статус</div>
-                <div class="info-value">
+                <div class="info-value" style="min-width: 0;">
                     <select id="statusSelect" class="status-select" onchange="updateStatus()">
                         <option value="pending" {% if partnership.status == 'pending' %}selected{% endif %}>🟡 Ожидает ответа</option>
                         <option value="approved" {% if partnership.status == 'approved' %}selected{% endif %}>🟢 Одобрено</option>
@@ -101,22 +105,22 @@
                     </select>
                 </div>
             </div>
-            
+
             <div class="info-row">
                 <div class="info-label">ФИО</div>
                 <div class="info-value">{{ partnership.full_name }}</div>
             </div>
-            
+
             <div class="info-row">
                 <div class="info-label">Email</div>
                 <div class="info-value">{{ partnership.email }}</div>
             </div>
-            
+
             <div class="info-row">
                 <div class="info-label">Telegram</div>
                 <div class="info-value">@{{ partnership.telegram }}</div>
             </div>
-            
+
             <div class="info-row">
                 <div class="info-label">Тип сотрудничества</div>
                 <div class="info-value">
@@ -126,23 +130,21 @@
                     {% else %}📝 Другое{% endif %}
                 </div>
             </div>
-            
+
             <div class="info-row">
                 <div class="info-label">Описание</div>
                 <div class="info-value">{{ partnership.description|linebreaks }}</div>
             </div>
-            
+
             {% if partnership.social_links %}
             <div class="info-row">
                 <div class="info-label">Соцсети</div>
                 <div class="info-value">
-                    {% for link in partnership.social_links.split ',' %}
-                    <a href="{{ link }}" target="_blank" style="color: #00a3ff;">{{ link }}</a><br>
-                    {% endfor %}
+                    <div style="word-break: break-all;">{{ partnership.social_links|linebreaks }}</div>
                 </div>
             </div>
             {% endif %}
-            
+
             <div class="info-row">
                 <div class="info-label">Создана</div>
                 <div class="info-value">{{ partnership.created_at|date:"d.m.Y H:i" }}</div>
@@ -154,14 +156,14 @@
 <script>
     const chatMessages = document.getElementById('chatMessages');
     if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
-    
+
     async function sendReply() {
         const message = document.getElementById('replyMessage').value.trim();
         if (!message) {
             showToast('Введите сообщение', 'error');
             return;
         }
-        
+
         const res = await fetch('/news/partnership/{{ partnership.id }}/', {
             method: 'POST',
             headers: {
@@ -171,7 +173,7 @@
             body: JSON.stringify({ message: message })
         });
         const data = await res.json();
-        
+
         if (data.success) {
             showToast('Сообщение отправлено');
             location.reload();
@@ -179,10 +181,10 @@
             showToast('Ошибка', 'error');
         }
     }
-    
+
     async function updateStatus() {
         const status = document.getElementById('statusSelect').value;
-        
+
         const res = await fetch('/news/partnership/{{ partnership.id }}/update-status/', {
             method: 'POST',
             headers: {
@@ -192,7 +194,7 @@
             body: JSON.stringify({ status: status })
         });
         const data = await res.json();
-        
+
         if (data.success) {
             showToast('Статус обновлён');
             setTimeout(() => location.reload(), 500);

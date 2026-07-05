@@ -5,6 +5,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
+from users.crypto_utils import decrypt_value
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
@@ -128,6 +129,28 @@ def require_permission(permission):
     return decorator
 
 
+PRIORITY_MAP = {
+    'vip':       {'label': 'Критический', 'class': 'priority-critical', 'order': 4},
+    'platinum':  {'label': 'Высокий',     'class': 'priority-high',    'order': 3},
+    'premium':   {'label': 'Средний',     'class': 'priority-medium',  'order': 2},
+}
+
+def get_user_tier(user_id):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT premium_tier FROM users WHERE user_id=?", (user_id,))
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row else 'free'
+    except Exception:
+        return 'free'
+
+def get_priority_info(user_id):
+    tier = get_user_tier(user_id)
+    return PRIORITY_MAP.get(tier, {'label': 'Низкий', 'class': 'priority-low', 'order': 1})
+
+
 @require_permission('disputes')
 def disputes_view(request):
     log_page_view(request, 'Просмотр Споров', 'Администратор открыл страницу споров и арбитража')
@@ -139,9 +162,10 @@ def disputes_view(request):
             SELECT d.*, de.seller, de.buyer, de.amount, de.currency, de.item, de.status AS deal_status
             FROM disputes d
             LEFT JOIN deals de ON d.deal_id = de.id
-            ORDER BY d.created_at DESC
         """)
-        for d in cur.fetchall():
+        rows = cur.fetchall()
+
+        for d in rows:
             row = dict(d)
             dc = row.get('dispute_code') or f"#{row.get('id')}"
             seller_id = row.get('seller')
@@ -152,6 +176,8 @@ def disputes_view(request):
             cur.execute("SELECT username FROM users WHERE user_id=?", (seller_id,))
             seller_row = cur.fetchone()
             seller_name = seller_row[0] if seller_row else str(seller_id)
+            opened_by = row.get('opened_by') or buyer_id
+            priority = get_priority_info(opened_by)
             disputes_data.append({
                 'id': row.get('id'),
                 'dispute_code': dc,
@@ -166,14 +192,111 @@ def disputes_view(request):
                 'user_type': 'buyer' if row.get('initiator') == 'buyer' else 'seller',
                 'status': 'open' if row.get('status') == 'pending' else row.get('status', 'closed'),
                 'created_at': row.get('created_at', ''),
+                'priority_label': priority['label'],
+                'priority_class': priority['class'],
+                'priority_order': priority['order'],
             })
         conn.close()
+
+        disputes_data.sort(key=lambda x: (-x['priority_order'], x['created_at'] or ''), reverse=False)
+        disputes_data.sort(key=lambda x: -x['priority_order'])
     except Exception as e:
         print(f"[disputes] Error: {e}")
     return render(request, 'disputes/disputes_list.html', {
         'active_page': 'disputes',
         'admin_name': get_admin_name(request),
         'disputes': disputes_data,
+    })
+
+
+@require_permission('disputes')
+def dispute_detail_view(request, dispute_id):
+    log_page_view(request, 'Просмотр Спора', f'Администратор открыл спор #{dispute_id}', target_id=dispute_id)
+    dispute = None; deal = None; seller_messages = []; buyer_messages = []
+    seller_info = None; buyer_info = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT d.*, de.seller, de.buyer, de.amount, de.currency, de.item, de.status AS deal_status,
+                   de.created AS deal_created, de.commission
+            FROM disputes d
+            LEFT JOIN deals de ON d.deal_id = de.id
+            WHERE d.id=?
+        """, (dispute_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return render(request, 'disputes/dispute_detail.html', {
+                'active_page': 'disputes',
+                'admin_name': get_admin_name(request),
+                'dispute': None,
+            })
+        dispute = dict(row)
+        dispute['dispute_code'] = dispute.get('dispute_code') or f"#{dispute_id}"
+        deal_id = dispute.get('deal_id')
+
+        if deal_id:
+            cur.execute("SELECT * FROM deals WHERE id=?", (deal_id,))
+            deal_row = cur.fetchone()
+            if deal_row:
+                deal = dict(deal_row)
+
+        seller_id = dispute.get('seller')
+        buyer_id = dispute.get('buyer')
+
+        if seller_id:
+            cur.execute("SELECT * FROM users WHERE user_id=?", (seller_id,))
+            srow = cur.fetchone()
+            if srow:
+                seller_info = dict(srow)
+                seller_info['telegram_id'] = seller_info.pop('user_id')
+
+            cur.execute(
+                "SELECT id, user_id, sender_type, text, timestamp FROM user_messages WHERE user_id=? ORDER BY id ASC",
+                (seller_id,)
+            )
+            for m in cur.fetchall():
+                md = dict(m)
+                md['text'] = decrypt_value(md.get('text', ''))
+                seller_messages.append(md)
+
+        if buyer_id:
+            cur.execute("SELECT * FROM users WHERE user_id=?", (buyer_id,))
+            brow = cur.fetchone()
+            if brow:
+                buyer_info = dict(brow)
+                buyer_info['telegram_id'] = buyer_info.pop('user_id')
+
+            cur.execute(
+                "SELECT id, user_id, sender_type, text, timestamp FROM user_messages WHERE user_id=? ORDER BY id ASC",
+                (buyer_id,)
+            )
+            for m in cur.fetchall():
+                md = dict(m)
+                md['text'] = decrypt_value(md.get('text', ''))
+                buyer_messages.append(md)
+
+        conn.close()
+
+        opened_by = dispute.get('opened_by') or buyer_id
+        priority = get_priority_info(opened_by)
+        dispute['priority_label'] = priority['label']
+        dispute['priority_class'] = priority['class']
+        dispute['priority_order'] = priority['order']
+
+    except Exception as e:
+        print(f"[dispute_detail] Error: {e}")
+
+    return render(request, 'disputes/dispute_detail.html', {
+        'active_page': 'disputes',
+        'admin_name': get_admin_name(request),
+        'dispute': dispute,
+        'deal': deal,
+        'seller_info': seller_info,
+        'buyer_info': buyer_info,
+        'seller_messages': seller_messages,
+        'buyer_messages': buyer_messages,
     })
 
 

@@ -135,6 +135,12 @@
         font-weight: 500;
         display: inline-block;
     }
+    .priority-critical { color: #ff4757; font-weight: 700; }
+    .priority-high { color: #ffa502; font-weight: 600; }
+    .priority-medium { color: #ffcc00; font-weight: 500; }
+    .priority-low { color: #8892b0; }
+    .badge-resolved-seller { background: rgba(0, 163, 255, 0.15); color: #00a3ff; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 500; display: inline-block; }
+    .badge-resolved-buyer { background: rgba(0, 255, 200, 0.15); color: #00ffcc; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 500; display: inline-block; }
     .btn-sm {
         padding: 6px 14px;
         border-radius: 10px;
@@ -261,6 +267,7 @@
             <thead>
                 <tr>
                     <th>ID</th>
+                    <th>Приоритет</th>
                     <th>Код спора</th>
                     <th>Продавец</th>
                     <th>Покупатель</th>
@@ -275,6 +282,7 @@
                 {% for d in disputes %}
                 <tr>
                     <td>{{ d.id }}</td>
+                    <td><span class="{{ d.priority_class }}">{{ d.priority_label }}</span></td>
                     <td><strong>{{ d.dispute_code }}</strong></td>
                     <td>
                         <a href="/users/{{ d.seller_id }}/" style="color: #ff6600; text-decoration: underline; text-underline-offset: 2px;">{{ d.seller_name|default:d.seller_id }}</a>
@@ -287,7 +295,11 @@
                     <td>
                         {% if d.status == 'open' %}
                         <span class="badge-pending">Ожидает</span>
-                        {% elif d.status == 'seller' or d.status == 'buyer' %}
+                        {% elif d.status == 'seller' %}
+                        <span class="badge-resolved-seller">👑 Продавец прав</span>
+                        {% elif d.status == 'buyer' %}
+                        <span class="badge-resolved-buyer">🛒 Покупатель прав</span>
+                        {% elif d.status == 'resolved' or d.status == 'seller' or d.status == 'buyer' %}
                         <span class="badge-resolved">Решён</span>
                         {% else %}
                         <span class="badge-closed">Закрыт</span>
@@ -295,14 +307,17 @@
                     </td>
                     <td>{{ d.created_at|date:"d.m.Y H:i" }}</td>
                     <td style="white-space: nowrap;">
-                        <button class="btn-sm btn-primary-sm" onclick="openDispute({{ d.id }})">
+                        <a href="/disputes/{{ d.id }}/" class="btn-sm btn-primary-sm" style="display: inline-block; text-decoration: none;">
+                            <i class="fas fa-eye"></i> Открыть
+                        </a>
+                        <button class="btn-sm btn-outline-danger" onclick="openDispute({{ d.id }})">
                             <i class="fas fa-gavel"></i> Вердикт
                         </button>
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="9">
+                    <td colspan="10">
                         <div class="empty-state">
                             <i class="fas fa-gavel"></i>
                             <p>Нет споров</p>
@@ -385,9 +400,9 @@
         rows.forEach(r => {
             if (r.querySelector('td[colspan]')) return;
             all++;
-            const status = r.children[6]?.innerText.trim();
+            const status = r.children[7]?.innerText.trim();
             if (status === 'Ожидает') pending++;
-            else if (status === 'Решён') resolved++;
+            else if (status.includes('прав') || status === 'Решён') resolved++;
             else closed++;
         });
         document.getElementById('statAll').innerText = all;

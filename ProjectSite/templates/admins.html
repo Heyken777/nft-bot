@@ -17,7 +17,7 @@
                     {{ admin.username|slice:":1"|upper }}
                 </div>
                 <div>
-                    <h3 class="mb-0">{{ admin.username }}</h3>
+                    <h3 class="gradient-text mb-0">{{ admin.username }}</h3>
                     <div class="mt-1">
                         {% if admin.role == 'CEO' %}
                         <span class="role-badge-ceo" style="background: rgba(212, 175, 55, 0.15); color: #d4af37; padding: 4px 12px; border-radius: 20px; font-size: 12px; border-left: 2px solid #d4af37;">
@@ -74,7 +74,7 @@
 <!-- Модальное окно добавления администратора (Glassmorphism) -->
 <div id="addAdminModal" class="modal-overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 1000; align-items: center; justify-content: center;">
     <div class="modal-window" style="background: rgba(26, 26, 46, 0.92); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(0, 255, 255, 0.25); border-radius: 28px; padding: 36px; max-width: 480px; width: 90%; box-shadow: 0 0 60px rgba(0, 255, 255, 0.12);">
-        <h3 class="mb-4" style="color: #00ffcc; font-weight: 700; letter-spacing: 0.5px;"><i class="fas fa-user-plus me-2"></i> Добавить администратора</h3>
+        <h3 class="gradient-text mb-4" style="color: #00ffcc; font-weight: 700; letter-spacing: 0.5px;"><i class="fas fa-user-plus me-2"></i> Добавить администратора</h3>
 
         <input type="text" id="adminName" class="form-control mb-3" placeholder="Имя администратора" style="background: rgba(0,10,20,0.65); border: 1px solid rgba(0,255,255,0.25); border-radius: 14px; padding: 14px; color: #fff; font-size: 14px; width: 100%; box-sizing: border-box;">
 

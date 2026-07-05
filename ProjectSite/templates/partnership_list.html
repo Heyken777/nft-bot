@@ -4,61 +4,59 @@
 {% block title %}Сотрудничество | Heyken Admin{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4" style="flex-wrap: wrap; gap: 12px;">
     <h1 class="gradient-text">🤝 Заявки на сотрудничество</h1>
 </div>
 
-<div class="stat-card">
-    <div class="table-responsive">
-        <table class="table-custom w-100">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>ФИО</th>
-                    <th>Telegram</th>
-                    <th>Тип</th>
-                    <th>Статус</th>
-                    <th>Дата</th>
-                    <th>Действия</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for p in partnerships %}
-                <tr>
-                    <td>#{{ p.id }}</td>
-                    <td><strong>{{ p.full_name }}</strong></td>
-                    <td>@{{ p.telegram }}</td>
-                    <td>
-                        {% if p.partnership_type == 'advertising' %}📢 Реклама
-                        {% elif p.partnership_type == 'blogger' %}🎥 Блогер
-                        {% elif p.partnership_type == 'partnership' %}🤝 Партнёрство
-                        {% else %}📝 Другое{% endif %}
-                    </td>
-                    <td>
-                        {% if p.status == 'pending' %}
-                        <span class="badge-progress">🟡 Ожидает ответа</span>
-                        {% elif p.status == 'approved' %}
-                        <span class="badge-open">🟢 Одобрено</span>
-                        {% else %}
-                        <span class="badge-closed">🔴 Отказано</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ p.created_at|date:"d.m.Y H:i" }}</td>
-                    <td>
-                        <a href="/news/partnership/{{ p.id }}/" class="btn-primary btn-sm">
-                            <i class="fas fa-eye"></i> Открыть
-                        </a>
-                        <button class="btn-danger btn-sm" onclick="deletePartnership({{ p.id }})">
-                            <i class="fas fa-trash"></i> Удалить
-                        </button>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="7" class="text-center text-cyan-300 py-4">✨ Нет заявок ✨</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+<div class="stat-card" style="overflow-x: auto;">
+    <table class="table-custom w-100" style="min-width: 650px;">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>ФИО</th>
+                <th>Telegram</th>
+                <th>Тип</th>
+                <th>Статус</th>
+                <th>Дата</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in partnerships %}
+            <tr>
+                <td>#{{ p.id }}</td>
+                <td><strong>{{ p.full_name }}</strong></td>
+                <td>@{{ p.telegram }}</td>
+                <td>
+                    {% if p.partnership_type == 'advertising' %}📢 Реклама
+                    {% elif p.partnership_type == 'blogger' %}🎥 Блогер
+                    {% elif p.partnership_type == 'partnership' %}🤝 Партнёрство
+                    {% else %}📝 Другое{% endif %}
+                </td>
+                <td>
+                    {% if p.status == 'pending' %}
+                    <span class="badge-progress">🟡 Ожидает ответа</span>
+                    {% elif p.status == 'approved' %}
+                    <span class="badge-open">🟢 Одобрено</span>
+                    {% else %}
+                    <span class="badge-closed">🔴 Отказано</span>
+                    {% endif %}
+                </td>
+                <td>{{ p.created_at|date:"d.m.Y H:i" }}</td>
+                <td style="white-space: nowrap;">
+                    <a href="/news/partnership/{{ p.id }}/" class="btn-primary btn-sm" style="display: inline-block; margin-bottom: 4px;">
+                        <i class="fas fa-eye"></i> Открыть
+                    </a>
+                    <button class="btn-danger btn-sm" onclick="deletePartnership({{ p.id }})" style="display: inline-block;">
+                        <i class="fas fa-trash"></i> Удалить
+                    </button>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="text-center text-cyan-300 py-4">✨ Нет заявок ✨</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 
 <script>

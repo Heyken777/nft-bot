@@ -188,10 +188,22 @@ def partnership_detail_view(request, partnership_id):
         
         if message_text:
             admin_name = _get_admin_name(request)
+            admin_uid = request.session.get('telegram_id', 0)
+            is_ceo = admin_uid == OWNER_TELEGRAM_ID
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("SELECT ticket_role FROM users WHERE user_id=?", (admin_uid,))
+            trow = cur.fetchone()
+            conn.close()
+            if is_ceo:
+                display_name = f"👑 {admin_name} (CEO)"
+            else:
+                role = trow[0] if trow and trow[0] else 'Администратор'
+                display_name = f"{admin_name} ({role})"
             PartnershipMessage.objects.create(
                 partnership=partnership,
                 sender_type='admin',
-                sender_name=admin_name,
+                sender_name=display_name,
                 message=message_text
             )
             partnership.updated_at = timezone.now()

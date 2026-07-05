@@ -46,6 +46,11 @@ Thumbs.db
 *.temp
 *.pid
 
+# Skills & agents (local dev tools)
+.agents/
+AGENTS.md
+skills-lock.json
+
 # Project artifacts
 images/
 media/
