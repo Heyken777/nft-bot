@@ -333,6 +333,27 @@
         input::placeholder, textarea::placeholder, select::placeholder { color: var(--placeholder-color); opacity: 0.75; }
 
         .form-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+        .form-label.required::after { content:' *'; color:var(--danger); }
+        .form-group { margin-bottom: 18px; }
+        .form-control, select, textarea, input[type="text"], input[type="email"], input[type="password"], input[type="number"] {
+            width: 100%; padding: 10px 14px; border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color); background: var(--bg-primary);
+            color: var(--text-primary); font-size: 14px; font-family: var(--font-sans);
+            outline: none; transition: border-color 0.2s, box-shadow 0.2s; box-sizing: border-box;
+        }
+        .form-control:focus, select:focus, textarea:focus, input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus, input[type="number"]:focus {
+            border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+        .radio-group { display:flex; gap:12px; flex-wrap:wrap; }
+        .radio-label {
+            display:flex; align-items:center; gap:8px; padding:10px 18px;
+            border-radius:var(--radius-sm); border:1px solid var(--border-color);
+            background:var(--bg-primary); color:var(--text-primary);
+            cursor:pointer; font-size:14px; transition:border-color 0.2s, background 0.2s;
+            user-select:none;
+        }
+        .radio-label:hover { border-color:var(--accent); background:var(--accent-soft); }
+        .radio-label input[type="radio"] { accent-color:var(--accent); margin:0; width:16px; height:16px; }
 
         .breadcrumb {
             display: flex; align-items: center; gap: 10px;
@@ -605,7 +626,7 @@
                 <ul class="nav-menu d-flex gap-4 list-unstyled align-items-center mb-0">
                     <li><a href="/usersite/dashboard/" class="nav-menu__link" data-page="dashboard">Главная</a></li>
                     <li><a href="/usersite/profile/" class="nav-menu__link" data-page="profile">Профиль</a></li>
-                    <li><a href="/usersite/top/" class="nav-menu__link" data-page="top">🏆 Топ</a></li>
+                    <li><a href="/usersite/top/" class="nav-menu__link" data-page="top">Топ</a></li>
                     <li><a href="/usersite/transactions/" class="nav-menu__link" data-page="transactions">Операции</a></li>
                     <li><a href="/usersite/reviews/" class="nav-menu__link" data-page="reviews">Отзывы</a></li>
                     <li><a href="/usersite/withdraw/" class="nav-menu__link" data-page="withdraw">Вывод</a></li>
