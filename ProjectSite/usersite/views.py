@@ -606,9 +606,9 @@ def forbes_view(request):
         page = total_pages
         offset = (page - 1) * per_page
 
-    balance_cols = ', '.join([f"COALESCE(balance_{c},0)" for c in CURRENCIES])
+    balance_cols = ' + '.join([f"COALESCE(balance_{c},0)" for c in CURRENCIES])
     cur.execute(f"""
-        SELECT user_id, username, premium_tier, ({balance_cols}) as total_balance
+        SELECT user_id, username, premium_tier, {balance_cols} as total_balance
         FROM users ORDER BY total_balance DESC, user_id ASC LIMIT ? OFFSET ?
     """, (per_page, offset))
     rows = cur.fetchall()
