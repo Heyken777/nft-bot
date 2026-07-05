@@ -97,27 +97,12 @@
 </div>
 
 <section class="section">
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-value">{{ purchases }}</div>
-            <div class="stat-label">Покупок</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ sales }}</div>
-            <div class="stat-label">Продаж</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ active_deals }}</div>
-            <div class="stat-label">Активных сделок</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ referrals_count }}</div>
-            <div class="stat-label">Рефералов</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ tickets_count }}</div>
-            <div class="stat-label">Обращений</div>
-        </div>
+    <div class="stats-inline">
+        <span>Покупок: <strong>{{ purchases }}</strong></span>
+        <span>Продаж: <strong>{{ sales }}</strong></span>
+        <span>Активных сделок: <strong>{{ active_deals }}</strong></span>
+        <span>Рефералов: <strong>{{ referrals_count }}</strong></span>
+        <span>Обращений: <strong>{{ tickets_count }}</strong></span>
     </div>
 </section>
 
