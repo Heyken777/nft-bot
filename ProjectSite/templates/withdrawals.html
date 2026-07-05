@@ -54,7 +54,7 @@
                         {% if r.status == 'pending' %}background:rgba(255,193,7,.15);color:#ffc107;
                         {% elif r.status == 'approved' %}background:rgba(0,255,100,.15);color:#00ff66;
                         {% else %}background:rgba(220,53,69,.15);color:#dc3545;{% endif %}">
-                            {{ r.status }}
+                            {% if r.status == 'approved' %}Одобрено{% elif r.status == 'rejected' %}Отклонено{% elif r.status == 'pending' %}В обработке{% else %}{{ r.status }}{% endif %}
                         </span>
                     </td>
                     <td>{{ r.created_at|date:"d.m H:i" }}</td>

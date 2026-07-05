@@ -277,7 +277,7 @@
                 <div class="info-row">
                     <div class="info-label">Создатель</div>
                     <div class="info-value">
-                        <a href="/users/{{ ticket.user_id }}/" style="color: #00a3ff; text-decoration: underline; text-underline-offset: 2px;">{{ ticket.user_login|default:"Пользователь" }}</a>
+                        <a href="/usersite/profile/{{ ticket.user_login }}/" target="_blank" style="color: #00a3ff; text-decoration: underline; text-underline-offset: 2px;">{{ ticket.user_login|default:"Пользователь" }}</a>
                     </div>
                 </div>
                 

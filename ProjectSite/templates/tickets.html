@@ -480,7 +480,7 @@
                             <div class="user-avatar">
                                 {% firstof ticket.username|slice:":1" ticket.user_login|slice:":1" "?" %}
                             </div>
-                            <a href="/users/{{ ticket.user_id }}/" style="color: #00a3ff; text-decoration: underline; text-underline-offset: 2px;">{{ ticket.username|default:ticket.user_id }}</a>
+                            <a href="/usersite/profile/{{ ticket.user_login }}/" target="_blank" style="color: #00a3ff; text-decoration: underline; text-underline-offset: 2px;">{{ ticket.username|default:ticket.user_id }}</a>
                         </div>
                     </td>
                     <td>{{ ticket.user_login|default:"—" }}</td>

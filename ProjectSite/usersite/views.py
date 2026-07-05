@@ -282,7 +282,7 @@ def request_code_api(request):
     )
     cur.execute(
         "INSERT INTO notifications (user_id, title, message) VALUES (?, 'Код авторизации', ?)",
-        (user_id, f"🔐 Ваш код для входа на сайт: <b>{code}</b>\nДействителен 5 минут.\n\nВведите его на странице входа или отправьте боту команду /code")
+        (user_id, f"🔐 Ваш код для входа на сайт: {code}\nДействителен 5 минут.\n\nВведите его на странице входа или отправьте боту команду /code")
     )
     conn.commit()
     conn.close()

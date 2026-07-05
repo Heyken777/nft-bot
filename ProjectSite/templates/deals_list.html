@@ -54,7 +54,7 @@
                             {% elif d.status == 'disputed' %}background:rgba(255,71,87,.15);color:#ff4757;
                             {% else %}background:rgba(13,110,253,.15);color:var(--accent);{% endif %}
                             padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;
-                        ">{{ d.status }}</span>
+                        ">{% if d.status == 'completed' %}Выполнено{% elif d.status == 'awaiting' %}Ожидание{% elif d.status == 'cancelled' %}Отменено{% elif d.status == 'disputed' %}В споре{% elif d.status == 'paid' %}Оплачено{% elif d.status == 'item_sent' %}Товар отправлен{% else %}{{ d.status }}{% endif %}</span>
                     </td>
                     <td>{{ d.created|date:"d.m H:i" }}</td>
                 </tr>
@@ -94,6 +94,7 @@ function renderDealRow(d) {
     };
     const style = statusStyles[d.status] || 'background:rgba(13,110,253,.15);color:var(--accent);';
     const date = d.created ? new Date(d.created).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
+    var sm = {'completed':'Выполнено','awaiting':'Ожидание','cancelled':'Отменено','disputed':'В споре','paid':'Оплачено','item_sent':'Товар отправлен'};
     return `<tr>
         <td>${d.id}</td>
         <td>${(d.item || '').substring(0, 30)}</td>
@@ -101,7 +102,7 @@ function renderDealRow(d) {
         <td>${d.currency}</td>
         <td><a href="/users/${d.seller}/">${d.seller}</a></td>
         <td><a href="/users/${d.buyer}/">${d.buyer}</a></td>
-        <td><span class="badge-${d.status}" style="${style}padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;">${d.status}</span></td>
+        <td><span class="badge-${d.status}" style="${style}padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;">${sm[d.status] || d.status}</span></td>
         <td>${date}</td>
     </tr>`;
 }

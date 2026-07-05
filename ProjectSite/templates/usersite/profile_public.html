@@ -68,7 +68,7 @@
                 </div>
                 <div class="text-right">
                     <div class="deal-amount">{{ d.amount }} {{ d.currency }}</div>
-                    <span class="badge {% if d.status == 'completed' %}badge-success{% elif d.status == 'awaiting' %}badge-warning{% elif d.status == 'cancelled' or d.status == 'disputed' %}badge-danger{% else %}badge-info{% endif %}">{{ d.status }}</span>
+                    <span class="badge {% if d.status == 'completed' %}badge-success{% elif d.status == 'awaiting' %}badge-warning{% elif d.status == 'cancelled' or d.status == 'disputed' %}badge-danger{% else %}badge-info{% endif %}">{% if d.status == 'completed' %}Выполнено{% elif d.status == 'awaiting' %}Ожидание{% elif d.status == 'cancelled' %}Отменено{% elif d.status == 'disputed' %}В споре{% elif d.status == 'paid' %}Оплачено{% elif d.status == 'item_sent' %}Товар отправлен{% else %}{{ d.status }}{% endif %}</span>
                 </div>
             </div>
             {% endfor %}

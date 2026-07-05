@@ -78,7 +78,7 @@
                             <td>{{ r.wallet_address|truncatechars:20 }}</td>
                             <td>
                                 <span class="badge {% if r.status == 'approved' %}badge-success{% elif r.status == 'rejected' %}badge-danger{% else %}badge-warning{% endif %}">
-                                    {{ r.status }}
+                                    {% if r.status == 'approved' %}Одобрено{% elif r.status == 'rejected' %}Отклонено{% elif r.status == 'pending' %}В обработке{% else %}{{ r.status }}{% endif %}
                                 </span>
                             </td>
                             <td>{{ r.created_at|date:"d.m H:i" }}</td>
