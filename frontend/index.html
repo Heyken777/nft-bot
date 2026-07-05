@@ -297,7 +297,7 @@
                 
                 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
                 function getCurrencySymbol(c) { return currencySymbols[c] || c; }
-                function getStatusText(s) { const m = { 'awaiting': '⏳ Ожидает оплаты', 'paid': '💰 Оплачена', 'item_sent': '📦 Товар передан', 'completed': '✅ Завершена' }; return m[s] || s; }
+                function getStatusText(s) { const m = { 'awaiting': '⏳ Ожидает оплаты', 'paid': '💰 Оплачена', 'item_sent': '📦 Товар передан', 'completed': '✅ Завершена', 'cancelled': '❌ Отменена', 'disputed': '⚖️ В споре' }; return m[s] || s; }
                 function formatNumber(n) { return (n || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
                 function showToast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2000); }
                 
