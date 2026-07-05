@@ -290,6 +290,21 @@ def request_code_api(request):
 
 
 CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'STARS']
+
+AVATAR_DIR = os.path.join(settings.MEDIA_ROOT, 'avatars')
+
+def _ensure_avatar_column():
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT avatar FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cur.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
+        conn.commit()
+    conn.close()
+
+def _avatar_url(user_id):
+    return f'/usersite/avatar/{user_id}/'
 CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': "so'm", 'TON': 'TON', 'USDT': 'USDT', 'STARS': '⭐'}
 EXCHANGE_RATES = {'RUB': 1, 'USD': 90, 'EUR': 95, 'BYN': 28, 'UAH': 2.3, 'KZT': 0.19, 'UZS': 0.0075, 'TON': 500, 'USDT': 90, 'STARS': 1.5}
 TIER_BADGES = {'free': '⬜ FREE', 'premium': '⭐ PREMIUM', 'platinum': '💎 PLATINUM', 'vip': '👑 VIP'}
@@ -399,6 +414,7 @@ def dashboard_view(request):
 def profile_view(request):
     if not check_auth(request):
         return redirect('/usersite/login/')
+    _ensure_avatar_column()
 
     user_id = request.session.get('user_id')
     user = None; deals = []; referrals = []; reviews = []; avg_rating = 0
@@ -456,6 +472,8 @@ def profile_view(request):
             total_rub += b * rate
             balances.append({'currency': c, 'symbol': CURRENCY_SYMBOLS.get(c, c), 'amount': b, 'rub_value': b * rate})
 
+    avatar_url = _avatar_url(user_id) if user and user.get('avatar') else None
+
     return render(request, 'usersite/profile.html', {
         'user': dict(user) if user else None,
         'deals': deals, 'referrals': referrals, 'reviews': reviews,
@@ -464,6 +482,7 @@ def profile_view(request):
         'tier': tier, 'tier_badge': tier_badge, 'tier_commission': tier_commission,
         'tier_active': tier_active, 'days_left': days_left,
         'bot_username': bot_username, 'now': datetime.now(),
+        'avatar_url': avatar_url,
     })
 
 
@@ -526,6 +545,7 @@ def api_update_profile(request):
 
 
 def public_profile_view(request, username):
+    _ensure_avatar_column()
     user = None; deals = []
     try:
         conn = get_db()
@@ -574,12 +594,14 @@ def public_profile_view(request, username):
             cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (u['user_id'],))
             avg_rating = cur.fetchone()[0] or 0
 
+            avatar_url = _avatar_url(u.get('user_id')) if u.get('avatar') else None
             conn.close()
             return render(request, 'usersite/profile_public.html', {
                 'user': user, 'deals': deals, 'balances': balances, 'total_rub': round(total_rub, 2),
                 'tier': tier, 'tier_badge': TIER_BADGES.get(tier, '⬜ FREE'),
                 'tier_active': tier_active, 'days_left': days_left,
                 'avg_rating': round(avg_rating, 1), 'now': datetime.now(),
+                'avatar_url': avatar_url,
             })
         conn.close()
     except Exception as e:
@@ -588,6 +610,7 @@ def public_profile_view(request, username):
 
 
 def forbes_view(request):
+    _ensure_avatar_column()
     page = request.GET.get('page', 1)
     try:
         page = int(page)
@@ -608,7 +631,7 @@ def forbes_view(request):
 
     balance_cols = ' + '.join([f"COALESCE(balance_{c},0)" for c in CURRENCIES])
     cur.execute(f"""
-        SELECT user_id, username, premium_tier, {balance_cols} as total_balance
+        SELECT user_id, username, premium_tier, avatar, {balance_cols} as total_balance
         FROM users ORDER BY total_balance DESC, user_id ASC LIMIT ? OFFSET ?
     """, (per_page, offset))
     rows = cur.fetchall()
@@ -619,7 +642,8 @@ def forbes_view(request):
             'user_id': row[0],
             'username': row[1] or f"ID{row[0]}",
             'premium_tier': row[2] or 'free',
-            'total_balance': round(row[3], 2) if row[3] else 0,
+            'avatar_url': _avatar_url(row[0]) if row[3] else None,
+            'total_balance': round(row[4], 2) if row[4] else 0,
         })
     conn.close()
 
@@ -1240,3 +1264,72 @@ def report_review_api(request):
     conn.commit()
     conn.close()
     return JsonResponse({'success': True, 'message': 'Жалоба отправлена администрации'})
+
+
+def avatar_serve_view(request, user_id):
+    _ensure_avatar_column()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT avatar FROM users WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row or not row[0]:
+        from django.http import HttpResponseNotFound
+        return HttpResponseNotFound()
+    path = os.path.join(AVATAR_DIR, row[0])
+    if not os.path.exists(path):
+        from django.http import HttpResponseNotFound
+        return HttpResponseNotFound()
+    from django.http import FileResponse
+    return FileResponse(open(path, 'rb'))
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_upload_avatar(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    _ensure_avatar_column()
+
+    file = request.FILES.get('avatar')
+    if not file:
+        return JsonResponse({'success': False, 'error': 'Файл не выбран'})
+
+    import imghdr
+    valid_ext = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif'}
+    if file.content_type not in valid_ext:
+        return JsonResponse({'success': False, 'error': 'Допустимы только JPG, PNG, WebP, GIF'})
+
+    if file.size > 2 * 1024 * 1024:
+        return JsonResponse({'success': False, 'error': 'Максимальный размер — 2MB'})
+
+    os.makedirs(AVATAR_DIR, exist_ok=True)
+    ext = valid_ext[file.content_type]
+    filename = f'avatar_{user_id}_{int(time.time())}{ext}'
+    filepath = os.path.join(AVATAR_DIR, filename)
+
+    with open(filepath, 'wb+') as dest:
+        for chunk in file.chunks():
+            dest.write(chunk)
+
+    conn = get_db()
+    cur = conn.cursor()
+    old = cur.execute("SELECT avatar FROM users WHERE user_id=?", (user_id,)).fetchone()
+    if old and old[0]:
+        old_path = os.path.join(AVATAR_DIR, old[0])
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    cur.execute("UPDATE users SET avatar=? WHERE user_id=?", (filename, user_id))
+    conn.commit()
+    conn.close()
+
+    return JsonResponse({'success': True, 'avatar_url': _avatar_url(user_id)})
+
+
+def terms_view(request):
+    return render(request, 'usersite/terms.html')
+
+
+def privacy_view(request):
+    return render(request, 'usersite/privacy.html')

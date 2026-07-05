@@ -45,6 +45,7 @@ urlpatterns = [
     path('api/users/<int:telegram_id>/backup-balance/', views.api_backup_balance),
     path('api/users/<int:telegram_id>/restore-balance/', views.api_restore_balance),
     path('api/users/search/', views.api_search_users, name='api_search_users'),
+    path('api/users/<int:telegram_id>/delete-avatar/', views.api_delete_user_avatar),
     path('api/users/export/', views.api_export_users),
     
     # API: Сделки

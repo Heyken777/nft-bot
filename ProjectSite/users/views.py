@@ -502,6 +502,7 @@ def user_detail_view(request, telegram_id):
         display = user_dict.get('username') or str(user_dict['telegram_id'])
         user_dict['display_name'] = display
         user_dict['avatar_letter'] = display[0].upper()
+        user_dict['avatar_url'] = f'/usersite/avatar/{user_dict["telegram_id"]}/' if user_dict.get('avatar') else None
 
         ref_code = user_dict.get('referral_code') or ''
         bot_username = os.getenv('BOT_USERNAME') or 'NovixBot'
@@ -1903,3 +1904,31 @@ def api_reported_reviews(request):
     except Exception as e:
         print(f"[reported_reviews] Error: {e}")
         return JsonResponse({'reviews': []})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@session_required
+def api_delete_user_avatar(request, telegram_id):
+    perm = require_permission('users')
+    perm(request)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT avatar FROM users WHERE user_id=?", (telegram_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
+        old = row[0]
+        if old:
+            old_path = os.path.join(settings.BASE_DIR, '..', 'media', 'avatars', old)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+        cur.execute("UPDATE users SET avatar='' WHERE user_id=?", (telegram_id,))
+        conn.commit()
+        conn.close()
+        return JsonResponse({'success': True, 'message': 'Аватар удалён'})
+    except Exception as e:
+        print(f"[delete_avatar] Error: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

@@ -231,6 +231,10 @@
             padding: 24px 0; text-align: center;
             font-size: 13px; color: var(--text-muted);
         }
+        .footer-inner { display:flex; flex-direction:column; align-items:center; gap:8px; }
+        .footer-links { display:flex; gap:16px; flex-wrap:wrap; justify-content:center; }
+        .footer-links a { color:var(--text-muted); text-decoration:none; font-size:12px; transition:color 0.2s; }
+        .footer-links a:hover { color:var(--accent); }
 
         .card {
             background: var(--glass-bg);
@@ -627,7 +631,13 @@
 
     <footer class="footer">
         <div class="container">
-            <p>© 2026 Heyken — Private & Secure VPN</p>
+            <div class="footer-inner">
+                <span>© 2026 Heyken Industry</span>
+                <div class="footer-links">
+                    <a href="/usersite/terms/">Пользовательское соглашение</a>
+                    <a href="/usersite/privacy/">Политика конфиденциальности</a>
+                </div>
+            </div>
         </div>
     </footer>
 
