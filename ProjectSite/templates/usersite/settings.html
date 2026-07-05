@@ -1,0 +1,107 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Настройки профиля{% endblock %}
+
+{% block extra_css %}
+<style>
+    .settings-card { max-width: 560px; margin: 0 auto; }
+    .settings-card .card-body { display: flex; flex-direction: column; gap: 20px; }
+    .field-group { display: flex; flex-direction: column; gap: 6px; }
+    .field-group label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+    .field-group input { width: 100%; }
+    .field-hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .btn-save { width: 100%; padding: 12px; font-size: 15px; margin-top: 8px; }
+    .toast-settings { margin-top: 12px; }
+    .divider-settings { border: none; border-top: 1px solid var(--border-color); margin: 8px 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-card">
+    <div class="card">
+        <div class="card-body">
+            <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:4px;">⚙️ Настройки профиля</h2>
+            <p class="text-muted" style="font-size:13px;margin-bottom:8px;">Измените личные данные для входа на сайт</p>
+
+            <hr class="divider-settings">
+
+            <div class="field-group">
+                <label for="fieldLogin">Логин</label>
+                <input type="text" id="fieldLogin" class="form-control" value="{{ profile_login }}" placeholder="Придумайте логин" minlength="3" maxlength="32" pattern="[a-zA-Z0-9_]+">
+                <span class="field-hint">Только латиница, цифры и _</span>
+            </div>
+
+            <div class="field-group">
+                <label for="fieldEmail">Email</label>
+                <input type="email" id="fieldEmail" class="form-control" value="{{ profile_email|default:'' }}" placeholder="your@email.com">
+                <span class="field-hint">Для восстановления пароля (необязательно)</span>
+            </div>
+
+            <div class="field-group">
+                <label for="fieldName">Имя на сайте</label>
+                <input type="text" id="fieldName" class="form-control" value="{{ username|default:'' }}" placeholder="Ваше отображаемое имя" maxlength="50">
+                <span class="field-hint">Как вас видят другие пользователи</span>
+            </div>
+
+            <hr class="divider-settings">
+
+            <div class="field-group">
+                <label for="fieldPassword">Новый пароль</label>
+                <input type="password" id="fieldPassword" class="form-control" placeholder="Оставьте пустым, чтобы не менять" minlength="6">
+                <span class="field-hint">Минимум 6 символов</span>
+            </div>
+
+            <div class="field-group">
+                <label for="fieldPassword2">Повторите пароль</label>
+                <input type="password" id="fieldPassword2" class="form-control" placeholder="Повторите новый пароль">
+            </div>
+
+            <button class="btn btn-primary btn-save" onclick="saveSettings()">💾 Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<script>
+async function saveSettings() {
+    var login = document.getElementById('fieldLogin').value.trim();
+    var email = document.getElementById('fieldEmail').value.trim();
+    var name = document.getElementById('fieldName').value.trim();
+    var pass1 = document.getElementById('fieldPassword').value;
+    var pass2 = document.getElementById('fieldPassword2').value;
+
+    if (!login) { showToast('Введите логин', 'error'); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(login)) { showToast('Логин: только латиница, цифры и _', 'error'); return; }
+    if (login.length < 3 || login.length > 32) { showToast('Логин от 3 до 32 символов', 'error'); return; }
+    if (email && !/^[^@]+@[^@]+\.[^@]+$/.test(email)) { showToast('Некорректный email', 'error'); return; }
+    if (pass1 && pass1.length < 6) { showToast('Пароль минимум 6 символов', 'error'); return; }
+    if (pass1 !== pass2) { showToast('Пароли не совпадают', 'error'); return; }
+
+    var btn = document.querySelector('.btn-save');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Сохранение...';
+
+    try {
+        var res = await fetch('/usersite/api/update-profile/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ login: login, email: email, name: name, password: pass1 })
+        });
+        var data = await res.json();
+        if (data.success) {
+            showToast('✅ Настройки сохранены');
+            setTimeout(function() { location.reload(); }, 1000);
+        } else {
+            showToast('Ошибка: ' + (data.error || 'Неизвестная ошибка'), 'error');
+        }
+    } catch (e) {
+        showToast('Ошибка соединения', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '💾 Сохранить';
+    }
+}
+</script>
+{% endblock %}

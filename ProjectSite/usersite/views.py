@@ -467,6 +467,69 @@ def profile_view(request):
     })
 
 
+def settings_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT profile_login, profile_email, username FROM users WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    ctx = {'profile_login': '', 'profile_email': '', 'username': ''}
+    if row:
+        ctx = {'profile_login': row[0] or '', 'profile_email': row[1] or '', 'username': row[2] or ''}
+    return render(request, 'usersite/settings.html', ctx)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_update_profile(request):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Не авторизован'}, status=401)
+    uid = request.session.get('user_id')
+    data = json.loads(request.body)
+    login = data.get('login', '').strip()
+    email = data.get('email', '').strip()
+    name = data.get('name', '').strip()
+    password = data.get('password', '')
+
+    if not login:
+        return JsonResponse({'success': False, 'error': 'Введите логин'}, status=400)
+    if not re.match(r'^[a-zA-Z0-9_]+$', login):
+        return JsonResponse({'success': False, 'error': 'Логин: только латиница, цифры и _'}, status=400)
+    if len(login) < 3 or len(login) > 32:
+        return JsonResponse({'success': False, 'error': 'Логин от 3 до 32 символов'}, status=400)
+    if email and not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
+        return JsonResponse({'success': False, 'error': 'Некорректный email'}, status=400)
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users WHERE profile_login=? AND user_id!=?", (login, uid))
+    if cur.fetchone():
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Этот логин уже занят'}, status=400)
+
+    updates = ["profile_login=?", "profile_email=?", "username=?"]
+    vals = [login, email or None, name or None]
+
+    if password:
+        if len(password) < 6:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Пароль минимум 6 символов'}, status=400)
+        updates.append("profile_password_hash=?")
+        vals.append(make_password(password))
+
+    vals.append(uid)
+    cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE user_id=?", vals)
+    conn.commit()
+    conn.close()
+
+    request.session['username'] = name or login
+    request.session.modified = True
+    return JsonResponse({'success': True})
+
+
 def logout_view(request):
     request.session.flush()
     return redirect('/usersite/login/')

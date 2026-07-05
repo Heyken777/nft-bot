@@ -233,15 +233,31 @@
         }
 
         .card {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
             border-radius: var(--radius-md);
             padding: 24px;
-            box-shadow: var(--shadow-sm);
+            box-shadow: var(--glass-shadow);
             transition: var(--transition-color), box-shadow var(--transition-long), transform var(--transition-long);
             will-change: transform;
         }
         .card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+
+        .stat-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-md);
+            padding: 24px 20px;
+            text-align: center;
+            box-shadow: var(--glass-shadow);
+            transition: var(--transition-color), box-shadow var(--transition-long), transform var(--transition-long);
+            will-change: transform;
+        }
+        .stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 
         .glass-card {
             background: var(--glass-bg);
@@ -576,6 +592,7 @@
                 <ul class="nav-menu d-flex gap-4 list-unstyled align-items-center mb-0">
                     <li><a href="/usersite/dashboard/" class="nav-menu__link" data-page="dashboard">Главная</a></li>
                     <li><a href="/usersite/profile/" class="nav-menu__link" data-page="profile">Профиль</a></li>
+                    <li><a href="/usersite/settings/" class="nav-menu__link" data-page="settings">Настройки</a></li>
                     <li><a href="/usersite/transactions/" class="nav-menu__link" data-page="transactions">Операции</a></li>
                     <li><a href="/usersite/reviews/" class="nav-menu__link" data-page="reviews">Отзывы</a></li>
                     <li><a href="/usersite/withdraw/" class="nav-menu__link" data-page="withdraw">Вывод</a></li>
