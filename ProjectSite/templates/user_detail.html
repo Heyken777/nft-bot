@@ -279,13 +279,16 @@ function closeModal(id) {
 }
 
 function deleteAvatar(uid) {
-    if (!confirm('Удалить аватар пользователя?')) return;
-    api('/api/users/' + uid + '/delete-avatar/', {}).then(function(r) {
-        if (r.success) {
-            location.reload();
-        } else {
-            alert(r.error || 'Ошибка');
-        }
+    openModal('Удаление аватара', 'Вы уверены, что хотите удалить аватар пользователя?', 'Удалить', function() {
+        api('/api/users/' + uid + '/delete-avatar/', {}).then(function(r) {
+            if (r.success) {
+                closeModal('modalOverlay');
+                location.reload();
+            } else {
+                closeModal('modalOverlay');
+                openModal('Ошибка', r.error || 'Не удалось удалить аватар', 'Закрыть', function() { closeModal('modalOverlay'); });
+            }
+        });
     });
 }
 
