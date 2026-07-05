@@ -435,7 +435,7 @@
             to { opacity: 1; transform: translateX(0); }
         }
 
-        .ticket-list { display: flex; flex-direction: column; gap: 10px; }
+        .ticket-list { display: flex; flex-direction: column; }
         .ticket-item {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -444,9 +444,11 @@
             cursor: pointer;
             display: flex; justify-content: space-between; align-items: center;
             flex-wrap: wrap; gap: 12px;
+            margin-bottom: 12px;
             transition: var(--transition-color), border-color var(--transition-long), box-shadow var(--transition-long), transform var(--transition-long);
             will-change: transform;
         }
+        .ticket-item:last-child { margin-bottom: 0; }
         .ticket-item:hover {
             border-color: var(--accent);
             box-shadow: var(--shadow-md);
