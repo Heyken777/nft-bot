@@ -46,14 +46,14 @@
 <div class="breadcrumb">
     <a href="/usersite/dashboard/">Главная</a>
     <span class="separator">/</span>
-    <span class="current">🏆 Топ пользователей</span>
+    <span class="current">Топ пользователей</span>
 </div>
 
 <div class="forbes-layout">
     <div class="forbes-list">
         <div class="card" style="padding:0;overflow:hidden;">
             <div style="padding:16px 20px;border-bottom:1px solid var(--border-color);">
-                <h3 style="font-size:1rem;font-weight:600;">🏆 Топ — Рейтинг пользователей</h3>
+                <h3 style="font-size:1rem;font-weight:600;">Топ — Рейтинг пользователей</h3>
                 <div class="text-muted" style="font-size:12px;margin-top:2px;">Всего участников: {{ total_users }}</div>
             </div>
             {% for r in rankings %}
@@ -63,7 +63,7 @@
                 <div class="rank-name">{{ r.username }}</div>
                 <div style="text-align:right;">
                     <div class="rank-balance">{{ r.total_balance|floatformat:2 }} ₽</div>
-                    {% if r.premium_tier != 'free' %}<span class="rank-tier badge {% if r.premium_tier == 'vip' %}badge-danger{% elif r.premium_tier == 'platinum' %}badge-info{% else %}badge-success{% endif %}">{{ r.premium_tier }}</span>{% endif %}
+                    {% if r.premium_tier != 'free' %}<span class="rank-tier badge {% if r.premium_tier == 'vip' %}badge-danger{% elif r.premium_tier == 'platinum' %}badge-info{% else %}badge-success{% endif %}">{{ r.premium_tier|upper }}</span>{% endif %}
                 </div>
             </a>
             {% empty %}
