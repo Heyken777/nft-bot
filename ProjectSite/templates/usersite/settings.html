@@ -208,12 +208,14 @@ async function saveSettings() {
             },
             body: JSON.stringify({ email: email, name: name, password: pass1 })
         });
-        var data = await res.json();
-        if (data.success) {
+        var text = await res.text();
+        var data;
+        try { data = JSON.parse(text); } catch(e) { data = null; }
+        if (data && data.success) {
             showToast('✅ Настройки сохранены');
             setTimeout(function() { location.reload(); }, 1000);
         } else {
-            showToast('Ошибка: ' + (data.error || 'Неизвестная ошибка'), 'error');
+            showToast('Ошибка: ' + ((data && data.error) || text || 'Неизвестная ошибка'), 'error');
         }
     } catch (e) {
         showToast('Ошибка соединения: ' + e.message, 'error');

@@ -485,39 +485,44 @@ def settings_view(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_update_profile(request):
-    if not check_auth(request):
-        return JsonResponse({'success': False, 'error': 'Не авторизован'}, status=401)
-    uid = request.session.get('user_id')
-    data = json.loads(request.body)
-    email = data.get('email', '').strip()
-    name = data.get('name', '').strip()
-    password = data.get('password', '')
+    try:
+        if not check_auth(request):
+            return JsonResponse({'success': False, 'error': 'Не авторизован'}, status=401)
+        uid = request.session.get('user_id')
+        if not uid:
+            return JsonResponse({'success': False, 'error': 'ID пользователя не найден'}, status=400)
+        data = json.loads(request.body)
+        email = data.get('email', '').strip()
+        name = data.get('name', '').strip()
+        password = data.get('password', '')
 
-    if email and not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
-        return JsonResponse({'success': False, 'error': 'Некорректный email'}, status=400)
+        if email and not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
+            return JsonResponse({'success': False, 'error': 'Некорректный email'}, status=400)
 
-    conn = get_db()
-    cur = conn.cursor()
+        conn = get_db()
+        cur = conn.cursor()
 
-    updates = ["profile_email=?", "username=?"]
-    vals = [email or None, name or None]
+        updates = ["profile_email=?", "username=?"]
+        vals = [email or None, name or None]
 
-    if password:
-        if len(password) < 6:
-            conn.close()
-            return JsonResponse({'success': False, 'error': 'Пароль минимум 6 символов'}, status=400)
-        updates.append("profile_password_hash=?")
-        vals.append(make_password(password))
+        if password:
+            if len(password) < 6:
+                conn.close()
+                return JsonResponse({'success': False, 'error': 'Пароль минимум 6 символов'}, status=400)
+            updates.append("profile_password_hash=?")
+            vals.append(make_password(password))
 
-    vals.append(uid)
-    cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE user_id=?", vals)
-    conn.commit()
-    conn.close()
+        vals.append(uid)
+        cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE user_id=?", vals)
+        conn.commit()
+        conn.close()
 
-    if name:
-        request.session['username'] = name
-        request.session.modified = True
-    return JsonResponse({'success': True})
+        if name:
+            request.session['username'] = name
+            request.session.modified = True
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
 def logout_view(request):
