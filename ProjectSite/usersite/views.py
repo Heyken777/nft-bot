@@ -525,6 +525,110 @@ def api_update_profile(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+def public_profile_view(request, username):
+    user = None; deals = []
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE username=?", (username,))
+        row = cur.fetchone()
+        if row:
+            u = dict(row)
+            user = {
+                'telegram_id': u.get('user_id'),
+                'username': u.get('username'),
+                'created_at': u.get('created_at'),
+                'premium_tier': u.get('premium_tier') or 'free',
+                'rating': u.get('rating') or 0,
+                'reviews_count': u.get('reviews_count') or 0,
+                'premium_until': u.get('premium_until'),
+                'referral_code': u.get('referral_code'),
+                'referred_by': u.get('referred_by'),
+            }
+            balances = []
+            total_rub = 0
+            for c in CURRENCIES:
+                b = float(u.get(f'balance_{c}', 0) or 0)
+                rate = EXCHANGE_RATES.get(c, 1)
+                total_rub += b * rate
+                if b > 0:
+                    balances.append({'currency': c, 'symbol': CURRENCY_SYMBOLS.get(c, c), 'amount': b, 'rub_value': b * rate})
+
+            tier = user['premium_tier']
+            premium_until = user.get('premium_until')
+            tier_active = tier != 'free'
+            days_left = 0
+            if tier_active and premium_until:
+                try:
+                    expiry = datetime.fromisoformat(premium_until.replace('Z', ''))
+                    tier_active = expiry > datetime.now()
+                    days_left = max(0, (expiry - datetime.now()).days)
+                except:
+                    pass
+            if not tier_active and tier != 'free':
+                tier = 'free'
+
+            cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 20", (u['user_id'], u['user_id']))
+            deals = [dict(d) for d in cur.fetchall()]
+
+            cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (u['user_id'],))
+            avg_rating = cur.fetchone()[0] or 0
+
+            conn.close()
+            return render(request, 'usersite/profile_public.html', {
+                'user': user, 'deals': deals, 'balances': balances, 'total_rub': round(total_rub, 2),
+                'tier': tier, 'tier_badge': TIER_BADGES.get(tier, '⬜ FREE'),
+                'tier_active': tier_active, 'days_left': days_left,
+                'avg_rating': round(avg_rating, 1), 'now': datetime.now(),
+            })
+        conn.close()
+    except Exception as e:
+        print(f"public_profile error: {e}")
+    return render(request, 'usersite/profile_public.html', {'user': None, 'deals': [], 'balances': [], 'total_rub': 0})
+
+
+def forbes_view(request):
+    page = request.GET.get('page', 1)
+    try:
+        page = int(page)
+    except:
+        page = 1
+    per_page = 50
+    offset = (page - 1) * per_page
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM users")
+    total_users = cur.fetchone()[0] or 0
+    total_pages = max(1, (total_users + per_page - 1) // per_page)
+    if page > total_pages:
+        page = total_pages
+        offset = (page - 1) * per_page
+
+    balance_cols = ', '.join([f"COALESCE(balance_{c},0)" for c in CURRENCIES])
+    cur.execute(f"""
+        SELECT user_id, username, premium_tier, ({balance_cols}) as total_balance
+        FROM users ORDER BY total_balance DESC, user_id ASC LIMIT ? OFFSET ?
+    """, (per_page, offset))
+    rows = cur.fetchall()
+    rankings = []
+    for i, row in enumerate(rows):
+        rankings.append({
+            'rank': offset + i + 1,
+            'user_id': row[0],
+            'username': row[1] or f"ID{row[0]}",
+            'premium_tier': row[2] or 'free',
+            'total_balance': round(row[3], 2) if row[3] else 0,
+        })
+    conn.close()
+
+    return render(request, 'usersite/forbes.html', {
+        'rankings': rankings, 'page': page, 'total_pages': total_pages,
+        'total_users': total_users,
+    })
+
+
 def logout_view(request):
     request.session.flush()
     return redirect('/usersite/login/')

@@ -1,0 +1,95 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% load dict_filters %}
+{% block title %}Топ пользователей | Forbes{% endblock %}
+
+{% block extra_css %}
+<style>
+    .forbes-layout { display: flex; gap: 32px; flex-wrap: wrap; }
+    .forbes-list { flex: 1; min-width: 300px; }
+    .forbes-sidebar { flex: 0 0 340px; min-width: 280px; align-self: flex-start; position: sticky; top: 24px; }
+    @media (max-width: 991px) { .forbes-sidebar { position: static; flex: 1; } }
+
+    .rank-row {
+        display: flex; align-items: center; gap: 14px;
+        padding: 12px 16px; border-bottom: 1px solid var(--border-light);
+        cursor: pointer; transition: background var(--transition);
+        text-decoration: none; color: var(--text-primary);
+    }
+    .rank-row:last-child { border-bottom: none; }
+    .rank-row:hover { background: var(--bg-tertiary); border-radius: 8px; }
+    .rank-row.active { background: var(--accent-soft); border-radius: 8px; }
+
+    .rank-num { font-size: 14px; font-weight: 700; color: var(--text-muted); min-width: 40px; text-align: right; }
+    .rank-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #4a90e2); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; }
+    .rank-name { flex: 1; font-weight: 600; font-size: 14px; }
+    .rank-balance { font-weight: 700; font-size: 16px; color: var(--accent); }
+    .rank-tier { font-size: 10px; }
+
+    .rank-top3 .rank-num { color: var(--accent); }
+
+    .pagination-custom { display: flex; justify-content: center; gap: 6px; margin-top: 24px; flex-wrap: wrap; }
+    .pagination-custom a, .pagination-custom span {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-width: 36px; height: 36px; padding: 0 10px;
+        border-radius: 8px; font-size: 13px; font-weight: 500;
+        text-decoration: none; transition: var(--transition-color);
+    }
+    .pagination-custom a { background: var(--glass-bg); border: 1px solid var(--border-color); color: var(--text-secondary); }
+    .pagination-custom a:hover { border-color: var(--accent); color: var(--accent); }
+    .pagination-custom .active { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
+    .pagination-custom .disabled { opacity: 0.3; pointer-events: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/dashboard/">Главная</a>
+    <span class="separator">/</span>
+    <span class="current">🏆 Топ пользователей</span>
+</div>
+
+<div class="forbes-layout">
+    <div class="forbes-list">
+        <div class="card" style="padding:0;overflow:hidden;">
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border-color);">
+                <h3 style="font-size:1rem;font-weight:600;">🏆 Forbes — Рейтинг пользователей</h3>
+                <div class="text-muted" style="font-size:12px;margin-top:2px;">Всего участников: {{ total_users }}</div>
+            </div>
+            {% for r in rankings %}
+            <a href="/usersite/profile/{{ r.username }}/" class="rank-row {% if forloop.counter <= 3 %}rank-top3{% endif %}" data-username="{{ r.username }}">
+                <div class="rank-num">{{ r.rank }}</div>
+                <div class="rank-avatar">{{ r.username|slice:":1"|upper }}</div>
+                <div class="rank-name">{{ r.username }}</div>
+                <div style="text-align:right;">
+                    <div class="rank-balance">{{ r.total_balance|floatformat:2 }} ₽</div>
+                    {% if r.premium_tier != 'free' %}<span class="rank-tier badge {% if r.premium_tier == 'vip' %}badge-danger{% elif r.premium_tier == 'platinum' %}badge-info{% else %}badge-success{% endif %}">{{ r.premium_tier }}</span>{% endif %}
+                </div>
+            </a>
+            {% empty %}
+            <div class="text-center py-5 text-muted">Нет пользователей</div>
+            {% endfor %}
+        </div>
+
+        {% if total_pages > 1 %}
+        <div class="pagination-custom">
+            {% if page > 1 %}
+            <a href="?page={{ page|add:-1 }}">←</a>
+            {% else %}
+            <span class="disabled">←</span>
+            {% endif %}
+
+            {% for p in total_pages|get_range %}
+            <a href="?page={{ p }}" {% if p == page %}class="active"{% endif %}>{{ p }}</a>
+            {% endfor %}
+
+            {% if page < total_pages %}
+            <a href="?page={{ page|add:1 }}">→</a>
+            {% else %}
+            <span class="disabled">→</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
