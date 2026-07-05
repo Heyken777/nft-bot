@@ -64,9 +64,12 @@
 
             <hr class="divider-settings">
 
-            <div class="field-group">
+            <div class="field-group" style="position:relative;">
                 <label for="fieldPassword">Новый пароль</label>
-                <input type="password" id="fieldPassword" class="form-control" placeholder="Оставьте пустым, чтобы не менять" oninput="checkStrength(this.value)">
+                <div style="position:relative;">
+                    <input type="password" id="fieldPassword" class="form-control" placeholder="Оставьте пустым, чтобы не менять" oninput="checkStrength(this.value)" style="padding-right:44px;">
+                    <span id="eyeToggle" onclick="togglePassword()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);font-size:16px;user-select:none;">👁️</span>
+                </div>
                 <div class="password-strength" id="strengthSection" style="display:none;">
                     <div class="strength-bar">
                         <span id="str1"></span>
@@ -87,7 +90,7 @@
 
             <div class="field-group">
                 <label for="fieldPassword2">Повторите пароль</label>
-                <input type="password" id="fieldPassword2" class="form-control" placeholder="Повторите новый пароль" oninput="checkMatch()">
+                <input type="text" id="fieldPassword2" class="form-control" placeholder="Повторите новый пароль" oninput="checkMatch()" autocomplete="off">
                 <span class="field-hint" id="matchHint"></span>
             </div>
 
@@ -97,6 +100,18 @@
 </div>
 
 <script>
+function togglePassword() {
+    var inp = document.getElementById('fieldPassword');
+    var eye = document.getElementById('eyeToggle');
+    if (inp.type === 'password') {
+        inp.type = 'text';
+        eye.textContent = '🙈';
+    } else {
+        inp.type = 'password';
+        eye.textContent = '👁️';
+    }
+}
+
 function checkStrength(pass) {
     var section = document.getElementById('strengthSection');
     if (!pass) { section.style.display = 'none'; return; }
@@ -201,7 +216,7 @@ async function saveSettings() {
             showToast('Ошибка: ' + (data.error || 'Неизвестная ошибка'), 'error');
         }
     } catch (e) {
-        showToast('Ошибка соединения', 'error');
+        showToast('Ошибка соединения: ' + e.message, 'error');
     } finally {
         btn.disabled = false;
         btn.innerHTML = '💾 Сохранить';
