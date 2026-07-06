@@ -175,7 +175,7 @@
             --bg-secondary: #1A1D23;
             --text-primary: #F0F2F5;
             --text-secondary: #CED4DA;
-            --text-muted: #B0B8C5;
+            --text-muted: #9CA3AF;
             --border-color: #2D3139;
             --accent-soft: rgba(217, 139, 110, 0.15);
         }
@@ -187,19 +187,26 @@
         [data-theme="dark"] .section-full .section-scrim {
             background: linear-gradient(135deg, rgba(26,29,35,0.95) 0%, rgba(26,29,35,0.7) 35%, transparent 65%);
         }
+        [data-theme="dark"] .section-full .section-content h2 { color: #F0F2F5; }
+        [data-theme="dark"] .section-full .section-content p { color: #CED4DA; }
         [data-theme="dark"] .glass-card { background: rgba(26,29,35,0.60); border-color: rgba(255,255,255,0.06); }
         [data-theme="dark"] .glass-card__label { color: #9CA3AF; }
         [data-theme="dark"] .section-stadium .stadium-caption { color: #9CA3AF; }
         [data-theme="dark"] .landing-footer { border-top-color: rgba(255,255,255,0.06); }
-        [data-theme="dark"] .landing-footer__copy { color: #6B7280; }
-        [data-theme="dark"] .landing-footer__links a { color: #6B7280; }
-        [data-theme="dark"] .landing-footer__links a:hover { color: var(--text-secondary); }
-        [data-theme="dark"] .landing-footer__social { color: #6B7280; }
-        [data-theme="dark"] .landing-footer__social:hover { color: var(--text-secondary); }
+        [data-theme="dark"] .landing-footer__copy { color: #9CA3AF; }
+        [data-theme="dark"] .landing-footer__links a { color: #9CA3AF; }
+        [data-theme="dark"] .landing-footer__links a:hover { color: #CED4DA; }
+        [data-theme="dark"] .landing-footer__social { color: #9CA3AF; }
+        [data-theme="dark"] .landing-footer__social:hover { color: #CED4DA; }
         [data-theme="dark"] .hero-bg__overlay::after { opacity: 0.5; }
         [data-theme="dark"] .action-card { background: rgba(26,29,35,0.60); border-color: rgba(255,255,255,0.06); }
+        [data-theme="dark"] .action-card i { color: var(--accent); }
+        [data-theme="dark"] .action-card span { color: #F0F2F5; }
         [data-theme="dark"] .action-card:hover { border-color: var(--accent); }
         [data-theme="dark"] .seller-row { border-bottom-color: rgba(255,255,255,0.06); }
+        [data-theme="dark"] .seller-name { color: #F0F2F5; }
+        [data-theme="dark"] .seller-rating { color: var(--accent); }
+        [data-theme="dark"] .seller-deals { color: #9CA3AF; }
 
         @media (max-width: 820px) {
             .glass-nav__links { display: none; }
@@ -408,6 +415,7 @@
         .seller-name { flex: 1; font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
         .seller-rating { font-size: 0.85rem; color: var(--accent); font-weight: 600; }
         .seller-deals { font-size: 0.75rem; color: var(--text-muted); }
+        .fi { vertical-align: middle; margin-top: -2px; }
 
         /* ===== FOOTER ===== */
         .landing-footer {
