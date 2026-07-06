@@ -189,6 +189,16 @@
             transition: transform var(--transition), box-shadow var(--transition);
         }
         .glass-nav__cta:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(204,120,92,0.3); }
+        .glass-nav__logout {
+            background: rgba(0,0,0,0.04); color: var(--text-secondary);
+            padding: 7px 20px; border-radius: 999px;
+            font-size: 0.85rem; font-weight: 600; text-decoration: none;
+            border: 1px solid var(--border-color);
+            transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+        }
+        .glass-nav__logout:hover { background: rgba(0,0,0,0.08); transform: translateY(-1px); }
+        [data-theme="dark"] .glass-nav__logout { background: rgba(255,255,255,0.05); color: #CED4DA; border-color: rgba(255,255,255,0.10); }
+        [data-theme="dark"] .glass-nav__logout:hover { background: rgba(255,255,255,0.10); }
 
         .glass-nav__burger {
             display: flex; background: none; border: none; cursor: pointer;
@@ -729,7 +739,11 @@
                 <a href="/usersite/tickets/" class="glass-nav__link" data-page="tickets">Поддержка</a>
             </div>
             <div class="glass-nav__actions">
+                {% if request.session.user_id %}
+                <a href="/usersite/logout/" class="glass-nav__logout">Выйти</a>
+                {% else %}
                 <a href="/usersite/login/" class="glass-nav__cta">Войти</a>
+                {% endif %}
                 <button class="glass-nav__burger" aria-label="Меню">
                     <span></span><span></span><span></span>
                 </button>
