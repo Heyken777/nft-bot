@@ -496,9 +496,11 @@ def profile_view(request):
     premium_until = user and user['premium_until']
     tier_active = tier != 'free'
     days_left = 0
+    premium_until_dt = None
     if tier_active and premium_until:
         try:
             expiry = datetime.fromisoformat(premium_until.replace('Z', ''))
+            premium_until_dt = expiry.replace(tzinfo=None) + timedelta(hours=3)
             tier_active = expiry > datetime.now()
             days_left = max(0, (expiry - datetime.now()).days)
         except:
@@ -512,12 +514,18 @@ def profile_view(request):
 
     total_rub = 0
     balances = []
+    created_at_dt = None
     if user:
         for c in CURRENCIES:
             b = float(user.get(f'balance_{c}', 0) or 0)
             rate = EXCHANGE_RATES.get(c, 1)
             total_rub += b * rate
             balances.append({'currency': c, 'symbol': CURRENCY_SYMBOLS.get(c, c), 'amount': b, 'rub_value': b * rate})
+        if user.get('created_at'):
+            try:
+                created_at_dt = datetime.fromisoformat(user['created_at'].replace('Z', '')) + timedelta(hours=3)
+            except:
+                pass
 
     avatar_url = _avatar_url(user_id) if user and user.get('avatar') else None
 
@@ -528,6 +536,8 @@ def profile_view(request):
         'balances': balances, 'total_rub': round(total_rub, 2),
         'tier': tier, 'tier_badge': tier_badge, 'tier_commission': tier_commission,
         'tier_active': tier_active, 'days_left': days_left,
+        'premium_until_dt': premium_until_dt,
+        'created_at_dt': created_at_dt,
         'bot_username': bot_username, 'now': datetime.now(),
         'avatar_url': avatar_url,
         'notifications': notifications, 'unread_notifications': unread_notifications,

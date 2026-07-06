@@ -212,7 +212,7 @@
                     <div class="info-label">СОЗДАТЕЛЬ</div>
                     <div class="info-value">
                         {% if viewer_is_admin %}
-                        <a href="/usersite/profile/{{ ticket.user_id }}/" target="_blank">
+                        <a href="/usersite/profile/{{ creator_login }}/" target="_blank">
                             {{ creator_login|default:"Пользователь" }}
                         </a>
                         {% else %}

@@ -136,12 +136,15 @@
             max-width: 1200px; width: calc(100% - 36px);
             margin: 0 auto;
             border-radius: 16px;
-            background: rgba(255,255,255,0.70);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(232,230,222,0.25);
-            box-shadow: 0 4px 24px rgba(0,0,0,0.05);
-            transition: background 250ms var(--ease-out-expo), border-color 250ms var(--ease-out-expo);
+            background: rgba(255,255,255,0.12);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255,255,255,0.18);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.04);
+        }
+        [data-theme="dark"] .glass-nav {
+            background: rgba(0,0,0,0.10);
+            border-color: rgba(255,255,255,0.06);
         }
         .glass-nav__inner {
             display: flex; align-items: center; justify-content: space-between;
@@ -149,26 +152,33 @@
         }
         .glass-nav__logo {
             font-size: 1.1rem; font-weight: 800; letter-spacing: 1px;
-            color: rgba(45,42,38,0.5); text-decoration: none;
+            text-decoration: none;
         }
         .glass-nav__logo .logo-h { color: #2563EB; }
-        .glass-nav__logo .logo-x { color: rgba(45,42,38,0.3); }
-        .glass-nav__logo .logo-n { color: #6D28D9; }
+        .glass-nav__logo .logo-eyken { color: #1E293B; }
+        .glass-nav__logo .logo-x { color: #94A3B8; }
+        .glass-nav__logo .logo-n { color: #5B21B6; }
+        .glass-nav__logo .logo-ovix { color: #1E293B; }
+        [data-theme="dark"] .glass-nav__logo .logo-eyken { color: #E2E8F0; }
+        [data-theme="dark"] .glass-nav__logo .logo-ovix { color: #E2E8F0; }
+        [data-theme="dark"] .glass-nav__logo .logo-x { color: #64748B; }
 
         .glass-nav__links { display: flex; align-items: center; gap: 24px; }
         .glass-nav__links a {
-            color: var(--text-secondary); font-size: 0.85rem; font-weight: 500;
-            text-decoration: none; padding: 4px 0;
-            transition: color var(--transition);
-        }
-        .glass-nav__links a:hover { color: var(--accent); }
-        .glass-nav__links a.active {
-            background: rgba(255,255,255,0.15);
-            backdrop-filter: blur(4px);
+            color: rgba(45,42,38,0.55); font-size: 0.85rem; font-weight: 500;
+            text-decoration: none; padding: 4px 8px;
             border-radius: 8px;
-            padding: 4px 12px;
-            color: var(--text-primary);
+            transition: color var(--transition), background var(--transition);
         }
+        .glass-nav__links a:hover { color: #1E293B; background: rgba(255,255,255,0.10); }
+        [data-theme="dark"] .glass-nav__links a { color: rgba(255,255,255,0.55); }
+        [data-theme="dark"] .glass-nav__links a:hover { color: #F0F2F5; background: rgba(255,255,255,0.06); }
+        .glass-nav__links a.active {
+            background: rgba(255,255,255,0.18);
+            backdrop-filter: blur(4px);
+            color: #1E293B;
+        }
+        [data-theme="dark"] .glass-nav__links a.active { background: rgba(255,255,255,0.08); color: #F0F2F5; }
 
         .glass-nav__actions { display: flex; align-items: center; gap: 10px; }
 
@@ -186,9 +196,10 @@
         }
         .glass-nav__burger span {
             display: block; width: 20px; height: 2px;
-            background: var(--text-primary); border-radius: 2px;
+            background: #1E293B; border-radius: 2px;
             transition: transform 350ms var(--ease-out-expo), opacity 250ms var(--ease-out-expo);
         }
+        [data-theme="dark"] .glass-nav__burger span { background: #E2E8F0; }
         .glass-nav__burger.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
         .glass-nav__burger.active span:nth-child(2) { opacity: 0; }
         .glass-nav__burger.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
@@ -710,7 +721,7 @@
 <body>
     <header class="glass-nav">
         <div class="glass-nav__inner">
-            <a href="/" class="glass-nav__logo"><span class="logo-h">H</span>eyken <span class="logo-x">x</span> <span class="logo-n">N</span>ovix</a>
+            <a href="/" class="glass-nav__logo"><span class="logo-h">H</span><span class="logo-eyken">eyken</span> <span class="logo-x">x</span> <span class="logo-n">N</span><span class="logo-ovix">ovix</span></a>
             <div class="glass-nav__links">
                 <a href="/" class="glass-nav__link" data-page="dashboard">Главная</a>
                 <a href="/usersite/profile/" class="glass-nav__link" data-page="profile">Профиль</a>

@@ -32,7 +32,7 @@
                 </div>
                 <div class="info-row">
                     <span class="info-label">Регистрация</span>
-                    <span class="info-value">{{ user.created_at|date:"d.m.Y"|default:"—" }}</span>
+                    <span class="info-value">{{ created_at_dt|date:"d.m.Y"|default:"—" }}</span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Рейтинг</span>
@@ -119,7 +119,7 @@
                 </div>
                 <div class="info-row">
                     <span class="info-label">Действует до</span>
-                    <span class="info-value">{{ user.premium_until|date:"d.m.Y"|default:"—" }}</span>
+                    <span class="info-value">{{ premium_until_dt|date:"d.m.Y"|default:"—" }}</span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Осталось дней</span>
