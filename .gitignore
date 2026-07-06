@@ -21,6 +21,7 @@ venv/
 .python-version
 
 # Database
+sql/
 *.db
 *.sqlite3
 *.db-journal
@@ -59,3 +60,5 @@ cloudflared.msi
 currency_cache.json
 setup_admin.py
 
+# Other
+docker-compose.yml

@@ -12,12 +12,25 @@
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <link href="{% static 'css/luxury.css' %}" rel="stylesheet">
 
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: { extend: { colors: {
+          accent: 'var(--accent)', 'accent-hover': 'var(--accent-hover)',
+          'accent-soft': 'var(--accent-soft)'
+        }}}
+      }
+    </script>
+
     <script>
         (function(){
             var t = localStorage.getItem('heyken-theme');
             if (!t) { t = window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light'; }
             document.documentElement.setAttribute('data-theme', t);
+            if (t === 'dark') document.documentElement.classList.add('dark');
             localStorage.setItem('heyken-theme', t);
+            window.__heykenTheme = t;
         })();
     </script>
 
@@ -41,9 +54,11 @@
             --glass-bg: rgba(255, 255, 255, 0.55);
             --glass-border: rgba(255, 255, 255, 0.18);
             --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
-            --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
-            --shadow-md: 0 4px 20px rgba(0,0,0,0.07);
-            --shadow-lg: 0 12px 48px rgba(0,0,0,0.1);
+            --shadow-xs: 0 1px 2px rgba(0,0,0,0.03), 0 1px 4px rgba(0,0,0,0.02);
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03);
+            --shadow-md: 0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+            --shadow-lg: 0 4px 8px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08);
+            --shadow-xl: 0 8px 16px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.1);
             --placeholder-color: #6B7280;
             --radius-sm: 8px;
             --radius-md: 14px;
@@ -69,9 +84,11 @@
             --glass-bg: rgba(26, 29, 35, 0.6);
             --glass-border: rgba(255, 255, 255, 0.06);
             --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
-            --shadow-md: 0 4px 20px rgba(0,0,0,0.35);
-            --shadow-lg: 0 12px 48px rgba(0,0,0,0.5);
+            --shadow-xs: 0 1px 2px rgba(0,0,0,0.15), 0 1px 4px rgba(0,0,0,0.1);
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.2), 0 2px 8px rgba(0,0,0,0.12);
+            --shadow-md: 0 2px 4px rgba(0,0,0,0.25), 0 8px 24px rgba(0,0,0,0.15);
+            --shadow-lg: 0 4px 8px rgba(0,0,0,0.3), 0 12px 40px rgba(0,0,0,0.18);
+            --shadow-xl: 0 8px 16px rgba(0,0,0,0.35), 0 24px 64px rgba(0,0,0,0.2);
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -296,6 +313,8 @@
         }
         .btn-primary {
             background: linear-gradient(135deg, rgba(37, 99, 235, 0.85), rgba(29, 78, 216, 0.9));
+            background-size: 200% 200%;
+            background-position: 0% 50%;
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
             border-color: rgba(37, 99, 235, 0.3);
@@ -303,10 +322,14 @@
             box-shadow: 0 4px 16px rgba(37, 99, 235, 0.15);
         }
         .btn-primary:hover {
-            background: linear-gradient(135deg, rgba(37, 99, 235, 0.95), rgba(29, 78, 216, 1));
+            background-position: 100% 50%;
             border-color: var(--accent); color: #fff !important;
             box-shadow: 0 8px 28px rgba(37, 99, 235, 0.35);
             transform: translateY(-3px) scale(1.02);
+        }
+        .btn-primary:disabled, .btn-primary.disabled {
+            opacity: 0.5; cursor: not-allowed; pointer-events: none;
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.4), rgba(29, 78, 216, 0.45));
         }
         .btn-danger { border-color: rgba(239,68,68,0.3); color: #ef4444; }
         .btn-danger:hover { background: rgba(239,68,68,0.12); border-color: #ef4444; color: #ef4444; }
@@ -610,6 +633,10 @@
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
+
+        [data-reveal] { opacity: 0; transform: translateY(16px); transition: opacity 0.6s var(--ease-out-expo), transform 0.6s var(--ease-out-expo); }
+        [data-reveal].revealed { opacity: 1; transform: translateY(0); }
+        @media (prefers-reduced-motion: reduce) { [data-reveal] { opacity: 1; transform: none; transition: none; } }
     </style>
 
     {% block extra_css %}{% endblock %}
@@ -681,14 +708,20 @@
 
             syncIcons(document.documentElement.getAttribute('data-theme') || 'light');
 
+            function setTheme(next) {
+                var html = document.documentElement;
+                html.setAttribute('data-theme', next);
+                if (next === 'dark') html.classList.add('dark'); else html.classList.remove('dark');
+                localStorage.setItem('heyken-theme', next);
+                syncIcons(next);
+            }
+
             if (toggle) {
                 toggle.addEventListener('click', function () {
                     var html = document.documentElement;
                     var current = html.getAttribute('data-theme') || 'light';
                     var next = current === 'light' ? 'dark' : 'light';
-                    html.setAttribute('data-theme', next);
-                    localStorage.setItem('heyken-theme', next);
-                    syncIcons(next);
+                    setTheme(next);
                 });
             }
 
@@ -766,6 +799,33 @@
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                 });
                 observer.observe(chatContainer, { childList: true, subtree: true });
+            }
+
+            /* ── Scroll reveal (IntersectionObserver) ── */
+            if ('IntersectionObserver' in window) {
+                var revealObserver = new IntersectionObserver(function (entries) {
+                    entries.forEach(function (entry) {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.add('revealed');
+                            revealObserver.unobserve(entry.target);
+                        }
+                    });
+                }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+                document.addEventListener('DOMContentLoaded', function () {
+                    var revealEls = document.querySelectorAll('[data-reveal]');
+                    for (var r = 0; r < revealEls.length; r++) {
+                        revealObserver.observe(revealEls[r]);
+                    }
+                });
+            } else {
+                /* fallback: show everything immediately */
+                document.addEventListener('DOMContentLoaded', function () {
+                    var revealEls = document.querySelectorAll('[data-reveal]');
+                    for (var r = 0; r < revealEls.length; r++) {
+                        revealEls[r].classList.add('revealed');
+                    }
+                });
             }
         })();
     </script>

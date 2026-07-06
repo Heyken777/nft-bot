@@ -20,7 +20,7 @@
         </a>
     </div>
     
-    <div class="warning-banner">
+    <div class="warning-banner" data-reveal>
         <i class="fas fa-clock me-2"></i>
         <strong>Время ожидания ответа увеличено</strong> в связи с высокой загруженностью запросами. 
         Приносим извинения за неудобства.
@@ -46,7 +46,7 @@
     </div>
     
     {% if tickets %}
-    <div class="ticket-list" id="ticketsList">
+    <div class="ticket-list" id="ticketsList" data-reveal>
         {% for ticket in tickets %}
         <div class="ticket-item" data-status="{{ ticket.status }}" data-date="{{ ticket.created_at }}" onclick="window.location.href='/usersite/tickets/{{ ticket.id }}/'">
             <div>

@@ -167,3 +167,22 @@ class AuthCode(models.Model):
         db_table = 'auth_codes'
         verbose_name = 'Код авторизации'
         verbose_name_plural = 'Коды авторизации'
+
+
+class BalanceLedger(models.Model):
+    user_id = models.IntegerField(verbose_name='Telegram ID')
+    currency = models.TextField(verbose_name='Валюта')
+    amount_delta = models.FloatField(verbose_name='Сумма изменения')
+    balance_before = models.FloatField(verbose_name='Баланс до')
+    balance_after = models.FloatField(verbose_name='Баланс после')
+    operation_type = models.TextField(verbose_name='Тип операции')
+    reference_id = models.TextField(null=True, blank=True, verbose_name='ID связанной сущности')
+    initiated_by = models.IntegerField(null=True, blank=True, verbose_name='Инициатор (Telegram ID)')
+    note = models.TextField(null=True, blank=True, verbose_name='Примечание')
+    created_at = models.TextField(null=True, blank=True, verbose_name='Дата')
+
+    class Meta:
+        managed = False
+        db_table = 'balance_ledger'
+        verbose_name = 'Запись леджера'
+        verbose_name_plural = 'Журнал движения средств'

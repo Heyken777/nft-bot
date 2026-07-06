@@ -20,7 +20,7 @@
 </div>
 
 {% if partnerships %}
-<div class="ticket-list">
+<div class="ticket-list" data-reveal>
     {% for p in partnerships %}
     <div class="ticket-item" onclick="window.location.href='/usersite/partnership/{{ p.id }}/'">
         <div>

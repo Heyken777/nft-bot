@@ -23,7 +23,7 @@
     </div>
 </div>
 
-<section class="section">
+<section class="section" data-reveal>
     <h2 style="font-size:1.15rem;font-weight:600;margin-bottom:14px;font-family:var(--font-display);">💰 Балансы</h2>
     <div class="balances-grid">
         {% for b in balances %}
@@ -36,7 +36,7 @@
     </div>
 </section>
 
-<section class="section">
+<section class="section" data-reveal>
     <div class="action-grid">
         <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-btn">
             <i class="fas fa-plus-circle"></i><span>Пополнить</span>
@@ -55,7 +55,7 @@
 </section>
 
 <div class="grid-2">
-    <div class="card" style="padding:22px;">
+    <div class="card" style="padding:22px;" data-reveal>
         <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;font-family:var(--font-display);">📋 Последние сделки</h3>
         {% if deals %}
         {% for d in deals %}
@@ -75,7 +75,7 @@
         {% endif %}
     </div>
 
-    <div class="card" style="padding:22px;">
+    <div class="card" style="padding:22px;" data-reveal>
         <div class="flex-between mb-2">
             <h3 style="font-size:1rem;font-weight:600;font-family:var(--font-display);">🔔 Уведомления</h3>
             {% if unread_notifications > 0 %}
@@ -96,7 +96,7 @@
     </div>
 </div>
 
-<section class="section">
+<section class="section" data-reveal>
     <div class="stats-inline">
         <span>Покупок: <strong>{{ purchases }}</strong></span>
         <span>Продаж: <strong>{{ sales }}</strong></span>
@@ -107,7 +107,7 @@
 </section>
 
 {% if top_sellers %}
-<section class="section">
+<section class="section" data-reveal>
     <div class="card" style="padding:22px;">
         <h3 style="font-size:1.1rem;font-weight:600;margin-bottom:16px;font-family:var(--font-display);">🏆 Топ-10 верифицированных продавцов</h3>
         <div class="table-responsive">

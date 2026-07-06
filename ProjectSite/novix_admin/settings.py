@@ -17,6 +17,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'whitenoise.runserver_nostatic',
     'django.contrib.staticfiles',
     'rest_framework',
     'users',
@@ -72,6 +73,26 @@ DATABASES = {
     }
 }
 
+# PostgreSQL для balance_ledger (опционально)
+PG_ENABLED = os.getenv('PG_ENABLED', 'False') == 'True'
+if PG_ENABLED:
+    DATABASES['ledger_db'] = {
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': os.getenv('PG_DB', 'nft_ledger'),
+        'USER': os.getenv('PG_USER', 'nft'),
+        'PASSWORD': os.getenv('PG_PASSWORD', ''),
+        'HOST': os.getenv('PG_HOST', 'localhost'),
+        'PORT': os.getenv('PG_PORT', '5432'),
+        'CONN_MAX_AGE': 300,
+        'OPTIONS': {
+            'connect_timeout': 5,
+        },
+    }
+
+DATABASE_ROUTERS = [
+    'novix_admin.db_router.LedgerRouter',
+]
+
 # WAL для SQLite
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -100,9 +121,17 @@ TIME_ZONE = 'Europe/Moscow'
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+WHITENOISE_USE_FINDERS = True
+WHITENOISE_MANIFEST_STRICT = False
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
+    },
+}
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'

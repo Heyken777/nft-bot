@@ -848,7 +848,12 @@ class Database:
         row = self.cursor.fetchone()
         return row[0] if row else 0
 
-    def update_balance(self, uid, currency, delta):
+    def _ledger_round(self, value, currency):
+        prec = {'TON': 4, 'USDT': 4, 'STARS': 0}
+        p = prec.get(currency, 2)
+        return round(value, p)
+
+    def update_balance(self, uid, currency, delta, operation_type='unknown', reference_id=None, initiated_by=None, note=None):
         col_name = f"balance_{currency}"
         self.cursor.execute("SAVEPOINT sp_update_balance")
         try:
@@ -857,11 +862,18 @@ class Database:
             if current is None:
                 self.cursor.execute("ROLLBACK TO sp_update_balance")
                 return False
-            new_balance = (current[0] or 0) + delta
+            balance_before = self._ledger_round(current[0] or 0, currency)
+            new_balance = balance_before + delta
             if new_balance < 0:
                 self.cursor.execute("ROLLBACK TO sp_update_balance")
                 return False
-            self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (new_balance, uid))
+            balance_after = self._ledger_round(new_balance, currency)
+            amount_delta = self._ledger_round(delta, currency)
+            self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (balance_after, uid))
+            self.cursor.execute(
+                "INSERT INTO balance_ledger (user_id, currency, amount_delta, balance_before, balance_after, operation_type, reference_id, initiated_by, note) VALUES (?,?,?,?,?,?,?,?,?)",
+                (uid, currency, amount_delta, balance_before, balance_after, operation_type, reference_id, initiated_by, note)
+            )
             self.cursor.execute("RELEASE sp_update_balance")
             tx_type = 'deposit' if delta > 0 else 'withdrawal'
             self.add_transaction(uid, delta, currency, tx_type, f"{'Пополнение' if delta > 0 else 'Списание'} баланса")
@@ -1158,7 +1170,7 @@ class Database:
             self.cursor.execute("""
                 UPDATE user_achievements SET claimed = 1 WHERE user_id = ? AND achievement_id = ?
             """, (user_id, achievement_id))
-            self.update_balance(user_id, "RUB", reward)
+            self.update_balance(user_id, "RUB", reward, operation_type='reward', note=f'Награда за achievement_id={achievement_id}')
             self.conn.commit()
             return reward
         return 0
@@ -1408,10 +1420,10 @@ class Database:
         seller_amount = quantize_amount(amount - amount * commission)
 
         if decision == 'seller':
-            self.update_balance(seller_id, currency, seller_amount)
+            self.update_balance(seller_id, currency, seller_amount, operation_type='deal_release', reference_id=str(deal_id), note='Разрешение спора в пользу продавца')
             new_status = 'completed'
         elif decision == 'buyer' and buyer_id:
-            self.update_balance(buyer_id, currency, amount)
+            self.update_balance(buyer_id, currency, amount, operation_type='refund', reference_id=str(deal_id), note='Разрешение спора в пользу покупателя')
             new_status = 'cancelled'
         else:
             return None
@@ -1499,19 +1511,12 @@ class Database:
             self.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
 
             # Начисляем 50 RUB новому другу
-            self.cursor.execute("SELECT balance_RUB FROM users WHERE user_id = ?", (user_id,))
-            current = self.cursor.fetchone()
-            if current is None:
+            if not self.update_balance(user_id, "RUB", 50, operation_type='referral_bonus', note='Активация промокода друга'):
                 self.conn.rollback()
-                return False, 'Пользователь не найден'
-            new_bal = (current[0] or 0) + 50
-            self.cursor.execute("UPDATE users SET balance_RUB = ? WHERE user_id = ?", (new_bal, user_id))
+                return False, 'Ошибка начисления бонуса'
 
             # Начисляем 50 RUB пригласителю
-            self.cursor.execute("SELECT balance_RUB FROM users WHERE user_id = ?", (referrer_id,))
-            current_ref = self.cursor.fetchone()
-            new_ref_bal = (current_ref[0] or 0) + 50
-            self.cursor.execute("UPDATE users SET balance_RUB = ? WHERE user_id = ?", (new_ref_bal, referrer_id))
+            self.update_balance(referrer_id, "RUB", 50, operation_type='referral_bonus', note='Реферальный бонус за активацию промокода')
 
             # Записываем активацию
             self.cursor.execute("""
@@ -2043,8 +2048,8 @@ async def start_cmd(msg: types.Message, state: FSMContext):
         if referrer_id and referrer_id != uid:
             db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, uid))
             db.conn.commit()
-            db.update_balance(referrer_id, "RUB", 50)
-            db.update_balance(uid, "RUB", 50)
+            db.update_balance(referrer_id, "RUB", 50, operation_type='referral_bonus', note='Реферальный бонус')
+            db.update_balance(uid, "RUB", 50, operation_type='referral_bonus', note='Приветственный бонус за регистрацию')
             db.add_notification(referrer_id, f"🎉 Пользователь @{name} перешёл по вашей реферальной ссылке! Вам начислено 50 RUB")
             db.add_notification(uid, "🎉 Добро пожаловать! Вам начислено 50 RUB за регистрацию по реферальной ссылке")
             logger.info(f"Реферальный бонус: {referrer_id} -> {uid}")
@@ -2407,7 +2412,7 @@ async def ref_withdraw_cb(call: CallbackQuery):
         return
     db.cursor.execute("UPDATE users SET referral_earnings = 0 WHERE user_id = ?", (uid,))
     db.conn.commit()
-    db.update_balance(uid, "RUB", earnings)
+    db.update_balance(uid, "RUB", earnings, operation_type='referral_bonus', note='Вывод реферальных бонусов на RUB баланс')
     db.add_notification(uid, f"💳 Бонусы {earnings} RUB выведены на RUB баланс")
     await call.answer(f"✅ {earnings} RUB выведены на ваш RUB баланс!", show_alert=True)
     # Возвращаемся к главному меню рефералов
@@ -2824,7 +2829,7 @@ async def prem_duration_cb(call: CallbackQuery, state: FSMContext):
     # Прямая оплата в выбранной валюте
     if user_balance >= price_in_currency:
         async with db_batch_lock:
-            if db.update_balance(uid, currency, -price_in_currency):
+            if db.update_balance(uid, currency, -price_in_currency, operation_type='premium_purchase', note=f'{label} {days}дн'):
                 db.set_premium_tier(uid, saved_tier, days, 0)
 
         text_success = (
@@ -2931,13 +2936,13 @@ async def _exec_cross_currency(uid: int, tier: str, days: int, price_rub_value: 
         success = True
         deducted_summary = {}
         for curr, amount in deduction_plan.items():
-            if not db.update_balance(uid, curr, -amount):
+            if not db.update_balance(uid, curr, -amount, operation_type='premium_purchase', note=f'{tier} {days}дн мультивал'):
                 success = False
                 break
             deducted_summary[curr] = amount
         if not success:
             for curr, amount in deducted_summary.items():
-                db.update_balance(uid, curr, amount)
+                db.update_balance(uid, curr, amount, operation_type='refund', note=f'Возврат {tier} при ошибке')
             await call.answer("❌ Ошибка при списании. Транзакция отменена.", show_alert=True)
             await state.clear()
             return False
@@ -3324,7 +3329,7 @@ async def pay_cb(call: CallbackQuery):
 
         if not deal.get("buyer"):
             db.set_buyer(did, buyer)
-        db.update_balance(buyer, currency, -amount)
+        db.update_balance(buyer, currency, -amount, operation_type='deal_hold', reference_id=str(did))
         db.upd_deal_status(did, "paid")
 
     await call.answer("✅ Оплата прошла успешно!", show_alert=True)
@@ -3404,7 +3409,7 @@ async def receive_cb(call: CallbackQuery):
         commission_amount = quantize_amount(amount * commission)
         seller_amount = quantize_amount(amount - commission_amount)
 
-        db.update_balance(seller_id, currency, seller_amount)
+        db.update_balance(seller_id, currency, seller_amount, operation_type='deal_release', reference_id=str(did))
         db.upd_deal_status(did, "completed")
         referral_bonus = db.credit_referral_commission(seller_id, did, currency, commission_amount)
 
@@ -4054,7 +4059,7 @@ async def admin_credit_amount(msg: types.Message, state: FSMContext):
         data = await state.get_data()
         uid = data.get('user_id', data.get('uid', data.get('target_user_id', 0)))
         currency = data.get('currency', 'RUB')
-        db.update_balance(uid, currency, amount)
+        db.update_balance(uid, currency, amount, operation_type='admin_credit', initiated_by=msg.from_user.id)
         db.credit_referral_deposit_commission(uid, currency, amount)
         db.add_audit_log(msg.from_user.id, "admin_credit", target=f"user_{uid}", details=f"+{amount} {currency}")
         await bot.send_message(uid, f"💰 Вам зачислено {fmt_num(amount)} {currency}!")
@@ -4100,7 +4105,7 @@ async def admin_debit_amount(msg: types.Message, state: FSMContext):
         if amount > current_balance:
             await msg.answer(f"❌ Недостаточно средств. Баланс: {fmt_num(current_balance)} {currency}", reply_markup=admin_cancel_kb())
             return
-        db.update_balance(uid, currency, -amount)
+        db.update_balance(uid, currency, -amount, operation_type='admin_debit', initiated_by=msg.from_user.id)
         db.add_audit_log(msg.from_user.id, "admin_debit", target=f"user_{uid}", details=f"-{amount} {currency}")
         await msg.answer(f"✅ Списано {fmt_num(amount)} {currency} у {uid}")
         await state.clear()
@@ -5255,7 +5260,7 @@ async def confirm_transaction_cb(call: CallbackQuery):
         if action == "withdraw":
             amount = payload['amount']
             currency = payload['currency']
-            db.update_balance(user_id, currency, -amount)
+            db.update_balance(user_id, currency, -amount, operation_type='withdrawal', note=f'Подтверждение вывода {currency}')
             db.confirm_verification(nonce)
             db.add_audit_log(user_id, "2fa_withdraw", details=f"{amount} {currency}", nonce=nonce)
             await call.message.edit_text(
@@ -5641,7 +5646,7 @@ async def handle_buy_premium(request):
                 
                 if curr == "RUB":
                     deduct = min(bal, remaining)
-                    db.update_balance(user_id, curr, -deduct)
+                    db.update_balance(user_id, curr, -deduct, operation_type='premium_purchase', note=f'{tier} {days}дн')
                     deducted[curr] = deduct
                     remaining -= deduct
                 else:
@@ -5651,12 +5656,12 @@ async def handle_buy_premium(request):
                     needed = remaining / r
                     if bal >= needed:
                         deduct_amount = needed
-                        db.update_balance(user_id, curr, -deduct_amount)
+                        db.update_balance(user_id, curr, -deduct_amount, operation_type='premium_purchase', note=f'{tier} {days}дн')
                         deducted[curr] = round(deduct_amount, 2)
                         remaining = 0
                     else:
                         rub_value = bal * r
-                        db.update_balance(user_id, curr, -bal)
+                        db.update_balance(user_id, curr, -bal, operation_type='premium_purchase', note=f'{tier} {days}дн')
                         deducted[curr] = bal
                         remaining -= rub_value
             
@@ -5991,7 +5996,7 @@ async def handle_pay_deal(request):
                     'deal_id': did
                 })
 
-            if not db.update_balance(user_id, currency, -amount):
+            if not db.update_balance(user_id, currency, -amount, operation_type='deal_hold', reference_id=str(did)):
                 balance = db.get_balance(user_id, currency)
                 return JSONResponse(content={'success': False, 'error': f'Insufficient funds. Balance: {balance} {currency}'})
 
@@ -6067,7 +6072,7 @@ async def handle_confirm_receipt(request):
             commission_amount = quantize_amount(amount * commission)
             seller_amount = quantize_amount(amount - commission_amount)
 
-            db.update_balance(seller_id, currency, seller_amount)
+            db.update_balance(seller_id, currency, seller_amount, operation_type='deal_release', reference_id=str(did))
             db.upd_deal_status(did, "completed")
             referral_bonus = db.credit_referral_commission(seller_id, did, currency, commission_amount)
 
@@ -6221,8 +6226,8 @@ async def handle_activate_promo(request):
             if user and user.get('referred_by') is not None:
                 return JSONResponse(content={'success': False, 'error': 'Вы уже активировали реферальный код'})
             db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
-            db.update_balance(referrer_id, "RUB", 50)
-            db.update_balance(user_id, "RUB", 50)
+            db.update_balance(referrer_id, "RUB", 50, operation_type='referral_bonus', note='Реферальный бонус за промокод друга')
+            db.update_balance(user_id, "RUB", 50, operation_type='referral_bonus', note='Приветственный бонус за активацию промокода друга')
             db.add_notification(referrer_id, "🎉 Пользователь активировал ваш реферальный код! +50 RUB")
             db.add_notification(user_id, "🎉 Добро пожаловать! +50 RUB за активацию реферального кода")
             db.conn.commit()

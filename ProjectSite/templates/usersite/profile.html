@@ -8,7 +8,7 @@
     <span class="current">Профиль</span>
 </div>
 <div class="row g-4">
-    <div class="col-lg-4">
+    <div class="col-lg-4" data-reveal>
         <div class="card text-center">
             <div class="profile-avatar" id="avatarContainer" onclick="document.getElementById('avatarInput').click()" style="cursor:pointer;position:relative;">
                 {% if avatar_url %}
@@ -45,7 +45,7 @@
         </div>
 
         <!-- Кошельки -->
-        <div class="card mt-4">
+        <div class="card mt-4" data-reveal>
             <h4><i class="fas fa-wallet"></i> Кошельки</h4>
             <div class="mt-2">
                 <div class="info-row">
@@ -64,7 +64,7 @@
         </div>
 
         <!-- Реферальная программа -->
-        <div class="card mt-4">
+        <div class="card mt-4" data-reveal>
             <h4><i class="fas fa-users"></i> Рефералы</h4>
             <div class="mt-2">
                 <div class="info-row">
@@ -86,9 +86,9 @@
         </div>
     </div>
 
-    <div class="col-lg-8">
+    <div class="col-lg-8" data-reveal>
         <!-- Балансы -->
-        <div class="card mb-4">
+        <div class="card mb-4" data-reveal>
             <h4><i class="fas fa-wallet"></i> Балансы</h4>
             <div class="balances-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px;">
                 {% for b in balances %}
@@ -105,7 +105,7 @@
         </div>
 
         <!-- Тариф -->
-        <div class="card">
+        <div class="card" data-reveal>
             <h4><i class="fas fa-crown"></i> Тариф</h4>
             {% if tier_active %}
             <div class="mt-3">
@@ -134,7 +134,7 @@
         </div>
 
         <!-- Последние сделки -->
-        <div class="card mt-4">
+        <div class="card mt-4" data-reveal>
             <h4><i class="fas fa-handshake"></i> Последние сделки</h4>
             <div class="table-responsive mt-3">
                 <table class="table-custom">
@@ -167,7 +167,7 @@
         </div>
 
         <!-- Отзывы -->
-        <div class="card mt-4">
+        <div class="card mt-4" data-reveal>
             <h4>⭐ Отзывы <span class="text-muted small">(средний {{ avg_rating }})</span></h4>
             <div class="mt-2">
                 {% for r in reviews %}
@@ -190,7 +190,7 @@
         </div>
 
         <!-- Рефералы -->
-        <div class="card mt-4">
+        <div class="card mt-4" data-reveal>
             <h4><i class="fas fa-user-friends"></i> Приглашённые пользователи</h4>
             <div class="table-responsive mt-3">
                 <table class="table-custom">

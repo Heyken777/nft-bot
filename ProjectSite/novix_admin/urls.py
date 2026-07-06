@@ -103,6 +103,9 @@ urlpatterns = [
     path('news/partnership/<int:partnership_id>/update-status/', news_views.partnership_update_status, name='partnership_update_status'),
     path('news/partnership/<int:partnership_id>/delete/', news_views.partnership_delete_view, name='partnership_delete'),
 
+    # Ledger
+    path('ledger/', views.ledger_view, name='ledger'),
+
     # Пользовательский сайт
     path('usersite/', include('usersite.urls')),
 

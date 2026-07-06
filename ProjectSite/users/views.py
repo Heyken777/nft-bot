@@ -22,6 +22,18 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+LEDGER_PRECISION = {'TON': 4, 'USDT': 4, 'STARS': 0}
+
+def _ledger_round(value, currency):
+    p = LEDGER_PRECISION.get(currency, 2)
+    return round(value, p)
+
+def _write_ledger(cur, user_id, currency, amount_delta, balance_before, balance_after, operation_type='unknown', reference_id=None, initiated_by=None, note=None):
+    cur.execute(
+        "INSERT INTO balance_ledger (user_id, currency, amount_delta, balance_before, balance_after, operation_type, reference_id, initiated_by, note) VALUES (?,?,?,?,?,?,?,?,?)",
+        (user_id, currency, _ledger_round(amount_delta, currency), _ledger_round(balance_before, currency), _ledger_round(balance_after, currency), operation_type, reference_id, initiated_by, note)
+    )
+
 
 def session_required(view_func):
     @wraps(view_func)
@@ -723,12 +735,16 @@ def withdrawal_approve_api(request, req_id):
                     take_amount = bal
                 new_bal = bal - take_amount
                 cur.execute(f"UPDATE users SET balance_{c}=? WHERE user_id=?", (float(new_bal), user_id))
+                _write_ledger(cur, user_id, c, -float(take_amount), bal, float(new_bal),
+                              'withdrawal', reference_id=str(req_id), initiated_by=request.session.get('telegram_id'), note='Списание при одобрении вывода')
                 deducted_rub = take_amount * rate
                 deductions[c] = {'amount': float(take_amount), 'rub_value': float(deducted_rub)}
                 remaining = Decimal('0')
             else:
                 # Take entire balance of this currency
                 cur.execute(f"UPDATE users SET balance_{c}=0 WHERE user_id=?", (user_id,))
+                _write_ledger(cur, user_id, c, -float(bal), bal, 0,
+                              'withdrawal', reference_id=str(req_id), initiated_by=request.session.get('telegram_id'), note='Списание при одобрении вывода')
                 deductions[c] = {'amount': float(bal), 'rub_value': float(rub_bal)}
                 remaining -= rub_bal
 
@@ -737,12 +753,17 @@ def withdrawal_approve_api(request, req_id):
             last_cur = list(deductions.keys())[-1]
             rate = rates[last_cur]
             extra = remaining / rate
+            cur.execute(f"SELECT balance_{last_cur} FROM users WHERE user_id=?", (user_id,))
+            sweep_before = (cur.fetchone() or [0])[0] or 0
+            sweep_after = sweep_before - float(extra)
+            cur.execute(
+                f"UPDATE users SET balance_{last_cur} = ? WHERE user_id=?",
+                (sweep_after, user_id)
+            )
+            _write_ledger(cur, user_id, last_cur, -float(extra), sweep_before, sweep_after,
+                          'withdrawal', reference_id=str(req_id), initiated_by=request.session.get('telegram_id'), note='Остаток списания при одобрении вывода (округление)')
             deductions[last_cur]['amount'] = round(deductions[last_cur]['amount'] + float(extra), 8)
             deductions[last_cur]['rub_value'] = round(deductions[last_cur]['rub_value'] + float(remaining), 8)
-            cur.execute(
-                f"UPDATE users SET balance_{last_cur} = balance_{last_cur} - ? WHERE user_id=?",
-                (float(extra), user_id)
-            )
             remaining = Decimal('0')
 
         # Save breakdown + approve
@@ -1217,12 +1238,23 @@ def api_change_balance(request, telegram_id):
         if currency not in VALID_CURRENCIES:
             return JsonResponse({'success': False, 'error': f'Invalid currency: {currency}'}, status=400)
         reason = data.get('reason', '')
+        admin_id = request.session.get('telegram_id')
         conn = get_db()
         cur = conn.cursor()
-        cur.execute(
-            f"UPDATE users SET balance_{currency} = COALESCE(balance_{currency},0) + ? WHERE user_id=?",
-            (amount, telegram_id)
-        )
+        cur.execute(f"SELECT balance_{currency} FROM users WHERE user_id=?", (telegram_id,))
+        row = cur.fetchone()
+        if row is None:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=404)
+        balance_before = row[0] or 0
+        balance_after = balance_before + amount
+        if balance_after < 0:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Недостаточно средств'}, status=400)
+        cur.execute(f"UPDATE users SET balance_{currency}=? WHERE user_id=?", (balance_after, telegram_id))
+        _write_ledger(cur, telegram_id, currency, amount, balance_before, balance_after,
+                      'admin_credit' if amount > 0 else 'admin_debit',
+                      initiated_by=admin_id, note=reason or None)
         log_admin_action(request, f"{'Начислил' if amount>0 else 'Списал'} {abs(amount)} {currency} пользователю {telegram_id}: {reason}",
                          target_id=telegram_id, amount=amount)
         conn.commit()
@@ -1931,3 +1963,16 @@ def api_delete_user_avatar(request, telegram_id):
     except Exception as e:
         print(f"[delete_avatar] Error: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@require_permission('audit')
+def ledger_view(request):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM balance_ledger ORDER BY id DESC LIMIT 200")
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    ledger = [dict(r) for r in rows]
+    return render(request, 'ledger.html', {'ledger': ledger})
