@@ -48,6 +48,10 @@ urlpatterns = [
     path('api/tickets/<int:ticket_id>/assign/', views.assign_ticket),
     path('api/tickets/<int:ticket_id>/status/', views.change_ticket_status),
 
+    # Создание сделки
+    path('deal/create/', views.create_deal_view, name='create_deal'),
+    path('deal/success/', views.deal_success_view, name='deal_success'),
+
     # Отзывы
     path('reviews/', views.reviews_view, name='user_reviews'),
     path('api/reviews/update/', views.update_review_api, name='update_review'),

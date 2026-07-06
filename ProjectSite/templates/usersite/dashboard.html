@@ -44,7 +44,7 @@
         <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-btn">
             <i class="fas fa-minus-circle"></i><span>Вывести</span>
         </a>
-        <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-btn">
+        <a href="/usersite/deal/create/" class="action-btn">
             <i class="fas fa-handshake"></i><span>Создать сделку</span>
         </a>
         <a href="/usersite/tickets/new/" class="action-btn">
@@ -61,7 +61,7 @@
         {% for d in deals %}
         <div class="deal-row">
             <div>
-                <div class="deal-id">#{{ d.id }}</div>
+                <div class="deal-id">{% if d.deal_code %}#{{ d.deal_code }}{% else %}#{{ d.id }}{% endif %}</div>
                 <div class="text-xs text-muted" style="margin-top:2px;">{% if d.buyer == u.telegram_id %}Покупка{% else %}Продажа{% endif %} · {{ d.created|date:"d.m H:i" }}</div>
             </div>
             <div class="text-right">

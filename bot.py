@@ -17,6 +17,7 @@ from typing import Optional, Tuple, List, Dict
 from bot_config import *
 from currency_api import currency_api, PREMIUM_RATES, PREMIUM_PRICES_RUB
 from crypto import encrypt_value, decrypt_value, is_encryption_enabled, generate_dispute_id
+from id_generator import generate_deal_code
 from aiohttp import ClientTimeout
 import qrcode
 
@@ -250,9 +251,10 @@ def deal_kb(deal_id: int, role: str, status: str):
     kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
-def share_kb(deal_id: int):
+def share_kb(deal_id: int, deal_code: str = None):
+    code = deal_code or str(deal_id)
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Сделка #{deal_id} - https://t.me/{BOT_USERNAME}?start=deal_{deal_id}")],
+        [InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Сделка #{code} - https://t.me/{BOT_USERNAME}?start=deal_{code}")],
         [InlineKeyboardButton(text="🏠 Меню", callback_data="menu")]
     ])
 
@@ -926,16 +928,18 @@ class Database:
         withdraw_rates = {'free': 0.10, 'premium': 0.05, 'platinum': 0.03, 'vip': 0.0}
         return withdraw_rates.get(tier, 0.10)
 
-    def create_deal(self, seller, item, amount, commission, deal_id, currency="RUB", payment_method="internal", payment_comment=None, payment_address=None, payment_amount=None):
+    def create_deal(self, seller, item, amount, commission, currency="RUB", payment_method="internal", payment_comment=None, payment_address=None, payment_amount=None):
         allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
         if currency not in allowed:
             currency = 'RUB'
+        deal_code = generate_deal_code(self.cursor)
         self.cursor.execute("""
-            INSERT INTO deals (id, seller, item, amount, commission, currency, status, payment_method, payment_comment, payment_address, payment_amount)
-            VALUES (?, ?, ?, ?, ?, ?, 'awaiting', ?, ?, ?, ?)
-        """, (deal_id, seller, item, amount, commission, currency, payment_method, payment_comment, payment_address, payment_amount))
+            INSERT INTO deals (seller, item, amount, commission, currency, status, deal_code, payment_method, payment_comment, payment_address, payment_amount)
+            VALUES (?, ?, ?, ?, ?, 'awaiting', ?, ?, ?, ?, ?)
+        """, (seller, item, amount, commission, currency, deal_code, payment_method, payment_comment, payment_address, payment_amount))
         self.conn.commit()
-        return deal_id
+        deal_id = self.cursor.lastrowid
+        return deal_id, deal_code
 
     def get_deal(self, did):
         self.cursor.execute("SELECT * FROM deals WHERE id = ?", (did,))
@@ -945,6 +949,19 @@ class Database:
             deal = dict(zip(col_names, row))
             deal.setdefault("currency", "RUB")
             deal.setdefault("status", "awaiting")
+            deal['display_id'] = deal.get('deal_code') or str(deal['id'])
+            return deal
+        return None
+
+    def get_deal_by_code(self, code):
+        self.cursor.execute("SELECT * FROM deals WHERE deal_code = ?", (code,))
+        row = self.cursor.fetchone()
+        if row:
+            col_names = [desc[0] for desc in self.cursor.description]
+            deal = dict(zip(col_names, row))
+            deal.setdefault("currency", "RUB")
+            deal.setdefault("status", "awaiting")
+            deal['display_id'] = deal.get('deal_code') or str(deal['id'])
             return deal
         return None
 
@@ -2007,11 +2024,17 @@ async def start_cmd(msg: types.Message, state: FSMContext):
     
     if len(args) > 1:
         if args[1].startswith("deal_"):
+            deal_raw = args[1].replace("deal_", "")
             try:
-                deal_id = int(args[1].replace("deal_", ""))
-                logger.info(f"🔍 Переход по ссылке сделки: {deal_id}")
+                deal_id = int(deal_raw)
+                logger.info(f"🔍 Переход по ссылке сделки (numeric): {deal_id}")
             except ValueError:
-                logger.error(f"❌ Ошибка преобразования deal_id: {args[1]}")
+                deal = db.get_deal_by_code(deal_raw)
+                if deal:
+                    deal_id = deal['id']
+                    logger.info(f"🔍 Переход по ссылке сделки (code): {deal_raw} → id={deal_id}")
+                else:
+                    logger.error(f"❌ Сделка не найдена по коду: {deal_raw}")
         elif args[1].startswith("ref_"):
             ref_code = args[1].replace("ref_", "")
             logger.info(f"🔍 Переход по реферальной ссылке: {ref_code}")
@@ -2070,7 +2093,7 @@ async def start_cmd(msg: types.Message, state: FSMContext):
             currency = deal["currency"]
             
             text = (
-                f"📦 *Сделка #{deal['id']}*\n\n"
+                f"📦 *Сделка #{deal['display_id']}*\n\n"
                 f"🎁 Товар: {escape_md(deal['item'])}\n"
                 f"💰 Цена: {fmt_num(deal['amount'])} {currency}\n"
                 f"💼 Комиссия: {int(commission*100)}%\n\n"
@@ -3102,19 +3125,15 @@ async def deal_price_msg(msg: types.Message, state: FSMContext):
         await state.clear()
         return
     
-    import random
-    deal_id = random.randint(100000, 999999)
-    while db.get_deal(deal_id):
-        deal_id = random.randint(100000, 999999)
-    
     commission = db.get_user_commission(msg.from_user.id, "deal")
-    db.create_deal(msg.from_user.id, item, price, commission, deal_id, currency)
+    deal_id, deal_code = db.create_deal(msg.from_user.id, item, price, commission, currency)
     
-    link = f"https://t.me/{BOT_USERNAME}?start=deal_{deal_id}"
+    display = f"#{deal_code}"
+    link = f"https://t.me/{BOT_USERNAME}?start=deal_{deal_code}"
     
     text = (
         f"✅ *Сделка успешно создана!*\n\n"
-        f"🧾 ID: `{deal_id}`\n"
+        f"🧾 ID: `{display}`\n"
         f"📦 Товар: {escape_md(item)}\n"
         f"💰 Цена: {fmt_num(price)} {currency}\n"
         f"💼 Комиссия: {int(commission*100)}%\n\n"
@@ -3129,10 +3148,10 @@ async def deal_price_msg(msg: types.Message, state: FSMContext):
             photo=FSInputFile(img_path("СДЕЛКА УСПЕШНО СОЗДАНА.jpg")),
             caption=text,
             parse_mode="Markdown",
-            reply_markup=share_kb(deal_id)
+            reply_markup=share_kb(deal_id, deal_code)
         )
     else:
-        await msg.answer(text, parse_mode="Markdown", reply_markup=share_kb(deal_id))
+        await msg.answer(text, parse_mode="Markdown", reply_markup=share_kb(deal_id, deal_code))
 
 # ========== МОИ СДЕЛКИ ==========
 @dp.callback_query(lambda c: c.data == "my_deals")
@@ -3240,7 +3259,7 @@ async def deal_detail_cb(call: CallbackQuery):
         seller_profit_line = f"\n💰 *Ваш чистый заработок:* {fmt_num(net_amount)} {currency} (комиссия {comm_note})"
     
     text = (
-        f"📄 *Сделка №{deal_id}*\n\n"
+        f"📄 *Сделка #{deal['display_id']}*\n\n"
         f"👤 *Роль:* {role}\n"
         f"🆔 Продавец: {escape_md(str(seller_name))} (`{deal['seller']}`)\n"
         f"🆔 Покупатель: {escape_md(str(buyer_name))}\n\n"
@@ -3313,7 +3332,7 @@ async def pay_cb(call: CallbackQuery):
                     return
 
             text = (
-                f"💎 *Оплата сделки #{did}*\n\n"
+                f"💎 *Оплата сделки #{deal['display_id']}*\n\n"
                 f"Отправьте *{payment_amount} {currency}* на адрес:\n`{escape_md(payment_address)}`\n\n"
                 f"Комментарий / payload:\n`{payment_comment}`\n\n"
                 f"После входящей транзакции сделка автоматически перейдёт в статус *Оплачено*."
@@ -3334,7 +3353,7 @@ async def pay_cb(call: CallbackQuery):
 
     await call.answer("✅ Оплата прошла успешно!", show_alert=True)
 
-    text = f"✅ *Сделка #{did} оплачена!*\n\nОжидайте передачи товара от продавца"
+    text = f"✅ *Сделка #{deal['display_id']} оплачена!*\n\nОжидайте передачи товара от продавца"
     if img_exists("ВАША СДЕЛКА БЫЛА ОПЛАЧЕНА.jpg"):
         await call.message.edit_media(
             InputMediaPhoto(media=FSInputFile(img_path("ВАША СДЕЛКА БЫЛА ОПЛАЧЕНА.jpg")), caption=text, parse_mode="Markdown")
@@ -3344,7 +3363,7 @@ async def pay_cb(call: CallbackQuery):
 
     await notify_user(
         seller,
-        f"💰 *Сделка #{did} оплачена!*\n\n"
+        f"💰 *Сделка #{deal['display_id']} оплачена!*\n\n"
         f"🎁 {escape_md(deal['item'])}\n"
         f"💰 {fmt_num(amount)} {currency}\n\n"
         f"Покупатель внёс средства. Передайте товар.",
@@ -3382,7 +3401,7 @@ async def sent_cb(call: CallbackQuery):
 
     await notify_user(
         deal["buyer"],
-        f"📦 *Товар передан!*\n\nСделка #{did}\n✅ Подтвердите получение",
+        f"📦 *Товар передан!*\n\nСделка #{deal['display_id']}\n✅ Подтвердите получение",
         reply_markup=deal_kb(did, "buyer", "item_sent")
     )
 
@@ -3414,25 +3433,25 @@ async def receive_cb(call: CallbackQuery):
         referral_bonus = db.credit_referral_commission(seller_id, did, currency, commission_amount)
 
     await call.answer("✅ Сделка завершена!", show_alert=True)
-    await call.message.edit_text(f"✅ *Сделка #{did} завершена!*\nСпасибо!", parse_mode="Markdown")
+    await call.message.edit_text(f"✅ *Сделка #{deal['display_id']} завершена!*\nСпасибо!", parse_mode="Markdown")
 
     premium_text = " (без комиссии)" if commission == 0 else ""
     await notify_user(
         seller_id,
-        f"✅ *Сделка #{did} завершена!*\n\n"
+        f"✅ *Сделка #{deal['display_id']} завершена!*\n\n"
         f"💰 Получено: {fmt_num(seller_amount)} {currency}{premium_text}\n"
         f"🟢 Статус сделки обновлён: успешно завершена."
     )
     await notify_user(
         call.from_user.id,
-        f"✅ *Сделка #{did} успешно завершена!*\n\nСредства переведены продавцу."
+        f"✅ *Сделка #{deal['display_id']} успешно завершена!*\n\nСредства переведены продавцу."
     )
 
     if referral_bonus:
         await notify_user(
             referral_bonus['referrer_id'],
             f"👥 *Реферальный бонус*\n\n"
-            f"По сделке #{did} начислено {referral_bonus['reward']} RUB "
+            f"По сделке #{deal['display_id']} начислено {referral_bonus['reward']} RUB "
             f"(10% от сервисной комиссии)."
         )
 
@@ -3550,13 +3569,13 @@ async def dispute_msg(msg: types.Message, state: FSMContext):
     for admin in ADMIN_IDS:
         await notify_user(
             admin,
-            f"⚠️ *Новый спор*\n\nСпор #{dispute_code}\nСделка #{deal_id}\nОткрыл: `{msg.from_user.id}`\nПричина: {escape_md(reason)}",
+            f"⚠️ *Новый спор*\n\nСпор #{dispute_code}\nСделка #{deal['display_id']}\nОткрыл: `{msg.from_user.id}`\nПричина: {escape_md(reason)}",
             reply_markup=admin_kb_markup
         )
 
     counterpart_id = deal['buyer'] if msg.from_user.id == deal['seller'] else deal['seller']
     if counterpart_id:
-        await notify_user(counterpart_id, f"⚖️ *По сделке #{deal_id} открыт спор {dispute_code}.*\n\nСредства временно заморожены.")
+        await notify_user(counterpart_id, f"⚖️ *По сделке #{deal['display_id']} открыт спор {dispute_code}.*\n\nСредства временно заморожены.")
 
     await state.clear()
     await msg.answer(
@@ -5271,11 +5290,13 @@ async def confirm_transaction_cb(call: CallbackQuery):
             await notify_user(user_id, f"💸 Вывод {amount} {currency} подтверждён через 2FA.")
         elif action == "confirm_deal":
             deal_id = payload['deal_id']
+            deal_2fa = db.get_deal(deal_id)
+            display_2fa = deal_2fa['display_id'] if deal_2fa else str(deal_id)
             db.upd_deal_status(deal_id, "completed")
             db.confirm_verification(nonce)
             db.add_audit_log(user_id, "2fa_confirm_deal", target=f"deal_{deal_id}", nonce=nonce)
-            await call.message.edit_text(f"✅ *Сделка #{deal_id} подтверждена!*", parse_mode="Markdown")
-            await notify_user(user_id, f"✅ Сделка #{deal_id} завершена с 2FA-подтверждением.")
+            await call.message.edit_text(f"✅ *Сделка #{display_2fa} подтверждена!*", parse_mode="Markdown")
+            await notify_user(user_id, f"✅ Сделка #{display_2fa} завершена с 2FA-подтверждением.")
         else:
             await call.answer("❌ Неизвестный тип операции", show_alert=True)
             return
@@ -5446,21 +5467,11 @@ async def handle_create_deal(request):
             return JSONResponse(content={'success': False, 'error': 'User not found'}, status_code=404)
 
         # Генерируем ID сделки
-        import random
-        deal_id = random.randint(100000, 999999)
-        while db.get_deal(deal_id):
-            deal_id = random.randint(100000, 999999)
-        
         # Создаём сделку
         commission = db.get_user_commission(user_id, 'deal')
-        db.create_deal(user_id, item_name, price, commission, deal_id, currency)
+        deal_id, deal_code = db.create_deal(user_id, item_name, price, commission, currency)
         
-        # Генерируем код сделки
-        deal_code = secrets.token_hex(3).upper()
-        db.cursor.execute("UPDATE deals SET payment_comment = ? WHERE id = ?", (deal_code, deal_id))
-        db.conn.commit()
-        
-        bot_link = f"tg://resolve?domain={BOT_USERNAME}&start=deal_{deal_id}"
+        bot_link = f"tg://resolve?domain={BOT_USERNAME}&start=deal_{deal_code}"
         
         return JSONResponse(content={
             'success': True,
@@ -6006,7 +6017,7 @@ async def handle_pay_deal(request):
 
         asyncio.create_task(notify_user(
             deal["seller"],
-            f"💰 *Сделка #{did} оплачена!*\n\n🎁 {escape_md(deal['item'])}\n💰 {fmt_num(amount)} {currency}\n\nПокупатель внёс средства. Передайте товар."
+            f"💰 *Сделка #{deal['display_id']} оплачена!*\n\n🎁 {escape_md(deal['item'])}\n💰 {fmt_num(amount)} {currency}\n\nПокупатель внёс средства. Передайте товар."
         ))
 
         return JSONResponse(content={'success': True, 'method': 'internal', 'deal_id': did})
@@ -6038,7 +6049,7 @@ async def handle_mark_sent(request):
 
         asyncio.create_task(notify_user(
             deal["buyer"],
-            f"📦 *Товар передан!*\n\nСделка #{did}\n✅ Подтвердите получение"
+            f"📦 *Товар передан!*\n\nСделка #{deal['display_id']}\n✅ Подтвердите получение"
         ))
 
         return JSONResponse(content={'success': True, 'deal_id': did})
@@ -6079,17 +6090,17 @@ async def handle_confirm_receipt(request):
         premium_text = " (без комиссии)" if commission == 0 else ""
         asyncio.create_task(notify_user(
             seller_id,
-            f"✅ *Сделка #{did} завершена!*\n\n💰 Получено: {fmt_num(seller_amount)} {currency}{premium_text}"
+            f"✅ *Сделка #{deal['display_id']} завершена!*\n\n💰 Получено: {fmt_num(seller_amount)} {currency}{premium_text}"
         ))
         asyncio.create_task(notify_user(
             user_id,
-            f"✅ *Сделка #{did} успешно завершена!*\n\nСредства переведены продавцу."
+            f"✅ *Сделка #{deal['display_id']} успешно завершена!*\n\nСредства переведены продавцу."
         ))
 
         if referral_bonus:
             asyncio.create_task(notify_user(
                 referral_bonus['referrer_id'],
-                f"👥 *Реферальный бонус*\n\nПо сделке #{did} начислено {referral_bonus['reward']} RUB (10% от сервисной комиссии)."
+                f"👥 *Реферальный бонус*\n\nПо сделке #{deal['display_id']} начислено {referral_bonus['reward']} RUB (10% от сервисной комиссии)."
             ))
 
         # Предложение оценки

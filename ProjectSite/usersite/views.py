@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, os.path.join(BASE_DIR, '..'))
 from users.crypto_utils import decrypt_value, is_encryption_enabled as _enc_enabled
 from users.views import OWNER_TELEGRAM_ID
+from id_generator import generate_deal_code
 
 
 def get_db():
@@ -1333,3 +1334,88 @@ def terms_view(request):
 
 def privacy_view(request):
     return render(request, 'usersite/privacy.html')
+
+
+@safe_db
+def create_deal_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
+
+    if request.method == 'POST':
+        item_name = (request.POST.get('item_name') or '').strip()
+        price_str = (request.POST.get('price') or '').strip()
+        currency = (request.POST.get('currency') or 'RUB').strip().upper()
+
+        allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
+        if currency not in allowed:
+            currency = 'RUB'
+
+        errors = []
+        if not item_name:
+            errors.append('Введите название товара')
+        if len(item_name) > 200:
+            errors.append('Название товара слишком длинное (макс. 200 символов)')
+
+        try:
+            price = float(price_str)
+            if price <= 0:
+                errors.append('Цена должна быть больше 0')
+        except (ValueError, TypeError):
+            errors.append('Введите корректную цену')
+
+        if errors:
+            return render(request, 'usersite/create_deal.html', {
+                'errors': errors,
+                'item_name': item_name,
+                'price': price_str,
+                'currency': currency,
+                'currencies': allowed,
+                'bot_username': bot_username,
+            })
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        deal_code = generate_deal_code(cur)
+
+        commission = 0.04
+        cur.execute("SELECT premium_tier FROM users WHERE user_id=?", (user_id,))
+        urow = cur.fetchone()
+        if urow:
+            tier = urow[0] or 'free'
+            tier_commissions = {'free': 0.04, 'premium': 0.02, 'platinum': 0.01, 'vip': 0.0}
+            commission = tier_commissions.get(tier, 0.04)
+
+        cur.execute("""
+            INSERT INTO deals (seller, item, amount, commission, currency, status, deal_code)
+            VALUES (?, ?, ?, ?, ?, 'awaiting', ?)
+        """, (user_id, item_name, price, commission, currency, deal_code))
+        conn.commit()
+        deal_id = cur.lastrowid
+        conn.close()
+
+        return redirect(f'/usersite/deal/success/?code={deal_code}&id={deal_id}')
+
+    return render(request, 'usersite/create_deal.html', {
+        'currencies': ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS'],
+        'bot_username': bot_username,
+    })
+
+
+def deal_success_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    deal_code = request.GET.get('code', '')
+    deal_id = request.GET.get('id', '')
+    bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
+    tg_link = f"https://t.me/{bot_username}?start=deal_{deal_code}"
+    display_code = f"#{deal_code}"
+    return render(request, 'usersite/deal_success.html', {
+        'deal_code': deal_code,
+        'display_code': display_code,
+        'deal_id': deal_id,
+        'tg_link': tg_link,
+        'bot_username': bot_username,
+    })

@@ -63,7 +63,7 @@
             {% for d in deals %}
             <div class="deal-row">
                 <div>
-                    <div class="deal-id">#{{ d.id }}</div>
+                    <div class="deal-id">{% if d.deal_code %}#{{ d.deal_code }}{% else %}#{{ d.id }}{% endif %}</div>
                     <div class="text-xs text-muted" style="margin-top:2px;">{{ d.created|date:"d.m H:i" }}</div>
                 </div>
                 <div class="text-right">
