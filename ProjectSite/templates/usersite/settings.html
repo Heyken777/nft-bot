@@ -39,7 +39,7 @@
 <div class="settings-card" data-reveal>
     <div class="card">
         <div class="card-body">
-            <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:4px;">⚙️ Настройки профиля</h2>
+            <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:4px;"><i class="fi fi-rr-settings"></i> Настройки профиля</h2>
             <p class="text-muted" style="font-size:13px;margin-bottom:8px;">Измените личные данные для входа на сайт</p>
 
             <hr class="divider-settings">
@@ -68,7 +68,7 @@
                 <label for="fieldPassword">Новый пароль</label>
                 <div style="position:relative;">
                     <input type="password" id="fieldPassword" class="form-control" placeholder="Оставьте пустым, чтобы не менять" oninput="checkStrength(this.value)" style="padding-right:44px;">
-                    <span id="eyeToggle" onclick="togglePassword()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);font-size:16px;user-select:none;">👁️</span>
+                    <span id="eyeToggle" onclick="togglePassword()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);font-size:16px;user-select:none;"><i class="fi fi-rs-eye"></i></span>
                 </div>
                 <div class="password-strength" id="strengthSection" style="display:none;">
                     <div class="strength-bar">
@@ -94,7 +94,7 @@
                 <span class="field-hint" id="matchHint"></span>
             </div>
 
-            <button class="btn btn-primary btn-save" onclick="saveSettings()">💾 Сохранить</button>
+            <button class="btn btn-primary btn-save" onclick="saveSettings()"><i class="fi fi-rr-floppy"></i> Сохранить</button>
         </div>
     </div>
 </div>

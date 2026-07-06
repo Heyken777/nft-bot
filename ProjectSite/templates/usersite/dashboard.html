@@ -6,7 +6,7 @@
 <div class="flex-between mb-4" style="flex-wrap:wrap;gap:16px;">
     <div>
         <h1>
-            👋 {{ u.username|default:u.telegram_id }}
+            <i class="fi fi-rr-hand-wave"></i> {{ u.username|default:u.telegram_id }}
             {% if tier_active %}<span class="badge {% if tier == 'vip' %}badge-danger{% elif tier == 'platinum' %}badge-info{% else %}badge-success{% endif %}">{{ tier_badge }}</span>{% endif %}
         </h1>
         <p class="text-muted text-sm" style="margin-top:4px;">
@@ -14,7 +14,7 @@
             Рефералов: {{ referrals_count }} ·
             Сделок: {{ purchases|add:sales }}
             {% if unread_notifications > 0 %}
-            · <span class="text-accent" style="font-weight:600;">🔔 {{ unread_notifications }} уведомлений</span>
+            · <span class="text-accent" style="font-weight:600;"><i class="fi fi-rr-bell"></i> {{ unread_notifications }} уведомлений</span>
             {% endif %}
         </p>
     </div>
@@ -24,7 +24,7 @@
 </div>
 
 <section class="section" data-reveal>
-    <h2 style="font-size:1.15rem;font-weight:600;margin-bottom:14px;font-family:var(--font-display);">💰 Балансы</h2>
+    <h2 style="font-size:1.15rem;font-weight:600;margin-bottom:14px;font-family:var(--font-display);"><i class="fi fi-rr-coins"></i> Балансы</h2>
     <div class="balances-grid">
         {% for b in balances %}
         <div class="balance-chip">
@@ -56,7 +56,7 @@
 
 <div class="grid-2">
     <div class="card" style="padding:22px;" data-reveal>
-        <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;font-family:var(--font-display);">📋 Последние сделки</h3>
+        <h3 style="font-size:1rem;font-weight:600;margin-bottom:16px;font-family:var(--font-display);"><i class="fi fi-rr-clipboard"></i> Последние сделки</h3>
         {% if deals %}
         {% for d in deals %}
         <div class="deal-row">
@@ -77,9 +77,9 @@
 
     <div class="card" style="padding:22px;" data-reveal>
         <div class="flex-between mb-2">
-            <h3 style="font-size:1rem;font-weight:600;font-family:var(--font-display);">🔔 Уведомления</h3>
+            <h3 style="font-size:1rem;font-weight:600;font-family:var(--font-display);"><i class="fi fi-rr-bell"></i> Уведомления</h3>
             {% if unread_notifications > 0 %}
-            <button class="btn btn-sm" onclick="markRead()">✔ Прочитать все</button>
+            <button class="btn btn-sm" onclick="markRead()"><i class="fi fi-rr-check"></i> Прочитать все</button>
             {% endif %}
         </div>
         {% if notifications %}
@@ -109,14 +109,14 @@
 {% if top_sellers %}
 <section class="section" data-reveal>
     <div class="card" style="padding:22px;">
-        <h3 style="font-size:1.1rem;font-weight:600;margin-bottom:16px;font-family:var(--font-display);">🏆 Топ-10 верифицированных продавцов</h3>
+        <h3 style="font-size:1.1rem;font-weight:600;margin-bottom:16px;font-family:var(--font-display);"><i class="fi fi-rr-trophy"></i> Топ-10 верифицированных продавцов</h3>
         <div class="table-responsive">
             <table class="table-custom">
                 <thead>
                     <tr>
                         <th>#</th>
                         <th>Продавец</th>
-                        <th>⭐ Рейтинг</th>
+                        <th><i class="fi fi-rr-star"></i> Рейтинг</th>
                         <th>Отзывов</th>
                         <th>Сделок</th>
                     </tr>
@@ -126,7 +126,7 @@
                     <tr>
                         <td>{{ forloop.counter }}</td>
                         <td>@{{ s.username|default:s.user_id }}</td>
-                        <td><span class="text-accent" style="font-weight:700;">⭐ {{ s.avg_rating|floatformat:1 }}</span></td>
+                        <td><span class="text-accent" style="font-weight:700;"><i class="fi fi-rr-star"></i> {{ s.avg_rating|floatformat:1 }}</span></td>
                         <td>{{ s.reviews_count }}</td>
                         <td>{{ s.completed_deals }}</td>
                     </tr>

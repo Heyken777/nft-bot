@@ -9,7 +9,7 @@
 </div>
 
 <div class="card" data-reveal>
-    <h3>📊 История операций</h3>
+    <h3><i class="fi fi-rr-chart-mixed"></i> История операций</h3>
     <div class="table-responsive mt-3">
         <table class="table-custom w-100">
             <thead>
@@ -27,12 +27,12 @@
                 <tr>
                     <td>{{ t.id }}</td>
                     <td>
-                        {% if t.type == 'deposit' %}💰 Пополнение
-                        {% elif t.type == 'withdrawal' %}💸 Вывод
-                        {% elif t.type == 'transfer' %}🔄 Перевод
-                        {% elif t.type == 'fee' %}💼 Комиссия
-                        {% elif t.type == 'referral' %}👥 Реферал
-                        {% elif t.type == 'promocode' %}🎫 Промокод
+                        {% if t.type == 'deposit' %}<i class="fi fi-rr-coins"></i> Пополнение
+                        {% elif t.type == 'withdrawal' %}<i class="fi fi-rr-coins"></i> Вывод
+                        {% elif t.type == 'transfer' %}<i class="fi fi-rr-refresh"></i> Перевод
+                        {% elif t.type == 'fee' %}<i class="fi fi-rr-briefcase"></i> Комиссия
+                        {% elif t.type == 'referral' %}<i class="fi fi-rr-users"></i> Реферал
+                        {% elif t.type == 'promocode' %}<i class="fi fi-rr-ticket"></i> Промокод
                         {% else %}{{ t.type }}{% endif %}
                     </td>
                     <td style="{% if t.amount > 0 %}color:#00ff66{% else %}color:#ff4757{% endif %};font-weight:600;">

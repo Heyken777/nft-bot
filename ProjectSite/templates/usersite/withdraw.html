@@ -11,12 +11,12 @@
 <div class="row g-4">
     <div class="col-lg-5" data-reveal>
         <div class="card">
-            <h3>💸 Заявка на вывод</h3>
+            <h3><i class="fi fi-rr-coins"></i> Заявка на вывод</h3>
             <div class="mt-3 p-3" style="background:rgba(0,255,200,0.05);border-radius:12px;border:1px solid rgba(0,255,200,0.1);">
-                <div class="small text-muted mb-1">🏅 Ваш тариф: {{ tier_badge|default:"⬜ FREE" }}</div>
-                <div class="small text-muted mb-2">📊 Комиссия платформы: {{ commission_pct|default:"4" }}%</div>
+                <div class="small text-muted mb-1"><i class="fi fi-rr-medal"></i> Ваш тариф: {{ tier_badge|default:"<span class="status-circle muted"></span> FREE" }}</div>
+                <div class="small text-muted mb-2"><i class="fi fi-rr-chart-mixed"></i> Комиссия платформы: {{ commission_pct|default:"4" }}%</div>
                 <hr style="border-color:rgba(0,255,200,0.1);margin:8px 0;">
-                <div class="fw-semibold mb-2">💰 Совокупный баланс:</div>
+                <div class="fw-semibold mb-2"><i class="fi fi-rr-coins"></i> Совокупный баланс:</div>
                 {% for code, info in balances.items %}
                 <div class="d-flex justify-content-between small mb-1">
                     <span>{{ info.symbol }} {{ code }}</span>
@@ -27,11 +27,11 @@
                 {% endfor %}
                 <hr style="border-color:rgba(0,255,200,0.1);margin:8px 0;">
                 <div class="d-flex justify-content-between">
-                    <span>💵 Общий баланс:</span>
+                    <span><i class="fi fi-rr-coins"></i> Общий баланс:</span>
                     <span class="fw-bold">{% if total_rub < 0 %}0.00{% else %}{{ total_rub|floatformat:2 }}{% endif %} ₽</span>
                 </div>
                 <div class="d-flex justify-content-between mt-1" style="color:#00ffcc;">
-                    <span>💰 Доступно к выводу (чистыми, с учётом комиссии {{ commission_pct }}%):</span>
+                    <span><i class="fi fi-rr-coins"></i> Доступно к выводу (чистыми, с учётом комиссии {{ commission_pct }}%):</span>
                     <span class="fw-bold">{% if net_rub < 0 %}0.00{% else %}{{ net_rub|floatformat:2 }}{% endif %} ₽</span>
                 </div>
             </div>
@@ -42,21 +42,21 @@
             <div class="form-group mt-3">
                 <label class="form-label">Тип кошелька</label>
                 <select id="wdWalletType" class="form-control">
-                    <option value="card">💳 Банковская карта</option>
-                    <option value="ton">📱 TON кошелёк</option>
-                    <option value="usdt">💎 USDT (TRC20)</option>
+                    <option value="card"><i class="fi fi-rr-credit-card"></i> Банковская карта</option>
+                    <option value="ton"><i class="fi fi-rr-mobile"></i> TON кошелёк</option>
+                    <option value="usdt"><i class="fi fi-rr-gem"></i> USDT (TRC20)</option>
                 </select>
             </div>
             <div class="form-group mt-3">
                 <label class="form-label">Реквизиты</label>
                 <input type="text" id="wdAddress" class="form-control" placeholder="Номер карты / адрес кошелька">
             </div>
-            <button class="btn btn-primary w-100 mt-4" onclick="submitWithdraw()">📤 Отправить заявку</button>
+            <button class="btn btn-primary w-100 mt-4" onclick="submitWithdraw()"><i class="fi fi-rr-paper-plane"></i> Отправить заявку</button>
         </div>
     </div>
     <div class="col-lg-7" data-reveal>
         <div class="card">
-            <h3>📋 Мои заявки</h3>
+            <h3><i class="fi fi-rr-clipboard"></i> Мои заявки</h3>
             <div class="table-responsive mt-3">
                 <table class="table-custom w-100">
                     <thead>

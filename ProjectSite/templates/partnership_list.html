@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4" style="flex-wrap: wrap; gap: 12px;">
-    <h1 class="gradient-text">🤝 Заявки на сотрудничество</h1>
+    <h1 class="gradient-text"><i class="fi fi-rr-handshake"></i> Заявки на сотрудничество</h1>
 </div>
 
 <div class="stat-card" style="overflow-x: auto;">
@@ -28,18 +28,18 @@
                 <td><strong>{{ p.full_name }}</strong></td>
                 <td>@{{ p.telegram }}</td>
                 <td>
-                    {% if p.partnership_type == 'advertising' %}📢 Реклама
-                    {% elif p.partnership_type == 'blogger' %}🎥 Блогер
-                    {% elif p.partnership_type == 'partnership' %}🤝 Партнёрство
-                    {% else %}📝 Другое{% endif %}
+                    {% if p.partnership_type == 'advertising' %}<i class="fi fi-rr-megaphone"></i> Реклама
+                    {% elif p.partnership_type == 'blogger' %}<i class="fi fi-rr-video"></i> Блогер
+                    {% elif p.partnership_type == 'partnership' %}<i class="fi fi-rr-handshake"></i> Партнёрство
+                    {% else %}<i class="fi fi-rr-edit"></i> Другое{% endif %}
                 </td>
                 <td>
                     {% if p.status == 'pending' %}
                     <span class="badge-progress">🟡 Ожидает ответа</span>
                     {% elif p.status == 'approved' %}
-                    <span class="badge-open">🟢 Одобрено</span>
+                    <span class="badge-open"><span class="status-circle success"></span> Одобрено</span>
                     {% else %}
-                    <span class="badge-closed">🔴 Отказано</span>
+                    <span class="badge-closed"><span class="status-circle danger"></span> Отказано</span>
                     {% endif %}
                 </td>
                 <td>{{ p.created_at|date:"d.m.Y H:i" }}</td>
@@ -53,7 +53,7 @@
                 </td>
             </tr>
             {% empty %}
-            <tr><td colspan="7" class="text-center text-cyan-300 py-4">✨ Нет заявок ✨</td></tr>
+            <tr><td colspan="7" class="text-center text-cyan-300 py-4"><i class="fi fi-rr-star-shine"></i> Нет заявок <i class="fi fi-rr-star-shine"></i></td></tr>
             {% endfor %}
         </tbody>
     </table>

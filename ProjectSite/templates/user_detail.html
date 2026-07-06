@@ -4,7 +4,7 @@
 {% block title %}Пользователь {{ user.telegram_id }}{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <h1 class="gradient-text">👤 ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</h1>
+    <h1 class="gradient-text"><i class="fi fi-rr-user"></i> ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</h1>
     <a href="/users/" class="btn-primary"><i class="fas fa-arrow-left me-2"></i>Назад</a>
 </div>
 {% if user %}
@@ -21,7 +21,7 @@
                         {% endif %}
                     </div>
                     {% if user.avatar_url %}
-                    <button class="btn-small btn-danger mt-1" onclick="deleteAvatar({{ user.telegram_id }})" style="font-size:10px;padding:2px 8px;">🗑 Удалить</button>
+                    <button class="btn-small btn-danger mt-1" onclick="deleteAvatar({{ user.telegram_id }})" style="font-size:10px;padding:2px 8px;"><i class="fi fi-rr-trash-xmark"></i> Удалить</button>
                     {% endif %}
                 </div>
                 <div>
@@ -35,8 +35,8 @@
                     <div style="font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,#00a3ff,#00ffcc);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">{{ user.total_rub|floatformat:2 }} ₽</div>
                     <div class="small text-cyan-300/50">Общий баланс (RUB)</div>
                     <div class="mt-2">
-                        {% if user.is_blocked %}<span class="badge-expired">🔒 Заблокирован</span>
-                        {% else %}<span class="badge-active">✅ Активен</span>{% endif %}
+                        {% if user.is_blocked %}<span class="badge-expired"><i class="fi fi-rr-lock"></i> Заблокирован</span>
+                        {% else %}<span class="badge-active"><i class="fi fi-rr-check"></i> Активен</span>{% endif %}
                     </div>
                 </div>
             </div>
@@ -66,10 +66,10 @@
                     </div>
                     <div class="d-flex gap-2 mt-3 flex-wrap align-items-center">
                         <select id="tierSelect" class="form-control" style="width:auto;display:inline-block;">
-                            <option value="free" {% if user.premium_tier == 'free' or not user.premium_tier %}selected{% endif %}>⬜ Free</option>
-                            <option value="premium" {% if user.premium_tier == 'premium' %}selected{% endif %}>⭐ Premium</option>
-                            <option value="platinum" {% if user.premium_tier == 'platinum' %}selected{% endif %}>💎 Platinum</option>
-                            <option value="vip" {% if user.premium_tier == 'vip' %}selected{% endif %}>👑 VIP</option>
+                            <option value="free" {% if user.premium_tier == 'free' or not user.premium_tier %}selected{% endif %}><span class="status-circle muted"></span> Free</option>
+                            <option value="premium" {% if user.premium_tier == 'premium' %}selected{% endif %}><i class="fi fi-rr-star"></i> Premium</option>
+                            <option value="platinum" {% if user.premium_tier == 'platinum' %}selected{% endif %}><i class="fi fi-rr-gem"></i> Platinum</option>
+                            <option value="vip" {% if user.premium_tier == 'vip' %}selected{% endif %}><i class="fi fi-rr-crown"></i> VIP</option>
                         </select>
                         <input type="number" id="tierDays" class="form-control" style="width:80px;display:inline-block;" value="30" min="1" placeholder="дни">
                         <button class="btn-primary btn-sm" onclick="grantTier()"><i class="fas fa-crown"></i> Назначить</button>
@@ -93,10 +93,10 @@
                             <input type="text" id="balReason" class="form-control" placeholder="Причина">
                         </div>
                         <div class="col-6">
-                            <button class="btn-primary btn-sm w-100" onclick="changeBalance(1)">➕ Начислить</button>
+                            <button class="btn-primary btn-sm w-100" onclick="changeBalance(1)"><i class="fi fi-rr-plus"></i> Начислить</button>
                         </div>
                         <div class="col-6">
-                            <button class="btn-danger btn-sm w-100" onclick="changeBalance(-1)">➖ Списать</button>
+                            <button class="btn-danger btn-sm w-100" onclick="changeBalance(-1)"><i class="fi fi-rr-minus"></i> Списать</button>
                         </div>
                     </div>
                 </div>
@@ -140,14 +140,14 @@
             <h3 class="gradient-text mb-3"><i class="fas fa-users text-cyan-300"></i> Реферальная система</h3>
             <div class="row g-3 mb-3">
                 <div class="col-6">
-                    <label class="form-label">🔗 Реферальная ссылка</label>
+                    <label class="form-label"><i class="fi fi-rr-link"></i> Реферальная ссылка</label>
                     <div class="input-group">
                         <input type="text" id="refLink" class="form-control" value="{{ referral_link }}" readonly style="font-size:12px;">
                         <button class="btn-primary" onclick="copyRefLink()" style="width:50px;"><i class="fas fa-copy"></i></button>
                     </div>
                 </div>
                 <div class="col-6">
-                    <label class="form-label">🏷️ Реферальный код</label>
+                    <label class="form-label"><i class="fi fi-rr-tag"></i> Реферальный код</label>
                     <div class="input-group">
                         <input type="text" class="form-control" value="{{ user.referral_code|default:'—' }}" readonly>
                         <button class="btn-primary" onclick="copyText('{{ user.referral_code|default:'' }}')" style="width:50px;"><i class="fas fa-copy"></i></button>
@@ -168,22 +168,22 @@
             {% for t in tickets %}
             <div class="p-2 mb-2" style="background:rgba(0,0,0,0.3);border-radius:10px;">
                 <div class="small">{{ t.subject|truncatechars:30 }}</div>
-                <div class="small text-cyan-300/50">#{{ t.id }} · {% if t.status == 'open' %}🟢 Открыт{% elif t.status == 'in_progress' %}🟡 В работе{% else %}🔴 Закрыт{% endif %}</div>
+                <div class="small text-cyan-300/50">#{{ t.id }} · {% if t.status == 'open' %}<span class="status-circle success"></span> Открыт{% elif t.status == 'in_progress' %}🟡 В работе{% else %}<span class="status-circle danger"></span> Закрыт{% endif %}</div>
             </div>
             {% empty %}<div class="text-cyan-300/50 text-center py-3">Нет тикетов</div>{% endfor %}
         </div>
         <div class="stat-card mb-4">
-            <h3 class="gradient-text mb-3">⭐ Отзывы <span class="small text-cyan-300/50">(средний {{ avg_rating }})</span></h3>
+            <h3 class="gradient-text mb-3"><i class="fi fi-rr-star"></i> Отзывы <span class="small text-cyan-300/50">(средний {{ avg_rating }})</span></h3>
             {% for r in reviews %}
             <div class="p-2 mb-2" style="background:rgba(0,0,0,0.3);border-radius:10px;" id="areview-{{ r.id }}">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <span>⭐ {{ r.rating }}/5</span>
-                        {% if r.reported %}<span class="badge badge-danger ms-2" style="font-size:10px;">🚩 Жалоба</span>{% endif %}
+                        <span><i class="fi fi-rr-star"></i> {{ r.rating }}/5</span>
+                        {% if r.reported %}<span class="badge badge-danger ms-2" style="font-size:10px;"><i class="fi fi-rr-flag"></i> Жалоба</span>{% endif %}
                     </div>
                     <div class="d-flex gap-1">
-                        <button class="btn-sm" style="background:rgba(255,193,7,.15);color:#ffc107;border:none;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;" onclick="editReview({{ r.id }})">✏️</button>
-                        <button class="btn-sm" style="background:rgba(255,71,87,.15);color:#ff4757;border:none;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;" onclick="deleteReview({{ r.id }})">🗑️</button>
+                        <button class="btn-sm" style="background:rgba(255,193,7,.15);color:#ffc107;border:none;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;" onclick="editReview({{ r.id }})"><i class="fi fi-rr-pencil"></i></button>
+                        <button class="btn-sm" style="background:rgba(255,71,87,.15);color:#ff4757;border:none;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;" onclick="deleteReview({{ r.id }})"><i class="fi fi-rr-trash-xmark"></i></button>
                     </div>
                 </div>
                 <div class="small text-cyan-300/50">Сделка #{{ r.deal_id }} · {{ r.deal_item|truncatechars:20 }}</div>

@@ -11,6 +11,7 @@
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/js/all.min.js"></script>
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <link href="{% static 'css/luxury.css' %}" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn-uicons.flaticon.com/uicons-regular-rounded/css/uicons-regular-rounded.css">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -121,6 +122,13 @@
         a:hover { color: var(--accent-hover); }
         .text-muted { color: var(--text-secondary) !important; }
         .text-accent { color: var(--accent) !important; }
+        .status-circle { display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; margin-top:-2px; }
+        .status-circle.success { background:#2ed573; }
+        .status-circle.warning { background:#ffa502; }
+        .status-circle.danger { background:#ff4757; }
+        .status-circle.info { background:#3498db; }
+        .status-circle.muted { background:#9CA3AF; }
+        .fi { vertical-align:middle; margin-top:-2px; }
 
         .header {
             position: sticky; top: 0; z-index: 100;

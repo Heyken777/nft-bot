@@ -11,13 +11,13 @@
 <div class="row g-4 justify-content-center">
     <div class="col-lg-6" data-reveal>
         <div class="card">
-            <h3>➕ Создать сделку</h3>
+            <h3><i class="fi fi-rr-plus"></i> Создать сделку</h3>
             <p class="text-muted small mb-4">Заполните поля ниже, чтобы создать новую сделку для покупателя</p>
 
             {% if errors %}
             <div class="mb-4 p-3" style="background:rgba(220,38,38,0.06);border-left:3px solid var(--danger);border-radius:var(--radius-sm);">
                 {% for e in errors %}
-                <div class="small" style="color:var(--danger);">❌ {{ e }}</div>
+                <div class="small" style="color:var(--danger);"><i class="fi fi-rr-cross"></i> {{ e }}</div>
                 {% endfor %}
             </div>
             {% endif %}
@@ -26,12 +26,12 @@
                 {% csrf_token %}
 
                 <div class="mb-3">
-                    <label class="form-label required">📦 Название товара</label>
+                    <label class="form-label required"><i class="fi fi-rr-box"></i> Название товара</label>
                     <input type="text" name="item_name" class="form-control" placeholder="Например: Legendary Sword NFT" value="{{ item_name|default:'' }}" maxlength="200" required>
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label required">💱 Валюта</label>
+                    <label class="form-label required"><i class="fi fi-rr-exchange"></i> Валюта</label>
                     <div class="radio-group">
                         {% for c in currencies %}
                         <label class="radio-label" style="flex:0 0 auto;min-width:70px;justify-content:center;">
@@ -43,11 +43,11 @@
                 </div>
 
                 <div class="mb-4">
-                    <label class="form-label required">💰 Цена</label>
+                    <label class="form-label required"><i class="fi fi-rr-coins"></i> Цена</label>
                     <input type="number" name="price" class="form-control" placeholder="1000" value="{{ price|default:'' }}" min="1" required>
                 </div>
 
-                <button type="submit" class="btn btn-primary w-100 py-3">✅ Создать сделку</button>
+                <button type="submit" class="btn btn-primary w-100 py-3"><i class="fi fi-rr-check"></i> Создать сделку</button>
             </form>
         </div>
     </div>

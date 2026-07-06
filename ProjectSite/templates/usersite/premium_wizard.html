@@ -10,7 +10,7 @@
 
 <div class="card" style="max-width:640px;margin:0 auto;" data-reveal>
     {% if step == '1' %}
-    <h2 style="margin-bottom:20px;">🏅 Выберите тариф</h2>
+    <h2 style="margin-bottom:20px;"><i class="fi fi-rr-medal"></i> Выберите тариф</h2>
     <form method="post">
         {% csrf_token %}
         <div style="display:flex;flex-direction:column;gap:12px;">
@@ -71,7 +71,7 @@
     </div>
 
     {% elif step == 'confirm' %}
-    <h2 style="margin-bottom:20px;">✅ Подтверждение</h2>
+    <h2 style="margin-bottom:20px;"><i class="fi fi-rr-check"></i> Подтверждение</h2>
     <div class="order-summary">
         <div class="order-row"><span>Тариф</span><span>{{ tier_badge }}</span></div>
         <div class="order-row"><span>Валюта</span><span>{{ currency }}</span></div>
@@ -81,7 +81,7 @@
     <form method="post">
         {% csrf_token %}
         <input type="hidden" name="action" value="pay">
-        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:24px;padding:12px;">💳 Оплатить</button>
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:24px;padding:12px;"><i class="fi fi-rr-credit-card"></i> Оплатить</button>
     </form>
     <div style="margin-top:12px;text-align:center;">
         <a href="/usersite/premium/?step=3" class="btn btn-outline" style="font-size:13px;">← Выбрать другую длительность</a>
@@ -89,21 +89,21 @@
 
     {% elif step == 'success' %}
     <div style="text-align:center;padding:40px 0;">
-        <div style="font-size:64px;margin-bottom:16px;">✅</div>
+        <div style="font-size:64px;margin-bottom:16px;"><i class="fi fi-rr-check"></i></div>
         <h2 style="margin-bottom:12px;">Подписка активирована!</h2>
-        <p style="margin-bottom:8px;">🏅 <strong>{{ tier_badge }}</strong></p>
-        <p style="margin-bottom:8px;">📅 {{ days }} дней</p>
+        <p style="margin-bottom:8px;"><i class="fi fi-rr-medal"></i> <strong>{{ tier_badge }}</strong></p>
+        <p style="margin-bottom:8px;"><i class="fi fi-rr-calendar"></i> {{ days }} дней</p>
         {% if cross_plan %}
-        <p style="margin-bottom:8px;">💰 Списано: {{ cross_plan }} (≈{{ total_rub }} RUB)</p>
+        <p style="margin-bottom:8px;"><i class="fi fi-rr-coins"></i> Списано: {{ cross_plan }} (≈{{ total_rub }} RUB)</p>
         {% else %}
-        <p style="margin-bottom:8px;">💰 Сумма: {{ price }}</p>
+        <p style="margin-bottom:8px;"><i class="fi fi-rr-coins"></i> Сумма: {{ price }}</p>
         {% endif %}
         <a href="/usersite/dashboard/" class="btn btn-primary" style="margin-top:24px;padding:12px 32px;">Вернуться на главную</a>
     </div>
 
     {% elif step == 'error' %}
     <div style="text-align:center;padding:40px 0;">
-        <div style="font-size:64px;margin-bottom:16px;">❌</div>
+        <div style="font-size:64px;margin-bottom:16px;"><i class="fi fi-rr-cross"></i></div>
         <h2 style="margin-bottom:12px;color:var(--danger);">Ошибка</h2>
         <p style="margin-bottom:24px;">{{ error }}</p>
         <a href="/usersite/premium/?step=1" class="btn btn-primary" style="padding:12px 32px;">Попробовать снова</a>

@@ -40,8 +40,8 @@
                 {% elif p.status == 'approved' %}ticket-status--approved
                 {% else %}ticket-status--rejected{% endif %}">
                 {% if p.status == 'pending' %}🟡 Ожидает ответа
-                {% elif p.status == 'approved' %}🟢 Одобрено
-                {% else %}🔴 Отказано{% endif %}
+                {% elif p.status == 'approved' %}<span class="status-circle success"></span> Одобрено
+                {% else %}<span class="status-circle danger"></span> Отказано{% endif %}
             </span>
         </div>
     </div>

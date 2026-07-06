@@ -3,7 +3,7 @@
 {% block title %}Промокоды{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <h1 class="gradient-text">🎟️ ПРОМОКОДЫ</h1>
+    <h1 class="gradient-text"><i class="fi fi-rr-ticket"></i> ПРОМОКОДЫ</h1>
     <button class="btn-primary" onclick="openPromoModal()"><i class="fas fa-plus me-2"></i>Создать промокод</button>
 </div>
 
@@ -40,7 +40,7 @@
                      </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="9" class="text-center text-cyan-300 py-4">✨ Промокодов нет ✨</td></tr>
+                <tr><td colspan="9" class="text-center text-cyan-300 py-4"><i class="fi fi-rr-star-shine"></i> Промокодов нет <i class="fi fi-rr-star-shine"></i></td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -55,8 +55,8 @@
         <input type="number" id="pDiscount" class="form-control mb-2" placeholder="Сумма бонуса в ₽">
         <input type="number" id="pMaxUses" class="form-control mb-2" placeholder="Макс. использований" value="100">
         <select id="pExpiryType" class="form-control mb-2" onchange="toggleExpiry()">
-            <option value="unlimited">♾️ Бессрочный</option>
-            <option value="days">⏱️ На количество дней</option>
+            <option value="unlimited"><i class="fi fi-rr-infinity"></i> Бессрочный</option>
+            <option value="days"><i class="fi fi-rr-stopwatch"></i> На количество дней</option>
         </select>
         <div id="expiryDaysContainer" style="display:none;">
             <input type="number" id="pExpiryDays" class="form-control mb-2" placeholder="Количество дней">

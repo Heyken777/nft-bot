@@ -11,36 +11,36 @@
 <div class="row g-4 justify-content-center">
     <div class="col-lg-6" data-reveal>
         <div class="card text-center" style="padding:40px 28px;">
-            <div style="font-size:48px;margin-bottom:12px;">✅</div>
+            <div style="font-size:48px;margin-bottom:12px;"><i class="fi fi-rr-check"></i></div>
             <h3 style="margin-bottom:4px;">Сделка создана!</h3>
             <p class="text-muted small">Отправьте ссылку покупателю для оплаты</p>
 
             <div class="mt-4 p-4" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius-md);text-align:left;">
                 <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted small">🧾 Код сделки</span>
+                    <span class="text-muted small"><i class="fi fi-rr-receipt"></i> Код сделки</span>
                     <span class="fw-bold font-monospace" style="color:var(--accent);font-size:18px;">{{ display_code }}</span>
                 </div>
                 <hr style="border-color:var(--border-color);margin:12px 0;">
                 <div class="mt-3">
-                    <div class="text-muted small mb-2">🔗 Ссылка для покупателя:</div>
+                    <div class="text-muted small mb-2"><i class="fi fi-rr-link"></i> Ссылка для покупателя:</div>
                     <div class="d-flex align-items-center gap-2">
                         <div class="flex-fill p-2" style="background:var(--bg-primary);border-radius:var(--radius-sm);font-size:12px;word-break:break-all;font-family:monospace;border:1px solid var(--border-color);color:var(--text-primary);">
                             {{ tg_link }}
                         </div>
-                        <button onclick="navigator.clipboard.writeText('{{ tg_link }}').then(()=>{this.innerText='✅'}).catch(()=>{this.innerText='❌'})" class="btn btn-sm" style="flex-shrink:0;white-space:nowrap;" title="Копировать ссылку">
-                            📋
+                        <button onclick="var _t=this;navigator.clipboard.writeText('{{ tg_link }}').then(function(){_t.innerHTML='<i class=\"fi fi-rr-check\"></i>'}).catch(function(){_t.innerHTML='<i class=\"fi fi-rr-cross\"></i>'})" class="btn btn-sm" style="flex-shrink:0;white-space:nowrap;" title="Копировать ссылку">
+                            <i class="fi fi-rr-clipboard"></i>
                         </button>
                     </div>
                 </div>
             </div>
 
             <a href="{{ tg_link }}" target="_blank" class="btn btn-primary w-100 mt-4 py-3">
-                📤 Отправить в Telegram
+                <i class="fi fi-rr-paper-plane"></i> Отправить в Telegram
             </a>
 
             <div class="mt-3 d-flex gap-2">
-                <a href="/usersite/deal/create/" class="btn btn-outline flex-fill">➕ Создать ещё</a>
-                <a href="/usersite/dashboard/" class="btn btn-outline flex-fill">🏠 На главную</a>
+                <a href="/usersite/deal/create/" class="btn btn-outline flex-fill"><i class="fi fi-rr-plus"></i> Создать ещё</a>
+                <a href="/usersite/dashboard/" class="btn btn-outline flex-fill"><i class="fi fi-rr-home"></i> На главную</a>
             </div>
         </div>
     </div>

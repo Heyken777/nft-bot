@@ -95,7 +95,7 @@
                         {% elif ticket.status == 'approved' %}Одобрено
                         {% else %}Закрыт{% endif %}
                     </span>
-                    <span class="category-badge">📝 {{ ticket.subject|default:"Другое" }}</span>
+                    <span class="category-badge"><i class="fi fi-rr-edit"></i> {{ ticket.subject|default:"Другое" }}</span>
                 </div>
             </div>
             <div class="text-muted small">
@@ -118,12 +118,12 @@
                         <span class="message-author">{{ msg.sender_name|default:"Пользователь" }}</span>
                         <span class="message-role">
                             {% if msg.sender_type == 'system' %}
-                                🖥️ Система
+                                <i class="fi fi-rr-display"></i> Система
                             {% elif msg.sender_type == 'admin' %}
-                                {% if msg.sender_role == 'CEO' %}👑 Владелец
+                                {% if msg.sender_role == 'CEO' %}<i class="fi fi-rr-crown"></i> Владелец
                                 {% else %}{{ msg.sender_role|default:"Администратор" }}{% endif %}
                             {% else %}
-                                📱 Пользователь
+                                <i class="fi fi-rr-mobile"></i> Пользователь
                             {% endif %}
                         </span>
                         <span class="message-time">{{ msg.created_at|date:"d.m.Y, H:i" }}</span>

@@ -8,6 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{% static 'css/admin.css' %}">
+    <link rel="stylesheet" href="https://cdn-uicons.flaticon.com/uicons-regular-rounded/css/uicons-regular-rounded.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -506,6 +507,13 @@ code {
     padding: 2px 6px;
     border-radius: 6px;
 }
+.status-circle { display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; }
+.status-circle.success { background:#2ed573; }
+.status-circle.warning { background:#ffa502; }
+.status-circle.danger { background:#ff4757; }
+.status-circle.info { background:#3498db; }
+.status-circle.muted { background:#9CA3AF; }
+.fi { vertical-align:middle; }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -527,9 +535,9 @@ code {
                 <div class="name">{{ user_name|default:admin_name|default:"Admin" }}</div>
                 <div class="role {% if is_ceo %}role-ceo{% else %}role-admin{% endif %}">
                     {% if is_ceo %}
-                    👑 CEO / Владелец
+                    <i class="fi fi-rr-crown"></i> CEO / Владелец
                     {% else %}
-                    🔹 Администратор
+                    <i class="fi fi-rr-circle-small"></i> Администратор
                     {% endif %}
                 </div>
             </div>

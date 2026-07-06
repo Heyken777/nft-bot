@@ -4,7 +4,7 @@
 {% block title %}Сделки{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <h1 class="gradient-text">📋 СДЕЛКИ <span class="small text-cyan-300/50" id="dealCount">({{ total }})</span></h1>
+    <h1 class="gradient-text"><i class="fi fi-rr-clipboard"></i> СДЕЛКИ <span class="small text-cyan-300/50" id="dealCount">({{ total }})</span></h1>
     <div class="d-flex gap-2">
         <div class="d-flex gap-2 align-items-center">
             <select id="dealStatusFilter" class="form-control" style="width:auto;">
@@ -59,7 +59,7 @@
                     <td>{{ d.created|date:"d.m H:i" }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="8" class="text-center text-cyan-300 py-4" id="emptyDealRow">✨ Сделок нет ✨</td></tr>
+                <tr><td colspan="8" class="text-center text-cyan-300 py-4" id="emptyDealRow"><i class="fi fi-rr-star-shine"></i> Сделок нет <i class="fi fi-rr-star-shine"></i></td></tr>
                 {% endfor %}
             </tbody>
         </table>

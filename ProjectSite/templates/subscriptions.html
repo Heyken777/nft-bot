@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <h1 class="gradient-text">🔄 АКТИВНЫЕ ПОДПИСКИ</h1>
+    <h1 class="gradient-text"><i class="fi fi-rr-refresh"></i> АКТИВНЫЕ ПОДПИСКИ</h1>
     <div class="d-flex gap-2">
         <div class="position-relative">
             <i class="fas fa-search position-absolute" style="left: 15px; top: 12px; color: rgba(0,255,255,0.5);"></i>
@@ -51,9 +51,9 @@
                     <td>{% if sub.days_left > 0 %}{{ sub.days_left }}{% else %}0{% endif %}</td>
                     <td>
                         {% if sub.end_date > now %}
-                        <span class="badge-active">✅ Активна</span>
+                        <span class="badge-active"><i class="fi fi-rr-check"></i> Активна</span>
                         {% else %}
-                        <span class="badge-expired">❌ Истекла</span>
+                        <span class="badge-expired"><i class="fi fi-rr-cross"></i> Истекла</span>
                         {% endif %}
                     </td>
                     <td>
@@ -61,7 +61,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="10" class="text-center text-cyan-300 py-4">✨ Активных подписок нет ✨</td></tr>
+                <tr><td colspan="10" class="text-center text-cyan-300 py-4"><i class="fi fi-rr-star-shine"></i> Активных подписок нет <i class="fi fi-rr-star-shine"></i></td></tr>
                 {% endfor %}
             </tbody>
         </table>

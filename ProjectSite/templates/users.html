@@ -4,7 +4,7 @@
 {% block title %}Пользователи{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <h1 class="gradient-text">👨‍🚀 ПОЛЬЗОВАТЕЛИ <span class="small text-cyan-300/50" id="userCount">({{ total }})</span></h1>
+    <h1 class="gradient-text"><i class="fi fi-rr-rocket"></i> ПОЛЬЗОВАТЕЛИ <span class="small text-cyan-300/50" id="userCount">({{ total }})</span></h1>
     <div class="d-flex gap-2">
         <div class="position-relative">
             <i class="fas fa-search position-absolute" style="left:15px;top:12px;color:rgba(0,255,255,.5);"></i>
@@ -28,8 +28,8 @@
                     <div class="text-cyan-300/50 small">{{ user.created_at|date:"d.m.Y"|default:"—" }}</div>
                 </div>
                 <div class="text-end">
-                    <div><span class="badge-active">💰 {{ user.total_rub|floatformat:0 }} ₽</span></div>
-                    <div class="small mt-1">{{ user.tier_display|default:"⬜ FREE" }}</div>
+                    <div><span class="badge-active"><i class="fi fi-rr-coins"></i> {{ user.total_rub|floatformat:0 }} ₽</span></div>
+                    <div class="small mt-1">{{ user.tier_display|default:"<span class="status-circle muted"></span> FREE" }}</div>
                 </div>
             </div>
         </div>

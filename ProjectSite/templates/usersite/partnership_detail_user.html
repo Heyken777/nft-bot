@@ -59,10 +59,10 @@
                         {% else %}Отказано{% endif %}
                     </span>
                     <span class="text-muted small">
-                        {% if partnership.partnership_type == 'advertising' %}📢 Реклама
-                        {% elif partnership.partnership_type == 'blogger' %}🎥 Блогер
-                        {% elif partnership.partnership_type == 'partnership' %}🤝 Партнёрство
-                        {% else %}📝 Другое{% endif %}
+                        {% if partnership.partnership_type == 'advertising' %}<i class="fi fi-rr-megaphone"></i> Реклама
+                        {% elif partnership.partnership_type == 'blogger' %}<i class="fi fi-rr-video"></i> Блогер
+                        {% elif partnership.partnership_type == 'partnership' %}<i class="fi fi-rr-handshake"></i> Партнёрство
+                        {% else %}<i class="fi fi-rr-edit"></i> Другое{% endif %}
                     </span>
                 </div>
             </div>
@@ -141,10 +141,10 @@
                 <div class="info-section">
                     <div class="info-label">Тип сотрудничества</div>
                     <div class="info-value">
-                        {% if partnership.partnership_type == 'advertising' %}📢 Реклама
-                        {% elif partnership.partnership_type == 'blogger' %}🎥 Блогер
-                        {% elif partnership.partnership_type == 'partnership' %}🤝 Партнёрство
-                        {% else %}📝 Другое{% endif %}
+                        {% if partnership.partnership_type == 'advertising' %}<i class="fi fi-rr-megaphone"></i> Реклама
+                        {% elif partnership.partnership_type == 'blogger' %}<i class="fi fi-rr-video"></i> Блогер
+                        {% elif partnership.partnership_type == 'partnership' %}<i class="fi fi-rr-handshake"></i> Партнёрство
+                        {% else %}<i class="fi fi-rr-edit"></i> Другое{% endif %}
                     </div>
                 </div>
 

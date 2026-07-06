@@ -16,7 +16,7 @@
             <div class="mt-3">
                 <div class="info-row">
                     <span class="info-label">Средний рейтинг</span>
-                    <span class="info-value" style="font-size:1.5rem;font-weight:700;color:var(--accent);">⭐ {{ avg_rating }}</span>
+                    <span class="info-value" style="font-size:1.5rem;font-weight:700;color:var(--accent);"><i class="fi fi-rr-star"></i> {{ avg_rating }}</span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Всего отзывов</span>
@@ -33,12 +33,12 @@
     <div class="col-lg-8" data-reveal>
         <!-- Полученные отзывы -->
         <div class="card mb-4">
-            <h4>📩 Полученные отзывы</h4>
+            <h4><i class="fi fi-rr-envelope"></i> Полученные отзывы</h4>
             <div class="mt-2">
                 {% for r in received %}
                 <div class="review-item">
                     <div class="review-header">
-                        <span class="review-stars">⭐ {{ r.rating }}/5</span>
+                        <span class="review-stars"><i class="fi fi-rr-star"></i> {{ r.rating }}/5</span>
                         <span class="review-date">{{ r.created_at|date:"d.m.Y H:i" }}</span>
                     </div>
                     <div class="review-meta">Сделка: {% if r.deal_item %}{{ r.deal_item }}{% else %}#{{ r.deal_id }}{% endif %}</div>
@@ -54,12 +54,12 @@
 
         <!-- Оставленные отзывы -->
         <div class="card" data-reveal>
-            <h4>✏️ Мои отзывы</h4>
+            <h4><i class="fi fi-rr-pencil"></i> Мои отзывы</h4>
             <div class="mt-2">
                 {% for r in given %}
                 <div class="review-item" id="review-{{ r.id }}">
                     <div class="review-header">
-                        <span class="review-stars">⭐ {{ r.rating }}/5</span>
+                        <span class="review-stars"><i class="fi fi-rr-star"></i> {{ r.rating }}/5</span>
                         <span class="review-date">{{ r.created_at|date:"d.m.Y H:i" }}</span>
                     </div>
                     <div class="review-meta">Пользователю: @{{ r.reviewed_name|default:r.reviewed_id }}</div>
@@ -81,12 +81,12 @@
 <!-- Модалка редактирования отзыва -->
 <div id="editModal" class="modal-overlay" style="display:none;">
     <div class="modal-window" style="max-width:450px;">
-        <h3 class="mb-3">✏️ Изменить отзыв</h3>
+        <h3 class="mb-3"><i class="fi fi-rr-pencil"></i> Изменить отзыв</h3>
         <input type="hidden" id="editReviewId">
         <label class="form-label">Оценка</label>
         <div class="star-select mb-3" id="editStarSelect">
             {% for s in "12345" %}
-            <span class="star-option" data-value="{{ s }}" onclick="selectStar({{ s }})">⭐</span>
+            <span class="star-option" data-value="{{ s }}" onclick="selectStar({{ s }})"><i class="fi fi-rr-star"></i></span>
             {% endfor %}
         </div>
         <label class="form-label">Комментарий</label>
@@ -101,7 +101,7 @@
 <!-- Модалка жалобы -->
 <div id="reportModal" class="modal-overlay" style="display:none;">
     <div class="modal-window" style="max-width:450px;">
-        <h3 class="mb-3">🚩 Пожаловаться на отзыв</h3>
+        <h3 class="mb-3"><i class="fi fi-rr-flag"></i> Пожаловаться на отзыв</h3>
         <input type="hidden" id="reportReviewId">
         <label class="form-label">Причина жалобы</label>
         <textarea id="reportReason" class="form-control" rows="3" placeholder="Опишите, почему этот отзыв нарушает правила..."></textarea>
