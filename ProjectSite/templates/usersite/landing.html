@@ -160,13 +160,14 @@
         /* ===== HERO ===== */
         .hero-container {
             position: relative;
-            border-radius: var(--radius-hero);
+            border-radius: 0;
             overflow: hidden;
             min-height: 85vh;
             display: flex;
             flex-direction: column;
             background: #1a1a1a;
-            margin: 16px;
+            margin: 0;
+            width: 100%;
             box-shadow: 0 4px 20px rgba(0,0,0,0.08), 0 20px 60px rgba(0,0,0,0.06);
         }
 
@@ -318,16 +319,37 @@
             margin: 120px 16px 0;
             padding: 32px 0 48px;
             border-top: 1px solid var(--border-color);
-            display: flex; justify-content: space-between;
-            align-items: center; flex-wrap: wrap; gap: 16px;
+            text-align: center;
         }
-        .landing-footer__logo { font-weight: 800; font-size: 1rem; color: var(--text-muted); }
-        .landing-footer__links { display: flex; gap: 24px; }
-        .landing-footer__links a { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; transition: color var(--transition); }
+        .landing-footer__copy {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+        .landing-footer__links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 12px;
+        }
+        .landing-footer__links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.8rem;
+            transition: color var(--transition);
+        }
         .landing-footer__links a:hover { color: var(--text-primary); }
+        .landing-footer__social {
+            display: block;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.8rem;
+            transition: color var(--transition);
+        }
+        .landing-footer__social:hover { color: var(--text-primary); }
 
         @media (max-width: 768px) {
-            .hero-container { min-height: 92vh; border-radius: 28px; margin: 12px; }
+            .hero-container { min-height: 92vh; border-radius: 0; margin: 0; }
             .hero-content { padding: 40px 24px 50px; }
             .hero-title__primary, .hero-title__secondary { font-size: clamp(1.6rem,7vw,2.2rem); }
             .hero-stats { padding: 0 24px 28px; gap: 24px; flex-wrap: wrap; }
@@ -338,7 +360,7 @@
                 background: linear-gradient(180deg, rgba(250,249,245,0.92) 0%, rgba(250,249,245,0.7) 50%, transparent 80%);
             }
             .section-stadium .stadium-photo { border-radius: 30% / 40%; }
-            .landing-footer { flex-direction: column; text-align: center; margin-left: 12px; margin-right: 12px; }
+            .landing-footer { margin-left: 12px; margin-right: 12px; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -352,10 +374,10 @@
         <div class="glass-nav__inner">
             <a href="/usersite/" class="glass-nav__logo">H<span>eyken</span></a>
             <div class="glass-nav__links">
-                <a href="#how-it-works">Как это работает</a>
-                <a href="/usersite/reviews/">Отзывы</a>
-                <a href="/usersite/top/">Топ продавцов</a>
-                <a href="/usersite/terms/">Документы</a>
+                <a href="/usersite/dashboard/">Главная</a>
+                <a href="/usersite/profile/">Профиль</a>
+                <a href="/usersite/partnership/my/">Сотрудничество</a>
+                <a href="/usersite/tickets/">Поддержка</a>
             </div>
             <div class="glass-nav__actions">
                 <a href="/usersite/login/" class="glass-nav__cta">Войти</a>
@@ -414,7 +436,7 @@
                 Деньги замораживаются до получения товара &mdash; никаких рисков.
             </p>
             <div class="hero-actions">
-                <a href="https://t.me/{{ bot_username }}" target="_blank" class="btn-primary">
+                <a href="/usersite/deal/create/" class="btn-primary">
                     <i class="fi fi-rr-rocket" style="margin-right:8px;"></i> Начать сделку
                 </a>
                 <a href="#how-it-works" class="btn-secondary">
@@ -479,12 +501,14 @@
 
     <!-- ===== FOOTER ===== -->
     <footer class="landing-footer">
-        <div class="landing-footer__logo">© 2026 Heyken Industry x Novix. Все права защищены.</div>
+        <div class="landing-footer__copy">© 2026 Heyken Industry x Novix. Все права защищены.</div>
         <div class="landing-footer__links">
             <a href="/usersite/terms/">Пользовательское соглашение</a>
             <a href="/usersite/privacy/">Политика конфиденциальности</a>
-            <a href="https://t.me/{{ bot_username }}" target="_blank">Telegram</a>
         </div>
+        <a href="https://t.me/{{ bot_username }}" target="_blank" class="landing-footer__social">
+            <i class="fi fi-rr-paper-plane" style="margin-right:6px;"></i>Telegram
+        </a>
     </footer>
 
     <script>
