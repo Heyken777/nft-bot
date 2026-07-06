@@ -133,7 +133,8 @@
         /* ── Glass Navigation ── */
         .glass-nav {
             position: sticky; top: 16px; z-index: 100;
-            margin: 0 16px;
+            max-width: 1200px; width: calc(100% - 36px);
+            margin: 0 auto;
             border-radius: 16px;
             background: rgba(255,255,255,0.70);
             backdrop-filter: blur(20px);
@@ -142,19 +143,17 @@
             box-shadow: 0 4px 24px rgba(0,0,0,0.05);
             transition: background 250ms var(--ease-out-expo), border-color 250ms var(--ease-out-expo);
         }
-        [data-theme="dark"] .glass-nav {
-            background: rgba(26,29,35,0.70);
-            border-color: rgba(255,255,255,0.06);
-        }
         .glass-nav__inner {
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 20px;
         }
         .glass-nav__logo {
             font-size: 1.1rem; font-weight: 800; letter-spacing: 1px;
-            color: var(--text-primary); text-decoration: none;
+            color: rgba(45,42,38,0.5); text-decoration: none;
         }
-        .glass-nav__logo span { color: var(--accent); }
+        .glass-nav__logo .logo-h { color: #2563EB; }
+        .glass-nav__logo .logo-x { color: rgba(45,42,38,0.3); }
+        .glass-nav__logo .logo-n { color: #6D28D9; }
 
         .glass-nav__links { display: flex; align-items: center; gap: 24px; }
         .glass-nav__links a {
@@ -163,6 +162,13 @@
             transition: color var(--transition);
         }
         .glass-nav__links a:hover { color: var(--accent); }
+        .glass-nav__links a.active {
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(4px);
+            border-radius: 8px;
+            padding: 4px 12px;
+            color: var(--text-primary);
+        }
 
         .glass-nav__actions { display: flex; align-items: center; gap: 10px; }
 
@@ -175,7 +181,7 @@
         .glass-nav__cta:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(204,120,92,0.3); }
 
         .glass-nav__burger {
-            display: none; background: none; border: none; cursor: pointer;
+            display: flex; background: none; border: none; cursor: pointer;
             padding: 6px; flex-direction: column; gap: 5px;
         }
         .glass-nav__burger span {
@@ -232,6 +238,12 @@
         }
         .slide-panel__nav a:hover {
             background: var(--accent-soft); color: var(--accent);
+        }
+        .slide-panel__nav a.active {
+            border-left: 3px solid var(--accent);
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-weight: 600;
         }
         .slide-panel__nav hr {
             border: none; border-top: 1px solid var(--border-color);
@@ -698,9 +710,9 @@
 <body>
     <header class="glass-nav">
         <div class="glass-nav__inner">
-            <a href="/usersite/" class="glass-nav__logo">H<span>eyken</span></a>
+            <a href="/" class="glass-nav__logo"><span class="logo-h">H</span>eyken <span class="logo-x">x</span> <span class="logo-n">N</span>ovix</a>
             <div class="glass-nav__links">
-                <a href="/usersite/dashboard/" class="glass-nav__link" data-page="dashboard">Главная</a>
+                <a href="/" class="glass-nav__link" data-page="dashboard">Главная</a>
                 <a href="/usersite/profile/" class="glass-nav__link" data-page="profile">Профиль</a>
                 <a href="/usersite/partnership/my/" class="glass-nav__link" data-page="partnership">Сотрудничество</a>
                 <a href="/usersite/tickets/" class="glass-nav__link" data-page="tickets">Поддержка</a>
@@ -721,7 +733,7 @@
             <button class="slide-panel__close">&times;</button>
         </div>
         <nav class="slide-panel__nav">
-            <a href="/usersite/dashboard/" class="slide-link" data-page="dashboard"><i class="fi fi-rr-home"></i> Главная</a>
+            <a href="/" class="slide-link" data-page="dashboard"><i class="fi fi-rr-home"></i> Главная</a>
             <a href="/usersite/profile/" class="slide-link" data-page="profile"><i class="fi fi-rr-user"></i> Профиль</a>
             <a href="/usersite/top/" class="slide-link" data-page="top"><i class="fi fi-rr-trophy"></i> Топ</a>
             <a href="/usersite/transactions/" class="slide-link" data-page="transactions"><i class="fi fi-rr-exchange"></i> Операции</a>
@@ -763,6 +775,22 @@
     <script>
         (function () {
             'use strict';
+
+            /* ── Active nav link ── */
+            (function(){
+                var path = window.location.pathname;
+                var links = document.querySelectorAll('.glass-nav__link, .slide-link');
+                for (var i = 0; i < links.length; i++) {
+                    var href = links[i].getAttribute('href');
+                    if (href === '/') {
+                        if (path === '/' || path === '/usersite/' || path === '/usersite') {
+                            links[i].classList.add('active');
+                        }
+                    } else if (href && path.indexOf(href) === 0) {
+                        links[i].classList.add('active');
+                    }
+                }
+            })();
 
             /* ── Theme toggle ── */
             var toggle = document.querySelector('.theme-toggle');

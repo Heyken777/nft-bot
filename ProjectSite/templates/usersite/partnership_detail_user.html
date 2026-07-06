@@ -38,9 +38,6 @@
     .chat-input:focus { outline: none; border-color: var(--accent); }
     .chat-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; flex-wrap: wrap; gap: 12px; }
 
-    .btn-sm { padding: 8px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; border: none; font-family: var(--font-sans); }
-    .btn-primary { background: var(--accent); color: white; }
-    .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
     .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); transition: var(--transition-color), transform var(--transition-long); will-change: transform; }
     .btn-outline:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-2px) scale(1.01); }
 </style>
@@ -97,7 +94,7 @@
                     <div class="text-muted small">
                         <i class="fas fa-info-circle"></i> Enter — отправить, Shift+Enter — новая строка
                     </div>
-                    <button class="btn-sm btn-primary" id="sendReplyBtn" onclick="sendReply()">Отправить</button>
+                    <button class="btn btn-primary" id="sendReplyBtn" onclick="sendReply()">Отправить</button>
                 </div>
             </div>
             {% elif partnership.status == 'approved' %}

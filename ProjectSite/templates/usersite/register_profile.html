@@ -166,7 +166,7 @@ async function submitRegistration() {
         try { data = JSON.parse(text); } catch(e) { data = null; }
         if (data && data.success) {
             showToast('<i class="fi fi-rr-check"></i> Данные сохранены! Перенаправление...');
-            setTimeout(function() { window.location.href = '/usersite/dashboard/'; }, 1000);
+            setTimeout(function() { window.location.href = '/usersite/profile/'; }, 1000);
         } else {
             showToast('Ошибка: ' + ((data && data.error) || text || 'Неизвестная ошибка'), 'error');
             btn.disabled = false;

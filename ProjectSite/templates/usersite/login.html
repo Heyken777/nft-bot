@@ -153,7 +153,7 @@ async function localLogin() {
         });
         const data = await res.json();
         if (data.success) {
-            window.location.href = '/usersite/dashboard/';
+            window.location.href = '/usersite/profile/';
         } else {
             errorEl.textContent = data.error || 'Неверный логин или пароль';
             errorEl.style.display = 'block';

@@ -85,9 +85,29 @@ def get_or_create_user(telegram_id, username=None):
 
 def landing_view(request):
     bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
+    top_sellers = []
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT u.user_id, u.username,
+                   COALESCE(AVG(r.rating), 0) as avg_rating,
+                   (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') as completed_deals
+            FROM users u
+            LEFT JOIN reviews r ON r.reviewed_id = u.user_id
+            WHERE (SELECT COUNT(*) FROM deals WHERE seller = u.user_id AND status = 'completed') > 0
+            GROUP BY u.user_id
+            ORDER BY avg_rating DESC, completed_deals DESC
+            LIMIT 10
+        """)
+        top_sellers = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка landing top_sellers: {e}")
     return render(request, 'usersite/landing.html', {
         'bot_username': bot_username,
         'bot_link': f"https://t.me/{bot_username}",
+        'top_sellers': top_sellers,
     })
 
 def user_login_view(request):
@@ -118,7 +138,7 @@ def telegram_auth_view(request):
             request.session['role'] = 'owner'
             request.session.modified = True
             request.session.save()
-            return redirect('/usersite/dashboard/')
+            return redirect('/usersite/profile/')
 
     if code and code.isdigit() and len(code) == 6:
         conn = get_db()
@@ -145,7 +165,7 @@ def telegram_auth_view(request):
             profile_complete = user.get('profile_setup_complete', 0)
             if not profile_complete:
                 return redirect('/usersite/register/')
-            return redirect('/usersite/dashboard/')
+            return redirect('/usersite/profile/')
         conn.close()
 
     return redirect('/usersite/login/')
@@ -163,7 +183,7 @@ def register_profile_view(request):
     row = cur.fetchone()
     conn.close()
     if row and row[0]:
-        return redirect('/usersite/dashboard/')
+        return redirect('/usersite/profile/')
     return render(request, 'usersite/register_profile.html', {
         'telegram_id': uid,
         'username': username,
@@ -426,6 +446,8 @@ def profile_view(request):
 
     user_id = request.session.get('user_id')
     user = None; deals = []; referrals = []; reviews = []; avg_rating = 0
+    notifications = []; unread_notifications = 0
+    purchases = 0; sales = 0; active_deals = 0; tickets_count = 0
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -440,6 +462,15 @@ def profile_view(request):
         cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 20", (user_id, user_id))
         deals = [dict(d) for d in cur.fetchall()]
 
+        cur.execute("SELECT COUNT(*) FROM deals WHERE buyer=? AND status='completed'", (user_id,))
+        purchases = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM deals WHERE seller=? AND status='completed'", (user_id,))
+        sales = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM deals WHERE (buyer=? OR seller=?) AND status='awaiting'", (user_id, user_id))
+        active_deals = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM support_tickets WHERE user_id=?", (user_id,))
+        tickets_count = cur.fetchone()[0] or 0
+
         cur.execute("SELECT * FROM users WHERE referred_by=?", (user_id,))
         referrals = [dict(r) for r in cur.fetchall()]
 
@@ -448,6 +479,14 @@ def profile_view(request):
 
         cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (user_id,))
         avg_rating = cur.fetchone()[0] or 0
+
+        try:
+            cur.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (user_id,))
+            notifications = [dict(n) for n in cur.fetchall()]
+            cur.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0", (user_id,))
+            unread_notifications = cur.fetchone()[0] or 0
+        except Exception:
+            notifications = []; unread_notifications = 0
 
         conn.close()
     except Exception as e:
@@ -491,6 +530,9 @@ def profile_view(request):
         'tier_active': tier_active, 'days_left': days_left,
         'bot_username': bot_username, 'now': datetime.now(),
         'avatar_url': avatar_url,
+        'notifications': notifications, 'unread_notifications': unread_notifications,
+        'purchases': purchases, 'sales': sales,
+        'active_deals': active_deals, 'tickets_count': tickets_count,
     })
 
 

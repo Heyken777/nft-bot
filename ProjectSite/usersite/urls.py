@@ -7,7 +7,7 @@ urlpatterns = [
     path('', views.landing_view, name='landing'),
     path('login/', views.user_login_view, name='user_login'),
     path('telegram-auth/', views.telegram_auth_view, name='telegram_auth'),
-    path('dashboard/', views.dashboard_view, name='user_dashboard'),
+    path('dashboard/', lambda req: redirect('/usersite/profile/')),
     path('profile/', views.profile_view, name='user_profile'),
     path('profile/<int:user_id>/', views.user_profile_redirect, name='user_profile_redirect'),
     path('profile/<str:username>/', views.public_profile_view, name='public_profile'),

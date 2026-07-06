@@ -13,11 +13,11 @@ handler404 = 'novix_admin.views.custom_404'
 handler500 = 'novix_admin.views.custom_500'
 
 urlpatterns = [
-    # Ручной /login/ → редирект на главную админки
-    path('login/', lambda request: redirect('/')),
+    # Админ-панель — логин
+    path('login/', views.login_view, name='login'),
 
-    # Админ-панель
-    path('', views.login_view, name='login'),
+    # Root → пользовательский сайт
+    path('', lambda request: redirect('/usersite/')),
     path('logout/', views.logout_view, name='logout'),
     path('dashboard/', views.dashboard_view, name='dashboard'),
     path('users/', views.users_view, name='users'),

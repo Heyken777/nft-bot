@@ -92,10 +92,10 @@
             <h4><i class="fas fa-wallet"></i> Балансы</h4>
             <div class="balances-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px;">
                 {% for b in balances %}
-                <div class="balance-chip" style="background:rgba(0,255,200,0.06);border:1px solid rgba(0,255,200,0.12);border-radius:12px;padding:12px;text-align:center;">
-                    <div style="font-size:1.1rem;font-weight:700;color:#fff;">{% if b.amount < 0 %}0.00{% else %}{{ b.amount|floatformat:2 }}{% endif %}</div>
-                    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">{{ b.symbol }}</div>
-                    {% if b.currency != 'RUB' %}<div style="font-size:0.75rem;color:var(--accent);margin-top:2px;">≈ {% if b.rub_value < 0 %}0{% else %}{{ b.rub_value|floatformat:0 }}{% endif %} ₽</div>{% endif %}
+                <div class="balance-chip">
+                    <div class="balance-amount">{% if b.amount < 0 %}0.00{% else %}{{ b.amount|floatformat:2 }}{% endif %}</div>
+                    <div class="balance-currency">{{ b.symbol }}</div>
+                    {% if b.currency != 'RUB' %}<div class="balance-rub">≈ {% if b.rub_value < 0 %}0{% else %}{{ b.rub_value|floatformat:0 }}{% endif %} ₽</div>{% endif %}
                 </div>
                 {% empty %}
                 <div class="text-muted" style="font-size:13px;">Нет активов</div>
@@ -166,6 +166,39 @@
             </div>
         </div>
 
+        <!-- Статистика -->
+        <div class="card mt-4" data-reveal>
+            <h4><i class="fi fi-rr-stats"></i> Статистика</h4>
+            <div class="stats-inline" style="display:flex;flex-wrap:wrap;gap:16px;margin-top:8px;">
+                <span style="font-size:0.85rem;">Покупок: <strong>{{ purchases }}</strong></span>
+                <span style="font-size:0.85rem;">Продаж: <strong>{{ sales }}</strong></span>
+                <span style="font-size:0.85rem;">Активных сделок: <strong>{{ active_deals }}</strong></span>
+                <span style="font-size:0.85rem;">Рефералов: <strong>{{ referrals|length }}</strong></span>
+                <span style="font-size:0.85rem;">Обращений: <strong>{{ tickets_count }}</strong></span>
+            </div>
+        </div>
+
+        <!-- Уведомления -->
+        <div class="card mt-4" data-reveal>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <h4 style="margin:0;"><i class="fi fi-rr-bell"></i> Уведомления</h4>
+                {% if unread_notifications > 0 %}
+                <button class="btn btn-primary" onclick="markRead()" style="padding:6px 16px;font-size:12px;"><i class="fi fi-rr-check"></i> Прочитать все</button>
+                {% endif %}
+            </div>
+            <div class="mt-2">
+                {% for n in notifications %}
+                <div class="notif-item" {% if not n.is_read %}style="background:var(--accent-soft);margin:0 -16px;padding:12px 16px;border-radius:8px;"{% else %}style="padding:10px 0;border-bottom:1px solid var(--border-color);"{% endif %}>
+                    <div class="notif-title" style="font-weight:600;font-size:14px;">{{ n.title }}</div>
+                    <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;line-height:1.5;">{{ n.message|truncatechars:80 }}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">{{ n.created_at|date:"d.m H:i" }}</div>
+                </div>
+                {% empty %}
+                <p class="text-muted" style="font-size:13px;padding:8px 0;">Нет уведомлений</p>
+                {% endfor %}
+            </div>
+        </div>
+
         <!-- Отзывы -->
         <div class="card mt-4" data-reveal>
             <h4><i class="fi fi-rr-star"></i> Отзывы <span class="text-muted small">(средний {{ avg_rating }})</span></h4>
@@ -219,6 +252,9 @@
 </div>
 
 <script>
+function markRead() {
+    fetch('/usersite/api/notifications/read/', {method:'POST', headers:{'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1]||''}}).then(() => location.reload());
+}
 function copyRefLink() {
     const input = document.getElementById('refLink');
     input.select();
@@ -250,7 +286,6 @@ function uploadAvatar(input) {
 </script>
 
 <style>
-.card { background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:24px; }
 .profile-avatar { width:100px; height:100px; background:linear-gradient(135deg,var(--accent),#D9A085); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:36px; font-weight:600; color:white; margin:0 auto; overflow:hidden; }
 .avatar-overlay { position:absolute; inset:0; background:rgba(0,0,0,0.4); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; opacity:0; transition:opacity 0.2s; }
 .profile-avatar:hover .avatar-overlay { opacity:1; }
