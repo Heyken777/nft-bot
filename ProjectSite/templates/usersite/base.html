@@ -37,29 +37,29 @@
     <style>
         :root {
             --font-sans: 'Muli', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            --bg-primary: #FAFAF8;
-            --bg-secondary: #FFFFFF;
-            --bg-tertiary: #F3F4F6;
-            --text-primary: #1A1D23;
-            --text-secondary: #6B7280;
-            --text-muted: #9CA3AF;
-            --border-color: #E5E7EB;
-            --border-light: #F0F0EE;
-            --accent: #2563EB;
-            --accent-hover: #1D4ED8;
-            --accent-soft: #EFF6FF;
+            --bg-primary: #FAF9F5;
+            --bg-secondary: #FDFCF9;
+            --bg-tertiary: #F3F0EA;
+            --text-primary: #2D2A26;
+            --text-secondary: #6B655C;
+            --text-muted: #9C958C;
+            --border-color: #E8E6DE;
+            --border-light: #F0EEE6;
+            --accent: #CC785C;
+            --accent-hover: #B8623F;
+            --accent-soft: #F4E4DA;
             --success: #16a34a;
             --warning: #f59e0b;
             --danger: #dc2626;
-            --glass-bg: rgba(255, 255, 255, 0.55);
-            --glass-border: rgba(255, 255, 255, 0.18);
+            --glass-bg: rgba(253, 252, 249, 0.65);
+            --glass-border: rgba(232, 230, 222, 0.25);
             --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
             --shadow-xs: 0 1px 2px rgba(0,0,0,0.03), 0 1px 4px rgba(0,0,0,0.02);
             --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03);
             --shadow-md: 0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
             --shadow-lg: 0 4px 8px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08);
             --shadow-xl: 0 8px 16px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.1);
-            --placeholder-color: #6B7280;
+            --placeholder-color: #9C958C;
             --radius-sm: 8px;
             --radius-md: 14px;
             --radius-lg: 20px;
@@ -78,9 +78,9 @@
             --text-secondary: #CED4DA;
             --text-muted: #B0B8C5;
             --border-color: #2D3139;
-            --placeholder-color: #CED4DA;
             --border-light: #262A31;
-            --accent-soft: rgba(59, 130, 246, 0.12);
+            --accent-soft: rgba(217, 139, 110, 0.15);
+            --placeholder-color: #CED4DA;
             --glass-bg: rgba(26, 29, 35, 0.6);
             --glass-border: rgba(255, 255, 255, 0.06);
             --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
@@ -181,7 +181,7 @@
         .theme-toggle__icon.active {
             background: var(--accent-soft);
             color: var(--accent);
-            box-shadow: 0 1px 4px rgba(37, 99, 235, 0.15);
+            box-shadow: 0 1px 4px rgba(204, 120, 92, 0.15);
         }
 
         .burger { display: none; cursor: pointer; padding: 4px; border-radius: 6px; }
@@ -308,28 +308,28 @@
         }
         .btn:hover {
             border-color: var(--accent); color: var(--accent);
-            box-shadow: 0 4px 16px rgba(37, 99, 235, 0.1);
+            box-shadow: 0 4px 16px rgba(204, 120, 92, 0.1);
             transform: translateY(-2px) scale(1.01);
         }
         .btn-primary {
-            background: linear-gradient(135deg, rgba(37, 99, 235, 0.85), rgba(29, 78, 216, 0.9));
+            background: linear-gradient(135deg, rgba(204, 120, 92, 0.9), rgba(184, 98, 63, 0.95));
             background-size: 200% 200%;
             background-position: 0% 50%;
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
-            border-color: rgba(37, 99, 235, 0.3);
-            color: #fff !important;
-            box-shadow: 0 4px 16px rgba(37, 99, 235, 0.15);
+            border-color: rgba(204, 120, 92, 0.3);
+            color: #FFF8F0 !important;
+            box-shadow: 0 4px 16px rgba(204, 120, 92, 0.2);
         }
         .btn-primary:hover {
             background-position: 100% 50%;
-            border-color: var(--accent); color: #fff !important;
-            box-shadow: 0 8px 28px rgba(37, 99, 235, 0.35);
+            border-color: var(--accent); color: #FFF8F0 !important;
+            box-shadow: 0 8px 28px rgba(204, 120, 92, 0.35);
             transform: translateY(-3px) scale(1.02);
         }
         .btn-primary:disabled, .btn-primary.disabled {
             opacity: 0.5; cursor: not-allowed; pointer-events: none;
-            background: linear-gradient(135deg, rgba(37, 99, 235, 0.4), rgba(29, 78, 216, 0.45));
+            background: linear-gradient(135deg, rgba(204, 120, 92, 0.4), rgba(184, 98, 63, 0.45));
         }
         .btn-danger { border-color: rgba(239,68,68,0.3); color: #ef4444; }
         .btn-danger:hover { background: rgba(239,68,68,0.12); border-color: #ef4444; color: #ef4444; }
@@ -365,7 +365,7 @@
             outline: none; transition: border-color 0.2s, box-shadow 0.2s; box-sizing: border-box;
         }
         .form-control:focus, select:focus, textarea:focus, input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus, input[type="number"]:focus {
-            border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+            border-color: var(--accent); box-shadow: 0 0 0 3px rgba(204, 120, 92, 0.12);
         }
         .radio-group { display:flex; gap:12px; flex-wrap:wrap; }
         .radio-label {
@@ -592,7 +592,7 @@
 
         .profile-avatar {
             width: 80px; height: 80px;
-            background: linear-gradient(135deg, var(--accent), #4a90e2);
+            background: linear-gradient(135deg, var(--accent), #D9A085);
             border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
             font-size: 28px; font-weight: 700; color: #fff;
