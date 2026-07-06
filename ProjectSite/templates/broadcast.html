@@ -11,7 +11,7 @@
         <div class="stat-card">
             <div class="mb-3">
                 <label class="text-cyan-300 small mb-2">Заголовок</label>
-                <input type="text" id="broadcastTitle" class="form-control" placeholder="Например: 🚀 Важная новость!">
+                <input type="text" id="broadcastTitle" class="form-control" placeholder="Например: Важная новость!">
             </div>
             <div class="mb-3">
                 <label class="text-cyan-300 small mb-2">Текст сообщения</label>
@@ -71,7 +71,7 @@ function previewBroadcast() {
     const container = document.getElementById('previewContainer');
     const content = document.getElementById('previewContent');
     if(!title && !message) { showToast('Введите заголовок или текст', 'error'); return; }
-    content.innerHTML = `<b>${title}</b><br><br>${message.replace(/\n/g,'<br>')}<br><br><span style="font-size:11px;opacity:0.5;">📱 Рассылка через Telegram бота</span>`;
+    content.innerHTML = `<b>${title}</b><br><br>${message.replace(/\n/g,'<br>')}<br><br><span style="font-size:11px;opacity:0.5;"><i class="fi fi-rr-mobile"></i> Рассылка через Telegram бота</span>`;
     container.style.display = 'block';
 }
 
@@ -89,13 +89,13 @@ async function sendBroadcast() {
     });
     const data = await res.json();
     if(data.success) {
-        showToast(`✅ Отправлено ${data.sent} пользователям${data.failed > 0 ? `, ${data.failed} ошибок` : ''}`);
+        showToast(`<i class="fi fi-rr-check"></i> Отправлено ${data.sent} пользователям${data.failed > 0 ? `, ${data.failed} ошибок` : ''}`);
         document.getElementById('broadcastTitle').value = '';
         document.getElementById('broadcastMessage').value = '';
         document.getElementById('broadcastPhoto').value = '';
         document.getElementById('previewContainer').style.display = 'none';
     } else {
-        showToast('❌ ' + (data.error || 'Ошибка отправки'), 'error');
+        showToast('<i class="fi fi-rr-cross"></i> ' + (data.error || 'Ошибка отправки'), 'error');
     }
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Отправить рассылку';

@@ -247,7 +247,7 @@
                     <div class="info-value">
                         <select id="statusSelect" class="ticket-status-select" onchange="saveStatus()">
                             <option value="open" {% if ticket.status == 'open' %}selected{% endif %}><span class="status-circle success"></span> Открыт</option>
-                            <option value="in_progress" {% if ticket.status == 'in_progress' %}selected{% endif %}>🟡 В работе</option>
+                            <option value="in_progress" {% if ticket.status == 'in_progress' %}selected{% endif %}>● В работе</option>
                             <option value="closed" {% if ticket.status == 'closed' %}selected{% endif %}><span class="status-circle danger"></span> Закрыт</option>
                         </select>
                     </div>

@@ -111,7 +111,7 @@
                     <select id="editRole" class="form-control">
                         <option value="Admin" {% if admin_data.role == 'Admin' %}selected{% endif %}><i class="fi fi-rr-circle-small"></i> Admin</option>
                         <option value="Moderator" {% if admin_data.role == 'Moderator' %}selected{% endif %}><span class="status-circle success"></span> Moderator</option>
-                        <option value="Support" {% if admin_data.role == 'Support' %}selected{% endif %}>🟡 Support</option>
+                        <option value="Support" {% if admin_data.role == 'Support' %}selected{% endif %}>● Support</option>
                         <option value="Analyst" {% if admin_data.role == 'Analyst' %}selected{% endif %}><span class="status-circle info"></span> Analyst</option>
                         <option value="CEO" {% if admin_data.role == 'CEO' %}selected{% endif %}><i class="fi fi-rr-crown"></i> CEO / Владелец</option>
                     </select>
@@ -267,9 +267,9 @@ function addRole() {
         currentRoles.push(role);
         updateRolesList();
         input.value = '';
-        showToast('✅ Роль добавлена');
+        showToast('<i class="fi fi-rr-check"></i> Роль добавлена');
     } else if(role && currentRoles.includes(role)) {
-        showToast('❌ Роль уже существует', 'error');
+        showToast('<i class="fi fi-rr-cross"></i> Роль уже существует', 'error');
     }
 }
 
@@ -283,7 +283,7 @@ function confirmRemoveRole() {
     if (pendingRemoveRole) {
         currentRoles = currentRoles.filter(r => r !== pendingRemoveRole);
         updateRolesList();
-        showToast('✅ Роль удалена');
+        showToast('<i class="fi fi-rr-check"></i> Роль удалена');
     }
     document.getElementById('removeRoleModal').style.display = 'none';
     pendingRemoveRole = null;
@@ -303,7 +303,7 @@ async function saveProfile() {
     const role = document.getElementById('editRole')?.value;
     
     if(!name) {
-        showToast('❌ Имя не может быть пустым', 'error');
+        showToast('<i class="fi fi-rr-cross"></i> Имя не может быть пустым', 'error');
         return;
     }
     
@@ -319,7 +319,7 @@ async function saveProfile() {
         const result = await res.json();
         
         if(result.success || result.status === 'success') {
-            showToast('✅ Профиль сохранён');
+            showToast('<i class="fi fi-rr-check"></i> Профиль сохранён');
             if(data.name !== VIEWING_USER && IS_SELF) {
                 localStorage.setItem('admin_username', data.name);
                 setTimeout(() => window.location.reload(), 1500);
@@ -327,10 +327,10 @@ async function saveProfile() {
                 setTimeout(() => window.location.reload(), 1500);
             }
         } else {
-            showToast('❌ Ошибка сохранения', 'error');
+            showToast('<i class="fi fi-rr-cross"></i> Ошибка сохранения', 'error');
         }
     } catch(e) {
-        showToast('❌ Ошибка сети: ' + e.message, 'error');
+        showToast('<i class="fi fi-rr-cross"></i> Ошибка сети: ' + e.message, 'error');
     }
 }
 
@@ -342,11 +342,11 @@ function openPasswordModal() {
 async function confirmPasswordChange() {
     const newPassword = document.getElementById('newPasswordInput').value;
     if (!newPassword) {
-        showToast('❌ Введите новый пароль', 'error');
+        showToast('<i class="fi fi-rr-cross"></i> Введите новый пароль', 'error');
         return;
     }
     if (newPassword.length < 20) {
-        showToast('❌ Пароль слишком короткий (минимум 20 символов)', 'error');
+        showToast('Пароль слишком короткий (минимум 20 символов)', 'error');
         return;
     }
     const res = await fetch('/api/profile/change-password/', {
@@ -355,11 +355,11 @@ async function confirmPasswordChange() {
         body: JSON.stringify({password: newPassword})
     });
     if(res.ok) {
-        showToast('✅ Пароль изменён');
+        showToast('Пароль изменён');
         document.getElementById('passwordDisplay').value = newPassword;
         document.getElementById('passwordModal').style.display = 'none';
     } else {
-        showToast('❌ Ошибка смены пароля', 'error');
+        showToast('Ошибка смены пароля', 'error');
     }
 }
 
@@ -379,12 +379,12 @@ if(IS_SELF) {
         if(!file) return;
         
         if(file.size > 5 * 1024 * 1024) {
-            showToast('❌ Файл слишком большой. Максимум 5MB', 'error');
+            showToast('<i class="fi fi-rr-cross"></i> Файл слишком большой. Максимум 5MB', 'error');
             return;
         }
         
         if(!file.type.startsWith('image/')) {
-            showToast('❌ Пожалуйста, выберите изображение', 'error');
+            showToast('<i class="fi fi-rr-cross"></i> Пожалуйста, выберите изображение', 'error');
             return;
         }
         
@@ -401,9 +401,9 @@ if(IS_SELF) {
             });
             const result = await res.json();
             if(result.success || result.status === 'success') {
-                showToast('✅ Аватар обновлён');
+                showToast('<i class="fi fi-rr-check"></i> Аватар обновлён');
             } else {
-                showToast('❌ Ошибка загрузки аватара', 'error');
+                showToast('<i class="fi fi-rr-cross"></i> Ошибка загрузки аватара', 'error');
                 avatarDiv.innerHTML = '{{ admin_data.username|slice:":1"|upper }}';
             }
         };

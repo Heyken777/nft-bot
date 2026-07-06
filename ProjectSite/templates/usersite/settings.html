@@ -105,10 +105,10 @@ function togglePassword() {
     var eye = document.getElementById('eyeToggle');
     if (inp.type === 'password') {
         inp.type = 'text';
-        eye.textContent = '🙈';
+        eye.textContent = '<i class="fi fi-rr-eye-crossed"></i>';
     } else {
         inp.type = 'password';
-        eye.textContent = '👁️';
+        eye.textContent = '<i class="fi fi-rs-eye"></i>';
     }
 }
 
@@ -126,7 +126,7 @@ function checkStrength(pass) {
     var set = function(id, ok) {
         var el = document.getElementById(id);
         el.className = 'check-item' + (ok ? ' done' : '');
-        el.querySelector('.icon').textContent = ok ? '✓' : '○';
+        el.querySelector('.icon').textContent = ok ? '<i class="fi fi-rr-check"></i>' : '○';
     };
     set('checkLength', len);
     set('checkLower', lower);
@@ -175,10 +175,10 @@ function checkMatch() {
     var hint = document.getElementById('matchHint');
     if (!p1 && !p2) { hint.textContent = ''; return; }
     if (p1 !== p2) {
-        hint.textContent = '⚠️ Пароли не совпадают';
+        hint.textContent = 'Пароли не совпадают';
         hint.style.color = 'var(--danger)';
     } else {
-        hint.textContent = '✅ Пароли совпадают';
+        hint.textContent = 'Пароли совпадают';
         hint.style.color = 'var(--success)';
     }
 }
@@ -212,7 +212,7 @@ async function saveSettings() {
         var data;
         try { data = JSON.parse(text); } catch(e) { data = null; }
         if (data && data.success) {
-            showToast('✅ Настройки сохранены');
+            showToast('<i class="fi fi-rr-check"></i> Настройки сохранены');
             setTimeout(function() { location.reload(); }, 1000);
         } else {
             showToast('Ошибка: ' + ((data && data.error) || text || 'Неизвестная ошибка'), 'error');
@@ -221,7 +221,7 @@ async function saveSettings() {
         showToast('Ошибка соединения: ' + e.message, 'error');
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '💾 Сохранить';
+        btn.innerHTML = '<i class="fi fi-rr-floppy"></i> Сохранить';
     }
 }
 </script>

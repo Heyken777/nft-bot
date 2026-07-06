@@ -99,7 +99,7 @@
                 <div class="info-label">Статус</div>
                 <div class="info-value" style="min-width: 0;">
                     <select id="statusSelect" class="status-select" onchange="updateStatus()">
-                        <option value="pending" {% if partnership.status == 'pending' %}selected{% endif %}>🟡 Ожидает ответа</option>
+                        <option value="pending" {% if partnership.status == 'pending' %}selected{% endif %}>● Ожидает ответа</option>
                         <option value="approved" {% if partnership.status == 'approved' %}selected{% endif %}><span class="status-circle success"></span> Одобрено</option>
                         <option value="rejected" {% if partnership.status == 'rejected' %}selected{% endif %}><span class="status-circle danger"></span> Отказано</option>
                     </select>

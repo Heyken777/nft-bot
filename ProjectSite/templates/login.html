@@ -208,8 +208,8 @@
         <div class="subtitle">✦ COSMIC ADMIN v3.0 ✦</div>
         
         <form onsubmit="login(event)">
-            <input type="text" id="username" class="neon-input" placeholder="🚀 Логин" required autocomplete="off">
-            <input type="password" id="password" class="neon-input" placeholder="🔑 UUID-ключ" required>
+            <input type="text" id="username" class="neon-input" placeholder="Логин" required autocomplete="off">
+            <input type="password" id="password" class="neon-input" placeholder="UUID-ключ" required>
             <button type="submit" class="neon-button">
                 <i class="fas fa-rocket me-2"></i> Войти в систему
             </button>
@@ -260,14 +260,14 @@
                 if (data.success) {
                     localStorage.setItem('admin_token', data.token);
                     localStorage.setItem('admin_username', data.username);
-                    showToast('🚀 Добро пожаловать в космос!', 'success');
+                    showToast('<i class="fi fi-rr-rocket"></i> Добро пожаловать в космос!', 'success');
                     setTimeout(() => window.location.href = '/dashboard/', 500);
                 } else {
                     document.getElementById('error').style.display = 'block';
                     document.getElementById('error').innerText = data.error || 'Неверный логин или пароль';
                 }
             } catch (err) {
-                showToast('❌ Ошибка соединения', 'error');
+                showToast('<i class="fi fi-rr-cross"></i> Ошибка соединения', 'error');
             }}
     </script>
 </body>

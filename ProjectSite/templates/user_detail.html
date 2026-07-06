@@ -168,7 +168,7 @@
             {% for t in tickets %}
             <div class="p-2 mb-2" style="background:rgba(0,0,0,0.3);border-radius:10px;">
                 <div class="small">{{ t.subject|truncatechars:30 }}</div>
-                <div class="small text-cyan-300/50">#{{ t.id }} · {% if t.status == 'open' %}<span class="status-circle success"></span> Открыт{% elif t.status == 'in_progress' %}🟡 В работе{% else %}<span class="status-circle danger"></span> Закрыт{% endif %}</div>
+                <div class="small text-cyan-300/50">#{{ t.id }} · {% if t.status == 'open' %}<span class="status-circle success"></span> Открыт{% elif t.status == 'in_progress' %}<span class="status-circle warning"></span> В работе{% else %}<span class="status-circle danger"></span> Закрыт{% endif %}</div>
             </div>
             {% empty %}<div class="text-cyan-300/50 text-center py-3">Нет тикетов</div>{% endfor %}
         </div>
@@ -365,7 +365,7 @@ let pendingReviewAction = null;
 function editReview(id) {
     const commentEl = document.getElementById('acomment-' + id);
     const currentComment = commentEl ? commentEl.textContent.replace(/^"/, '').replace(/"$/, '').trim() : '';
-    openModal('✏️ Изменить отзыв #' + id,
+    openModal('<i class="fi fi-rr-pencil"></i> Изменить отзыв #' + id,
         'Новый текст отзыва:\n<textarea id="modComment" class="form-control" rows="2" style="margin-top:8px;">' + currentComment + '</textarea>',
         'Сохранить',
         function() {
@@ -379,7 +379,7 @@ function editReview(id) {
 }
 
 function deleteReview(id) {
-    openModal('🗑️ Удалить отзыв #' + id,
+    openModal('<i class="fi fi-rr-trash-xmark"></i> Удалить отзыв #' + id,
         'Вы уверены, что хотите удалить этот отзыв?',
         'Удалить',
         function() {
@@ -429,9 +429,9 @@ async function sendMsg() {
         chatAddMessage('admin', text, ts);
         input.value = '';
         input.focus();
-        showToast('✅ Сообщение отправлено');
+        showToast('<i class="fi fi-rr-check"></i> Сообщение отправлено');
     } else {
-        showToast('❌ Ошибка: ' + (r.error || 'неизвестная'), 'error');
+        showToast('<i class="fi fi-rr-cross"></i> Ошибка: ' + (r.error || 'неизвестная'), 'error');
     }
 }
 
@@ -460,11 +460,11 @@ async function chatPoll() {
 function copyRefLink() {
     const el = document.getElementById('refLink');
     el.select(); el.setSelectionRange(0, 99999);
-    navigator.clipboard.writeText(el.value).then(() => showToast('✅ Ссылка скопирована'));
+    navigator.clipboard.writeText(el.value).then(() => showToast('<i class="fi fi-rr-check"></i> Ссылка скопирована'));
 }
 
 function copyText(t) {
-    navigator.clipboard.writeText(t).then(() => showToast('✅ Скопировано'));
+    navigator.clipboard.writeText(t).then(() => showToast('<i class="fi fi-rr-check"></i> Скопировано'));
 }
 
 // Init

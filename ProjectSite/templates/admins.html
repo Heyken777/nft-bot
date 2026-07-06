@@ -136,7 +136,7 @@ function generatePassword() {
     pd.style.display = 'block';
     pd.innerHTML = `<i class="fas fa-key me-2"></i> ${uuid}`;
     navigator.clipboard.writeText(uuid).then(() => {
-        showToast('✅ Пароль скопирован в буфер обмена', 'success');
+        showToast('<i class="fi fi-rr-check"></i> Пароль скопирован в буфер обмена', 'success');
     }).catch(() => {
         showToast('Пароль: ' + uuid, 'success');
     });
@@ -171,7 +171,7 @@ async function createAdmin() {
         });
         const data = await res.json();
         if (data.success) {
-            showToast(`✅ Администратор ${name} создан!`, 'success');
+            showToast(`<i class="fi fi-rr-check"></i> Администратор ${name} создан!`, 'success');
             closeAddAdminModal();
             location.reload();
         } else {

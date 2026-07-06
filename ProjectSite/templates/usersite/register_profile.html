@@ -111,7 +111,7 @@ function checkStrength(pass) {
     function set(id, ok) {
         var el = document.getElementById(id);
         el.className = 'check-item' + (ok ? ' done' : '');
-        el.querySelector('.icon-w').textContent = ok ? '✓' : '○';
+        el.querySelector('.icon-w').textContent = ok ? '<i class="fi fi-rr-check"></i>' : '○';
     }
     set('cLen', len); set('cLow', lower); set('cUp', upper); set('cDig', digit); set('cSpec', special);
 
@@ -132,7 +132,7 @@ function checkMatch() {
     var p2 = document.getElementById('profilePasswordConfirm').value;
     var hint = document.getElementById('matchHint');
     if (!p1 && !p2) { hint.textContent = ''; return; }
-    hint.textContent = p1 !== p2 ? '⚠️ Пароли не совпадают' : '✅ Пароли совпадают';
+    hint.textContent = p1 !== p2 ? 'Пароли не совпадают' : 'Пароли совпадают';
     hint.style.color = p1 !== p2 ? 'var(--danger)' : 'var(--success)';
 }
 
@@ -165,7 +165,7 @@ async function submitRegistration() {
         var data;
         try { data = JSON.parse(text); } catch(e) { data = null; }
         if (data && data.success) {
-            showToast('✅ Данные сохранены! Перенаправление...');
+            showToast('<i class="fi fi-rr-check"></i> Данные сохранены! Перенаправление...');
             setTimeout(function() { window.location.href = '/usersite/dashboard/'; }, 1000);
         } else {
             showToast('Ошибка: ' + ((data && data.error) || text || 'Неизвестная ошибка'), 'error');

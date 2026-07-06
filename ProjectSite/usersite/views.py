@@ -306,9 +306,9 @@ def _ensure_avatar_column():
 
 def _avatar_url(user_id):
     return f'/usersite/avatar/{user_id}/'
-CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': "so'm", 'TON': 'TON', 'USDT': 'USDT', 'STARS': '⭐'}
+CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': "so'm", 'TON': 'TON', 'USDT': 'USDT', 'STARS': '★'}
 EXCHANGE_RATES = {'RUB': 1, 'USD': 90, 'EUR': 95, 'BYN': 28, 'UAH': 2.3, 'KZT': 0.19, 'UZS': 0.0075, 'TON': 500, 'USDT': 90, 'STARS': 1.5}
-TIER_BADGES = {'free': '⬜ FREE', 'premium': '⭐ PREMIUM', 'platinum': '💎 PLATINUM', 'vip': '👑 VIP'}
+TIER_BADGES = {'free': 'FREE', 'premium': 'PREMIUM', 'platinum': 'PLATINUM', 'vip': 'VIP'}
 TIER_COMMISSION = {'free': 4, 'premium': 2, 'platinum': 1, 'vip': 0}
 
 @safe_db
@@ -680,8 +680,8 @@ def calc_tier_price_site(tier: str, days: int) -> float:
             return pm * m * (1 - disc / 100)
     return pm * (days / 30)
 
-TIER_BADGES_MAP = {'premium': '⭐ PREMIUM', 'platinum': '💎 PLATINUM', 'vip': '👑 VIP'}
-TIER_LABELS_SITE = {'premium': '⭐ Premium', 'platinum': '💎 Platinum', 'vip': '👑 VIP-статус'}
+TIER_BADGES_MAP = {'premium': 'PREMIUM', 'platinum': 'PLATINUM', 'vip': 'VIP'}
+TIER_LABELS_SITE = {'premium': 'Premium', 'platinum': 'Platinum', 'vip': 'VIP-статус'}
 
 @safe_db
 def premium_wizard_view(request):

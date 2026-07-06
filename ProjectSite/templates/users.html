@@ -29,7 +29,7 @@
                 </div>
                 <div class="text-end">
                     <div><span class="badge-active"><i class="fi fi-rr-coins"></i> {{ user.total_rub|floatformat:0 }} ₽</span></div>
-                    <div class="small mt-1">{{ user.tier_display|default:"<span class="status-circle muted"></span> FREE" }}</div>
+                    <div class="small mt-1">{{ user.tier_display|default:"FREE" }}</div>
                 </div>
             </div>
         </div>
@@ -86,8 +86,8 @@ document.getElementById('userSearch').addEventListener('input', function() {
                                     <div class="text-cyan-300/50 small">${u.created_at ? new Date(u.created_at).toLocaleDateString('ru-RU') : '—'}</div>
                                 </div>
                                 <div class="text-end">
-                                    <div><span class="badge-active">💰 ${Number(u.total_rub || 0).toFixed(0)} ₽</span></div>
-                                    <div class="small mt-1">${u.tier_display || '⬜ FREE'}</div>
+                                    <div><span class="badge-active"><i class="fi fi-rr-coins"></i> ${Number(u.total_rub || 0).toFixed(0)} ₽</span></div>
+                                    <div class="small mt-1">${u.tier_display || 'FREE'}</div>
                                 </div>
                             </div>
                         </div>

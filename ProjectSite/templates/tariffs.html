@@ -122,14 +122,14 @@ async function deleteTariff(id) {
 }
 
 async function syncWithBot() {
-    showToast('🔄 Синхронизация с ботом...');
+    showToast('<i class="fi fi-rr-refresh"></i> Синхронизация с ботом...');
     const res = await fetch('/api/tariffs/sync-with-bot/', {method: 'POST'});
     const data = await res.json();
     if(data.success) {
-        showToast(`✅ Синхронизировано ${data.count} тарифов`);
+        showToast(`<i class="fi fi-rr-check"></i> Синхронизировано ${data.count} тарифов`);
         location.reload();
     } else {
-        showToast('❌ Ошибка синхронизации', 'error');
+        showToast('<i class="fi fi-rr-cross"></i> Ошибка синхронизации', 'error');
     }
 }
 </script>

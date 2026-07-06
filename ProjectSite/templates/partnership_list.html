@@ -35,7 +35,7 @@
                 </td>
                 <td>
                     {% if p.status == 'pending' %}
-                    <span class="badge-progress">🟡 Ожидает ответа</span>
+                    <span class="badge-progress"><span class="status-circle warning"></span> Ожидает ответа</span>
                     {% elif p.status == 'approved' %}
                     <span class="badge-open"><span class="status-circle success"></span> Одобрено</span>
                     {% else %}

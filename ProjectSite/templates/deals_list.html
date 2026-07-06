@@ -121,7 +121,7 @@ function searchDeals() {
             const count = document.getElementById('dealCount');
             count.textContent = '(' + data.total + ')';
             if (!data.deals || data.deals.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-cyan-300 py-4">✨ Сделок нет ✨</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-cyan-300 py-4"><i class="fi fi-rr-star-shine"></i> Сделок нет <i class="fi fi-rr-star-shine"></i></td></tr>';
                 return;
             }
             tbody.innerHTML = data.deals.map(renderDealRow).join('');

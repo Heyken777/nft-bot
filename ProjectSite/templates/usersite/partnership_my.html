@@ -39,7 +39,7 @@
                 {% if p.status == 'pending' %}ticket-status--pending
                 {% elif p.status == 'approved' %}ticket-status--approved
                 {% else %}ticket-status--rejected{% endif %}">
-                {% if p.status == 'pending' %}🟡 Ожидает ответа
+                {% if p.status == 'pending' %}<span class="status-circle warning"></span> Ожидает ответа
                 {% elif p.status == 'approved' %}<span class="status-circle success"></span> Одобрено
                 {% else %}<span class="status-circle danger"></span> Отказано{% endif %}
             </span>

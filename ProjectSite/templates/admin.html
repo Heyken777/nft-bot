@@ -130,7 +130,7 @@
     const data = await api('/api/users');
     c.innerHTML = `<h1 class="mb-3">Пользователи</h1>
         <div class="mb-3">
-            <input type="text" class="form-control w-25 d-inline-block" id="searchInput" placeholder="🔍 Поиск по ID или имени">
+            <input type="text" class="form-control w-25 d-inline-block" id="searchInput" placeholder="Поиск по ID или имени">
             <button class="btn btn-primary ms-2" onclick="searchUsers()">Найти</button>
             <button class="btn btn-secondary ms-2" onclick="loadUsers()">Сброс</button>
         </div>
@@ -145,7 +145,7 @@
                             <td>${u.telegram_id}</td>
                             <td>@${u.username || 'нет'}</td>
                             <td>${u.balance} ₽</td>
-                            <td><span class="badge ${u.is_blocked ? 'badge-expired' : 'badge-active'}">${u.is_blocked ? '❌ Заблокирован' : '✅ Активен'}</span></td>
+                            <td><span class="badge ${u.is_blocked ? 'badge-expired' : 'badge-active'}">${u.is_blocked ? '<i class="fi fi-rr-cross"></i> Заблокирован' : '<i class="fi fi-rr-check"></i> Активен'}</span></td>
                             <td>
                                 <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); window.open('/admin/users/${u.telegram_id}', '_blank')">
                                     <i class="fas fa-eye"></i> Профиль
@@ -170,7 +170,7 @@
                     <td>${u.telegram_id}</td>
                     <td>@${u.username || 'нет'}</td>
                     <td>${u.balance} ₽</td>
-                    <td><span class="badge ${u.is_blocked ? 'badge-expired' : 'badge-active'}">${u.is_blocked ? '❌ Заблокирован' : '✅ Активен'}</span></td>
+                    <td><span class="badge ${u.is_blocked ? 'badge-expired' : 'badge-active'}">${u.is_blocked ? '<i class="fi fi-rr-cross"></i> Заблокирован' : '<i class="fi fi-rr-check"></i> Активен'}</span></td>
                     <td>
                         <button class="btn btn-primary btn-sm" onclick="window.open('/admin/users/${u.telegram_id}', '_blank')"><i class="fas fa-eye"></i> Профиль</button>
                         <button class="btn btn-primary btn-sm" onclick="changeBalance(${u.telegram_id})"><i class="fas fa-coins"></i> Баланс</button>
@@ -190,7 +190,7 @@
                 <td>${u.telegram_id}</td>
                 <td>@${u.username || 'нет'}</td>
                 <td>${u.balance} ₽</td>
-                <td><span class="badge ${u.is_blocked ? 'badge-expired' : 'badge-active'}">${u.is_blocked ? '❌ Заблокирован' : '✅ Активен'}</span></td>
+                <td><span class="badge ${u.is_blocked ? 'badge-expired' : 'badge-active'}">${u.is_blocked ? '<i class="fi fi-rr-cross"></i> Заблокирован' : '<i class="fi fi-rr-check"></i> Активен'}</span></td>
                 <td>
                     <button class="btn btn-primary btn-sm" onclick="window.open('/admin/users/${u.telegram_id}', '_blank')"><i class="fas fa-eye"></i> Профиль</button>
                     <button class="btn btn-primary btn-sm" onclick="changeBalance(${u.telegram_id})"><i class="fas fa-coins"></i> Баланс</button>
