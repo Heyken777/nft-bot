@@ -23,8 +23,13 @@
                 <hr style="border-color:var(--border-color);margin:12px 0;">
                 <div class="mt-3">
                     <div class="text-muted small mb-2">🔗 Ссылка для покупателя:</div>
-                    <div class="p-2" style="background:var(--bg-primary);border-radius:var(--radius-sm);font-size:12px;word-break:break-all;font-family:monospace;border:1px solid var(--border-color);">
-                        {{ tg_link }}
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="flex-fill p-2" style="background:var(--bg-primary);border-radius:var(--radius-sm);font-size:12px;word-break:break-all;font-family:monospace;border:1px solid var(--border-color);color:var(--text-primary);">
+                            {{ tg_link }}
+                        </div>
+                        <button onclick="navigator.clipboard.writeText('{{ tg_link }}').then(()=>{this.innerText='✅'}).catch(()=>{this.innerText='❌'})" class="btn btn-sm" style="flex-shrink:0;white-space:nowrap;" title="Копировать ссылку">
+                            📋
+                        </button>
                     </div>
                 </div>
             </div>
