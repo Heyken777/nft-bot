@@ -4,7 +4,7 @@ from . import views
 from news import views as news_views
 
 urlpatterns = [
-    path('', lambda request: redirect('/usersite/login/')),
+    path('', views.landing_view, name='landing'),
     path('login/', views.user_login_view, name='user_login'),
     path('telegram-auth/', views.telegram_auth_view, name='telegram_auth'),
     path('dashboard/', views.dashboard_view, name='user_dashboard'),

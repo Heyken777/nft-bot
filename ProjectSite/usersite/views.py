@@ -83,6 +83,13 @@ def get_or_create_user(telegram_id, username=None):
     return u
 
 
+def landing_view(request):
+    bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
+    return render(request, 'usersite/landing.html', {
+        'bot_username': bot_username,
+        'bot_link': f"https://t.me/{bot_username}",
+    })
+
 def user_login_view(request):
     bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
     return render(request, 'usersite/login.html', {

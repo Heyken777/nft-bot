@@ -130,50 +130,126 @@
         .status-circle.muted { background:#9CA3AF; }
         .fi { vertical-align:middle; margin-top:-2px; }
 
-        .header {
-            position: sticky; top: 0; z-index: 100;
-            background: var(--glass-bg);
-            backdrop-filter: blur(var(--header-blur));
-            -webkit-backdrop-filter: blur(var(--header-blur));
-            border-bottom: 1px solid var(--border-color);
-            padding: 12px 0;
-            transition: var(--transition-color);
+        /* ── Glass Navigation ── */
+        .glass-nav {
+            position: sticky; top: 16px; z-index: 100;
+            margin: 0 16px;
+            border-radius: 16px;
+            background: rgba(255,255,255,0.70);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(232,230,222,0.25);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.05);
+            transition: background 250ms var(--ease-out-expo), border-color 250ms var(--ease-out-expo);
         }
+        [data-theme="dark"] .glass-nav {
+            background: rgba(26,29,35,0.70);
+            border-color: rgba(255,255,255,0.06);
+        }
+        .glass-nav__inner {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 20px;
+        }
+        .glass-nav__logo {
+            font-size: 1.1rem; font-weight: 800; letter-spacing: 1px;
+            color: var(--text-primary); text-decoration: none;
+        }
+        .glass-nav__logo span { color: var(--accent); }
 
-        .logo {
-            font-size: 20px; font-weight: 800; letter-spacing: 2px;
-            color: var(--text-primary) !important;
-            text-decoration: none;
+        .glass-nav__links { display: flex; align-items: center; gap: 24px; }
+        .glass-nav__links a {
+            color: var(--text-secondary); font-size: 0.85rem; font-weight: 500;
+            text-decoration: none; padding: 4px 0;
             transition: color var(--transition);
         }
-        .logo:hover { color: var(--accent) !important; }
+        .glass-nav__links a:hover { color: var(--accent); }
 
-        .nav-menu__link {
-            color: var(--text-secondary) !important;
-            font-size: 14px; font-weight: 500;
-            padding: 6px 0;
-            position: relative;
-            text-decoration: none;
-            transition: color var(--transition);
+        .glass-nav__actions { display: flex; align-items: center; gap: 10px; }
+
+        .glass-nav__cta {
+            background: var(--accent); color: #fff;
+            padding: 7px 20px; border-radius: 999px;
+            font-size: 0.85rem; font-weight: 600; text-decoration: none;
+            transition: transform var(--transition), box-shadow var(--transition);
         }
-        .nav-menu__link:hover { color: var(--accent) !important; }
-        .nav-menu__link.active { color: var(--accent) !important; }
-        .nav-menu__link::after {
-            content: '';
-            position: absolute; bottom: 0; left: 0;
-            width: 0; height: 2px;
-            background: var(--accent);
-            transition: width 400ms var(--ease-out-expo);
+        .glass-nav__cta:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(204,120,92,0.3); }
+
+        .glass-nav__burger {
+            display: none; background: none; border: none; cursor: pointer;
+            padding: 6px; flex-direction: column; gap: 5px;
         }
-        .nav-menu__link:hover::after,
-        .nav-menu__link.active::after { width: 100%; }
+        .glass-nav__burger span {
+            display: block; width: 20px; height: 2px;
+            background: var(--text-primary); border-radius: 2px;
+            transition: transform 350ms var(--ease-out-expo), opacity 250ms var(--ease-out-expo);
+        }
+        .glass-nav__burger.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+        .glass-nav__burger.active span:nth-child(2) { opacity: 0; }
+        .glass-nav__burger.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+        /* ── Slide Panel ── */
+        .panel-overlay {
+            position: fixed; inset: 0; z-index: 199;
+            background: rgba(0,0,0,0.25);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            opacity: 0; pointer-events: none;
+            transition: opacity 350ms var(--ease-out-expo);
+        }
+        .panel-overlay.active { opacity: 1; pointer-events: all; }
+
+        .slide-panel {
+            position: fixed; top: 0; right: -340px;
+            width: 320px; height: 100%; z-index: 200;
+            background: var(--bg-primary);
+            padding: 28px 24px;
+            transition: right 400ms var(--ease-out-expo);
+            box-shadow: -8px 0 40px rgba(0,0,0,0.08);
+            display: flex; flex-direction: column;
+        }
+        .slide-panel.open { right: 0; }
+        .slide-panel__header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 28px;
+        }
+        .slide-panel__title {
+            font-weight: 700; font-size: 1.05rem; color: var(--text-primary);
+        }
+        .slide-panel__close {
+            background: none; border: none; font-size: 1.6rem;
+            color: var(--text-muted); cursor: pointer;
+            padding: 0 4px; transition: color var(--transition);
+        }
+        .slide-panel__close:hover { color: var(--text-primary); }
+
+        .slide-panel__nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+        .slide-panel__nav a {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 14px; border-radius: 10px;
+            color: var(--text-secondary); text-decoration: none;
+            font-size: 0.9rem; font-weight: 500;
+            transition: background var(--transition), color var(--transition);
+        }
+        .slide-panel__nav a:hover {
+            background: var(--accent-soft); color: var(--accent);
+        }
+        .slide-panel__nav hr {
+            border: none; border-top: 1px solid var(--border-color);
+            margin: 12px 0;
+        }
+
+        .slide-panel__theme {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 14px; margin-top: auto;
+        }
+        .slide-panel__theme span { font-size: 0.9rem; color: var(--text-secondary); font-weight: 500; }
 
         .theme-toggle {
             display: flex; align-items: center; gap: 6px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
             border-radius: 22px; padding: 5px;
-            cursor: pointer; margin-left: 8px;
+            cursor: pointer;
             transition: var(--transition-color), box-shadow var(--transition);
         }
         .theme-toggle:hover {
@@ -192,37 +268,9 @@
             box-shadow: 0 1px 4px rgba(204, 120, 92, 0.15);
         }
 
-        .burger { display: none; cursor: pointer; padding: 4px; border-radius: 6px; }
-        .burger:hover { background: var(--bg-tertiary); }
-        .burger span {
-            display: block; width: 22px; height: 2px;
-            background: var(--text-primary); margin: 5px 0;
-            border-radius: 2px;
-            transition: transform 350ms var(--ease-out-expo), opacity 250ms var(--ease-out-expo), background-color 250ms var(--ease-out-expo);
-            transform-origin: center;
-        }
-        .burger.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-        .burger.active span:nth-child(2) { opacity: 0; }
-        .burger.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-
-        .nav-overlay {
-            position: fixed; top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(0,0,0,0.25);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-            z-index: 98;
-            opacity: 0; pointer-events: none;
-            transition: opacity 350ms var(--ease-out-expo);
-        }
-        .nav-overlay.active { opacity: 1; pointer-events: all; }
-
         @media (max-width: 820px) {
-            .nav-menu {
-                position: fixed; top: 58px; left: -100%;
-                width: 100%; height: calc(100vh - 58px);
-                background: var(--bg-primary);
-                flex-direction: column; padding: 32px 28px;
+            .glass-nav__links { display: none; }
+            .glass-nav__burger { display: flex; }
                 gap: 4px; overflow-y: auto;
                 transition: left 400ms var(--ease-out-expo);
                 border-top: 1px solid var(--border-color); z-index: 99;
@@ -650,36 +698,50 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <header class="header">
-        <div class="nav-overlay"></div>
-        <div class="container">
-            <nav class="nav d-flex justify-content-between align-items-center">
-                <a href="/usersite/dashboard/" class="logo d-flex align-items-center gap-2">
-                    <i class="fas fa-shield-haltered"></i> Heyken Industry
-                </a>
-                <div class="burger">
+    <header class="glass-nav">
+        <div class="glass-nav__inner">
+            <a href="/usersite/" class="glass-nav__logo">H<span>eyken</span></a>
+            <div class="glass-nav__links">
+                <a href="/usersite/dashboard/" class="glass-nav__link" data-page="dashboard">Главная</a>
+                <a href="/usersite/profile/" class="glass-nav__link" data-page="profile">Профиль</a>
+                <a href="/usersite/partnership/my/" class="glass-nav__link" data-page="partnership">Сотрудничество</a>
+                <a href="/usersite/tickets/" class="glass-nav__link" data-page="tickets">Поддержка</a>
+            </div>
+            <div class="glass-nav__actions">
+                <a href="/usersite/login/" class="glass-nav__cta">Войти</a>
+                <button class="glass-nav__burger" aria-label="Меню">
                     <span></span><span></span><span></span>
-                </div>
-                <ul class="nav-menu d-flex gap-4 list-unstyled align-items-center mb-0">
-                    <li><a href="/usersite/dashboard/" class="nav-menu__link" data-page="dashboard">Главная</a></li>
-                    <li><a href="/usersite/profile/" class="nav-menu__link" data-page="profile">Профиль</a></li>
-                    <li><a href="/usersite/top/" class="nav-menu__link" data-page="top">Топ</a></li>
-                    <li><a href="/usersite/transactions/" class="nav-menu__link" data-page="transactions">Операции</a></li>
-                    <li><a href="/usersite/reviews/" class="nav-menu__link" data-page="reviews">Отзывы</a></li>
-                    <li><a href="/usersite/withdraw/" class="nav-menu__link" data-page="withdraw">Вывод</a></li>
-                    <li><a href="/usersite/partnership/my/" class="nav-menu__link{% if 'partnership' in request.path %} active{% endif %}">Сотрудничество</a></li>
-                    <li><a href="/usersite/tickets/" class="nav-menu__link" data-page="tickets">Поддержка</a></li>
-                    <li><a href="/usersite/logout/" class="nav-menu__link">Выйти</a></li>
-                    <li>
-                        <div class="theme-toggle" title="Сменить тему">
-                            <span class="theme-toggle__icon active"><i class="fas fa-sun"></i></span>
-                            <span class="theme-toggle__icon"><i class="fas fa-moon"></i></span>
-                        </div>
-                    </li>
-                </ul>
-            </nav>
+                </button>
+            </div>
         </div>
     </header>
+
+    <div class="panel-overlay"></div>
+    <aside class="slide-panel">
+        <div class="slide-panel__header">
+            <span class="slide-panel__title">Навигация</span>
+            <button class="slide-panel__close">&times;</button>
+        </div>
+        <nav class="slide-panel__nav">
+            <a href="/usersite/dashboard/" class="slide-link" data-page="dashboard"><i class="fi fi-rr-home"></i> Главная</a>
+            <a href="/usersite/profile/" class="slide-link" data-page="profile"><i class="fi fi-rr-user"></i> Профиль</a>
+            <a href="/usersite/top/" class="slide-link" data-page="top"><i class="fi fi-rr-trophy"></i> Топ</a>
+            <a href="/usersite/transactions/" class="slide-link" data-page="transactions"><i class="fi fi-rr-exchange"></i> Операции</a>
+            <a href="/usersite/reviews/" class="slide-link" data-page="reviews"><i class="fi fi-rr-star"></i> Отзывы</a>
+            <a href="/usersite/withdraw/" class="slide-link" data-page="withdraw"><i class="fi fi-rr-coins"></i> Вывод</a>
+            <a href="/usersite/partnership/my/" class="slide-link" data-page="partnership"><i class="fi fi-rr-handshake"></i> Сотрудничество</a>
+            <a href="/usersite/tickets/" class="slide-link" data-page="tickets"><i class="fi fi-rr-headset"></i> Поддержка</a>
+            <hr>
+            <a href="/usersite/logout/" class="slide-link"><i class="fi fi-rr-sign-out"></i> Выйти</a>
+            <div class="slide-panel__theme">
+                <span>Тема</span>
+                <div class="theme-toggle" title="Сменить тему">
+                    <span class="theme-toggle__icon active"><i class="fas fa-sun"></i></span>
+                    <span class="theme-toggle__icon"><i class="fas fa-moon"></i></span>
+                </div>
+            </div>
+        </nav>
+    </aside>
 
     <main class="main">
         <div class="container">
@@ -690,7 +752,7 @@
     <footer class="footer">
         <div class="container">
             <div class="footer-inner">
-                <span>© 2026 Heyken Industry</span>
+                <span>© 2026 Heyken Industry x Novix. Все права защищены.</span>
                 <div class="footer-links">
                     <a href="/usersite/terms/">Пользовательское соглашение</a>
                     <a href="/usersite/privacy/">Политика конфиденциальности</a>
@@ -733,54 +795,47 @@
                 });
             }
 
-            /* ── Burger menu ── */
-            var burger = document.querySelector('.burger');
-            var navMenu = document.querySelector('.nav-menu');
-            var navOverlay = document.querySelector('.nav-overlay');
+            /* ── Slide panel ── */
+            var burger = document.querySelector('.glass-nav__burger');
+            var panel = document.querySelector('.slide-panel');
+            var panelOverlay = document.querySelector('.panel-overlay');
+            var panelClose = document.querySelector('.slide-panel__close');
 
-            function closeMenu() {
+            function closePanel() {
                 if (burger) burger.classList.remove('active');
-                if (navMenu) navMenu.classList.remove('active');
-                if (navOverlay) navOverlay.classList.remove('active');
+                if (panel) panel.classList.remove('open');
+                if (panelOverlay) panelOverlay.classList.remove('active');
                 document.body.style.overflow = '';
             }
 
-            function openMenu() {
+            function openPanel() {
                 if (burger) burger.classList.add('active');
-                if (navMenu) navMenu.classList.add('active');
-                if (navOverlay) navOverlay.classList.add('active');
+                if (panel) panel.classList.add('open');
+                if (panelOverlay) panelOverlay.classList.add('active');
                 document.body.style.overflow = 'hidden';
             }
 
-            function toggleMenu() {
-                if (navMenu && navMenu.classList.contains('active')) {
-                    closeMenu();
+            function togglePanel() {
+                if (panel && panel.classList.contains('open')) {
+                    closePanel();
                 } else {
-                    openMenu();
+                    openPanel();
                 }
             }
 
             if (burger) {
-                burger.addEventListener('click', toggleMenu);
+                burger.addEventListener('click', togglePanel);
             }
-
-            if (navOverlay) {
-                navOverlay.addEventListener('click', closeMenu);
+            if (panelClose) {
+                panelClose.addEventListener('click', closePanel);
             }
-
-            if (navMenu) {
-                var navLinks = navMenu.querySelectorAll('.nav-menu__link');
-                for (var i = 0; i < navLinks.length; i++) {
-                    navLinks[i].addEventListener('click', closeMenu);
-                }
+            if (panelOverlay) {
+                panelOverlay.addEventListener('click', closePanel);
             }
-
-            /* ── Active nav link ── */
-            var currentPath = window.location.pathname.split('/')[2] || 'dashboard';
-            var links = document.querySelectorAll('.nav-menu__link[data-page]');
-            for (var j = 0; j < links.length; j++) {
-                if (links[j].dataset.page === currentPath) {
-                    links[j].classList.add('active');
+            if (panel) {
+                var slideLinks = panel.querySelectorAll('.slide-link');
+                for (var i = 0; i < slideLinks.length; i++) {
+                    slideLinks[i].addEventListener('click', closePanel);
                 }
             }
 
