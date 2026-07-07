@@ -1,4 +1,4 @@
-import json, os, sqlite3, hashlib, hmac, random, re, time
+import json, os, sqlite3, hashlib, hmac, random, re, time, requests
 from datetime import datetime, timedelta
 from functools import wraps
 from django.shortcuts import render, redirect
@@ -2063,3 +2063,156 @@ def api_notification_prefs(request):
     conn.commit()
     conn.close()
     return JsonResponse({'success': True})
+
+
+# ========== P2P TRANSFER ==========
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:9207")
+MIN_TRANSFER_AMOUNT = 1
+
+
+def send_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    balances = {}
+    for c in CURRENCIES:
+        cur.execute(f"SELECT balance_{c} FROM users WHERE user_id=?", (user_id,))
+        row = cur.fetchone()
+        bal = row[0] if row and row[0] else 0
+        balances[c] = round(bal, 4 if c in ('TON', 'USDT') else 2)
+    conn.close()
+    return render(request, 'usersite/send.html', {
+        'balances': balances,
+        'min_amount': MIN_TRANSFER_AMOUNT,
+    })
+
+
+@csrf_exempt
+def api_send_preview(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    username = data.get('username', '').strip().lstrip('@')
+    if not username:
+        return JsonResponse({'success': False, 'error': 'Укажите получателя'})
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, username FROM users WHERE username=?", (username,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Пользователь с таким username не найден'})
+    to_user_id = row[0]
+    to_username = row[1]
+    if to_user_id == user_id:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Нельзя перевести самому себе'})
+    currency = data.get('currency', '').upper()
+    if currency not in CURRENCIES:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Валюта не поддерживается'})
+    amount = data.get('amount', 0)
+    try:
+        amount = float(amount)
+        if amount < MIN_TRANSFER_AMOUNT or amount != amount:
+            raise ValueError
+    except (ValueError, TypeError):
+        conn.close()
+        return JsonResponse({'success': False, 'error': f'Минимальная сумма: {MIN_TRANSFER_AMOUNT}'})
+    cur.execute(f"SELECT balance_{currency} FROM users WHERE user_id=?", (user_id,))
+    bal_row = cur.fetchone()
+    balance = bal_row[0] if bal_row and bal_row[0] else 0
+    if balance < amount:
+        conn.close()
+        return JsonResponse({'success': False, 'error': f'Недостаточно средств. Баланс: {round(balance, 2)} {currency}'})
+    conn.close()
+    return JsonResponse({
+        'success': True,
+        'to_user_id': to_user_id,
+        'to_username': to_username,
+        'currency': currency,
+        'amount': round(amount, 4 if currency in ('TON', 'USDT') else 2),
+    })
+
+
+@csrf_exempt
+def api_send_confirm(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    username = data.get('username', '').strip().lstrip('@')
+    currency = data.get('currency', '').upper()
+    amount = data.get('amount', 0)
+    note = data.get('note', '').strip()[:200]
+    if not username or currency not in CURRENCIES:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Missing fields'})
+    try:
+        amount = float(amount)
+        if amount < MIN_TRANSFER_AMOUNT:
+            raise ValueError
+    except (ValueError, TypeError):
+        conn.close()
+        return JsonResponse({'success': False, 'error': f'Минимальная сумма: {MIN_TRANSFER_AMOUNT}'})
+    cur.execute("SELECT user_id, username FROM users WHERE username=?", (username,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Получатель не найден'})
+    to_user_id = row[0]
+    to_username = row[1]
+    if to_user_id == user_id:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Нельзя перевести самому себе'})
+    cur.execute(f"SELECT balance_{currency} FROM users WHERE user_id=?", (user_id,))
+    bal_row = cur.fetchone()
+    balance = bal_row[0] if bal_row and bal_row[0] else 0
+    if balance < amount:
+        conn.close()
+        return JsonResponse({'success': False, 'error': f'Недостаточно средств. Баланс: {round(balance, 2)} {currency}'})
+    cur.execute("SELECT username FROM users WHERE user_id=?", (user_id,))
+    from_row = cur.fetchone()
+    from_username = from_row[0] if from_row else str(user_id)
+    conn.close()
+    try:
+        resp = requests.post(
+            f"{BACKEND_URL}/api/internal/2fa-request",
+            json={
+                'user_id': user_id,
+                'action': 'p2p_transfer',
+                'payload': {
+                    'to_user_id': to_user_id,
+                    'to_username': to_username,
+                    'currency': currency,
+                    'amount': round(amount, 4 if currency in ('TON', 'USDT') else 2),
+                    'note': note,
+                    'from_username': from_username,
+                }
+            },
+            timeout=10
+        )
+        data = resp.json()
+        if data.get('success'):
+            return JsonResponse({'success': True, 'message': 'Код подтверждения отправлен в Telegram'})
+        else:
+            return JsonResponse({'success': False, 'error': data.get('error', 'Ошибка отправки подтверждения')})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Бот недоступен: {str(e)}'})

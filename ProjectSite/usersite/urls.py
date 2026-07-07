@@ -72,6 +72,11 @@ urlpatterns = [
     path('api/notifications/unread-count/', views.api_notifications_unread_count, name='api_notifications_unread'),
     path('api/notifications/prefs/', views.api_notification_prefs, name='api_notification_prefs'),
 
+    # P2P перевод между пользователями
+    path('send/', views.send_view, name='send'),
+    path('api/send/preview/', views.api_send_preview, name='api_send_preview'),
+    path('api/send/confirm/', views.api_send_confirm, name='api_send_confirm'),
+
     # P2P обмен валют
     path('exchange/', views.exchange_view, name='exchange'),
     path('api/exchange/create/', views.api_exchange_create_offer, name='api_exchange_create'),

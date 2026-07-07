@@ -5693,6 +5693,42 @@ async def confirm_transaction_cb(call: CallbackQuery):
             db.add_audit_log(user_id, "2fa_confirm_deal", target=f"deal_{deal_id}", nonce=nonce)
             await call.message.edit_text(f"✅ *Сделка #{display_2fa} подтверждена!*", parse_mode="Markdown")
             await notify_user(user_id, f"✅ Сделка #{display_2fa} завершена с 2FA-подтверждением.")
+        elif action == "p2p_transfer":
+            to_user_id = payload['to_user_id']
+            currency = payload['currency']
+            amount = Decimal(str(payload['amount']))
+            note = payload.get('note', '')
+            ref_id = f"p2p_{user_id}_{to_user_id}_{int(datetime.now().timestamp())}"
+            db.cursor.execute("SAVEPOINT sp_p2p")
+            try:
+                ok1 = db.update_balance(user_id, currency, -amount, operation_type='p2p_transfer_out', reference_id=ref_id, note=note)
+                ok2 = db.update_balance(to_user_id, currency, amount, operation_type='p2p_transfer_in', reference_id=ref_id, note=note)
+                if ok1 and ok2:
+                    db.cursor.execute("RELEASE sp_p2p")
+                    db.confirm_verification(nonce)
+                    db.add_audit_log(user_id, "p2p_transfer", target=str(to_user_id), details=f"{amount} {currency}", nonce=nonce)
+                    await call.message.edit_text(
+                        f"✅ *Перевод подтверждён!*\n"
+                        f"Отправлено: {amount} {currency}\n"
+                        f"Получателю: {payload.get('to_username', to_user_id)}\n"
+                        f"ID операции: {ref_id}",
+                        parse_mode="Markdown"
+                    )
+                    await notify_user(to_user_id, f"💸 *Получен перевод!*\n\n"
+                        f"От @{payload.get('from_username', user_id)}: {amount} {currency}\n"
+                        f"{'📝 ' + note if note else ''}")
+                    asyncio.create_task(notify_usersite(to_user_id, 'p2p_transfer', 'Перевод получен',
+                        f'Получено {amount} {currency} от @{payload.get("from_username", user_id)}',
+                        '/usersite/transactions/'))
+                else:
+                    db.cursor.execute("ROLLBACK TO sp_p2p")
+                    await call.answer("❌ Ошибка перевода — недостаточно средств", show_alert=True)
+                    return
+            except Exception as e:
+                db.cursor.execute("ROLLBACK TO sp_p2p")
+                logger.error(f"p2p_transfer error: {e}")
+                await call.answer("❌ Ошибка перевода", show_alert=True)
+                return
         else:
             await call.answer("❌ Неизвестный тип операции", show_alert=True)
             return
@@ -6690,7 +6726,7 @@ async def handle_2fa_request(request):
 
     action = data.get('action')
     payload_data = data.get('payload', {})
-    allowed_actions = ['withdraw', 'confirm_deal']
+    allowed_actions = ['withdraw', 'confirm_deal', 'p2p_transfer']
 
     if action not in allowed_actions:
         return JSONResponse(content={'error': 'Invalid action'}, status_code=400)
@@ -6709,6 +6745,39 @@ async def handle_2fa_request(request):
         reply_markup=markup
     )
     return JSONResponse(content={'success': True, 'nonce': nonce, 'message': 'Подтверждение отправлено в Telegram'})
+
+
+# ========== Internal 2FA Request (called by Django) ==========
+async def handle_internal_2fa_request(request):
+    """Создаёт 2FA-запрос без Mini App auth — для вызова из Django."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'error': 'Invalid JSON'}, status_code=400)
+    user_id = data.get('user_id')
+    action = data.get('action')
+    payload_data = data.get('payload', {})
+    allowed_actions = ['p2p_transfer']
+    if not user_id or action not in allowed_actions:
+        return JSONResponse(content={'error': 'Invalid action or missing user_id'}, status_code=400)
+    nonce = db.create_verification(user_id, action, json.dumps(payload_data))
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔒 Подтвердить перевод", callback_data=f"confirm_tx_{nonce}")]
+    ])
+    try:
+        await bot.send_message(
+            user_id,
+            f"🔐 *Требуется подтверждение перевода*\n\n"
+            f"Получатель: {payload_data.get('to_username', '?')}\n"
+            f"Сумма: {payload_data.get('amount', '?')} {payload_data.get('currency', '?')}\n"
+            f"{'Примечание: ' + payload_data['note'] if payload_data.get('note') else ''}\n\n"
+            f"Нажмите кнопку ниже, чтобы подтвердить.",
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+        return JSONResponse(content={'success': True, 'nonce': nonce})
+    except Exception as e:
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=400)
 
 
 # ========== Admin Login 2FA Code Sender ==========
@@ -6834,6 +6903,7 @@ fastapi_app.add_api_route("/api/confirm_receipt", handle_confirm_receipt, method
 fastapi_app.add_api_route("/api/2fa/request", handle_2fa_request, methods=["POST"])
 fastapi_app.add_api_route("/api/send_admin_login_code", handle_send_admin_login_code, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/notify", handle_internal_notify, methods=["POST"])
+fastapi_app.add_api_route("/api/internal/2fa-request", handle_internal_2fa_request, methods=["POST"])
 
 # WebSocket endpoint for real-time notifications
 async def ws_notify_user(user_id: int, message: dict):
