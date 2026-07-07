@@ -476,14 +476,26 @@ def profile_view(request):
 
         referral_earnings_rub = float(user_dict_raw.get('referral_earnings', 0) or 0) if user else 0
         referral_earnings_level2 = float(user_dict_raw.get('referral_earnings_level2', 0) or 0) if user else 0
-        cur.execute("SELECT COALESCE(SUM(reward_amount), 0) FROM referral_commission_log WHERE referrer_id=?", (user_id,))
-        referral_total_commission = cur.fetchone()[0] or 0
-        cur.execute("SELECT COALESCE(SUM(reward_amount), 0) FROM referral_deposit_log WHERE referrer_id=?", (user_id,))
-        referral_deposit_total = cur.fetchone()[0] or 0
-        cur.execute("SELECT COUNT(*) FROM referral_level2_log WHERE level1_id=?", (user_id,))
-        referral_level2_count = cur.fetchone()[0] or 0
-        cur.execute("SELECT COUNT(*) FROM referral_commission_log WHERE referrer_id=?", (user_id,))
-        referral_commission_count = cur.fetchone()[0] or 0
+        try:
+            cur.execute("SELECT COALESCE(SUM(reward_amount), 0) FROM referral_commission_log WHERE referrer_id=?", (user_id,))
+            referral_total_commission = cur.fetchone()[0] or 0
+        except Exception:
+            referral_total_commission = 0
+        try:
+            cur.execute("SELECT COALESCE(SUM(reward_amount), 0) FROM referral_deposit_log WHERE referrer_id=?", (user_id,))
+            referral_deposit_total = cur.fetchone()[0] or 0
+        except Exception:
+            referral_deposit_total = 0
+        try:
+            cur.execute("SELECT COUNT(*) FROM referral_level2_log WHERE level1_id=?", (user_id,))
+            referral_level2_count = cur.fetchone()[0] or 0
+        except Exception:
+            referral_level2_count = 0
+        try:
+            cur.execute("SELECT COUNT(*) FROM referral_commission_log WHERE referrer_id=?", (user_id,))
+            referral_commission_count = cur.fetchone()[0] or 0
+        except Exception:
+            referral_commission_count = 0
 
         cur.execute("SELECT r.*, d.item AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.id WHERE r.reviewed_id=? ORDER BY r.created_at DESC LIMIT 10", (user_id,))
         reviews = [dict(r) for r in cur.fetchall()]
@@ -1545,12 +1557,21 @@ def exchange_view(request):
     user_id = request.session.get('user_id')
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM exchange_offers WHERE status='active' ORDER BY created_at DESC LIMIT 50")
-    offers = [dict(r) for r in cur.fetchall()]
-    cur.execute("SELECT * FROM exchange_offers WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (user_id,))
-    my_offers = [dict(r) for r in cur.fetchall()]
-    cur.execute("SELECT * FROM exchange_deals WHERE buyer_id=? OR seller_id=? ORDER BY created_at DESC LIMIT 20", (user_id, user_id))
-    my_deals_ex = [dict(r) for r in cur.fetchall()]
+    try:
+        cur.execute("SELECT * FROM exchange_offers WHERE status='active' ORDER BY created_at DESC LIMIT 50")
+        offers = [dict(r) for r in cur.fetchall()]
+    except Exception:
+        offers = []
+    try:
+        cur.execute("SELECT * FROM exchange_offers WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (user_id,))
+        my_offers = [dict(r) for r in cur.fetchall()]
+    except Exception:
+        my_offers = []
+    try:
+        cur.execute("SELECT * FROM exchange_deals WHERE buyer_id=? OR seller_id=? ORDER BY created_at DESC LIMIT 20", (user_id, user_id))
+        my_deals_ex = [dict(r) for r in cur.fetchall()]
+    except Exception:
+        my_deals_ex = []
     conn.close()
     return render(request, 'usersite/exchange.html', {
         'offers': offers,
