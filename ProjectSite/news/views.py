@@ -163,15 +163,20 @@ def partnership_list_view(request):
     if not request.session.get('telegram_id'):
         return redirect('/')
     _log_page_view(request, 'Просмотр Заявок', 'Администратор открыл список заявок на сотрудничество')
+    status_filter = request.GET.get('status', '').strip()
     partnerships = []
     try:
-        partnerships = Partnership.objects.all().order_by('-created_at')
+        qs = Partnership.objects.all()
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        partnerships = qs.order_by('-created_at')
     except Exception as e:
         print(f"[partnership_list] Error: {e}")
     return render(request, 'partnership_list.html', {
         'active_page': 'partnership',
         'admin_name': _get_admin_name(request),
         'partnerships': partnerships,
+        'status_filter': status_filter,
     })
 
 def partnership_detail_view(request, partnership_id):

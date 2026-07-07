@@ -1972,7 +1972,14 @@ def ledger_view(request):
         cur = conn.cursor()
         cur.execute("SELECT * FROM balance_ledger ORDER BY id DESC LIMIT 200")
         rows = cur.fetchall()
+        ledger = [dict(r) for r in rows]
+    except Exception as e:
+        print(f"[ledger] Error: {e}")
+        ledger = []
     finally:
         conn.close()
-    ledger = [dict(r) for r in rows]
-    return render(request, 'ledger.html', {'ledger': ledger})
+    return render(request, 'ledger.html', {
+        'ledger': ledger,
+        'active_page': 'ledger',
+        'admin_name': get_admin_name(request),
+    })
