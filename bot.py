@@ -21,7 +21,7 @@ from id_generator import generate_deal_code
 from aiohttp import ClientTimeout
 import qrcode
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -805,6 +805,69 @@ class Database:
             )
         """)
 
+        # Таблица токенов восстановления пароля (email recovery)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token TEXT NOT NULL UNIQUE,
+                email TEXT NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Таблица обменных ордеров P2P
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS exchange_offers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                give_currency TEXT NOT NULL,
+                give_amount REAL NOT NULL,
+                receive_currency TEXT NOT NULL,
+                receive_amount REAL NOT NULL,
+                status TEXT DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Таблица сделок P2P обмена
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS exchange_deals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                offer_id INTEGER NOT NULL,
+                buyer_id INTEGER NOT NULL,
+                seller_id INTEGER NOT NULL,
+                give_currency TEXT NOT NULL,
+                give_amount REAL NOT NULL,
+                receive_currency TEXT NOT NULL,
+                receive_amount REAL NOT NULL,
+                commission REAL DEFAULT 0,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP
+            )
+        """)
+
+        # Таблица реферальных уровней (multi-level)
+        self.add_column_if_not_exists("users", "referral_level2_id", "INTEGER")
+        self.add_column_if_not_exists("users", "referral_earnings_level2", "REAL DEFAULT 0")
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS referral_level2_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                level1_id INTEGER,
+                level2_id INTEGER,
+                referred_user_id INTEGER,
+                deal_id INTEGER,
+                currency TEXT,
+                commission_amount REAL,
+                reward_amount REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         self.conn.commit()
         logger.info("База данных инициализирована")
 
@@ -1495,6 +1558,33 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?)
         """, (referrer_id, seller_id, deal_id, currency, commission_amount, reward))
         self.cursor.execute("UPDATE users SET referral_earnings = COALESCE(referral_earnings, 0) + ? WHERE user_id = ?", (reward, referrer_id))
+
+        # Multi-level: level 2 (referrer of referrer) gets 2% of commission
+        self.cursor.execute("SELECT referred_by FROM users WHERE user_id = ?", (referrer_id,))
+        row2 = self.cursor.fetchone()
+        level2_id = row2[0] if row2 else None
+        if level2_id and level2_id != referrer_id:
+            level2_reward = quantize_amount(commission_amount * 0.02)
+            if level2_reward > 0:
+                self.cursor.execute("""
+                    INSERT INTO referral_level2_log (level1_id, level2_id, referred_user_id, deal_id, currency, commission_amount, reward_amount)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (referrer_id, level2_id, seller_id, deal_id, currency, commission_amount, level2_reward))
+                self.cursor.execute("UPDATE users SET referral_earnings_level2 = COALESCE(referral_earnings_level2, 0) + ? WHERE user_id = ?", (level2_reward, level2_id))
+
+        # Auto-payout: if referral_earnings >= 100 RUB, auto-transfer to RUB balance
+        AUTO_PAYOUT_THRESHOLD = 100
+        self.cursor.execute("SELECT referral_earnings FROM users WHERE user_id = ?", (referrer_id,))
+        earnings_row = self.cursor.fetchone()
+        total_earnings = earnings_row[0] or 0
+        if total_earnings >= AUTO_PAYOUT_THRESHOLD:
+            self.cursor.execute("UPDATE users SET referral_earnings = 0 WHERE user_id = ?", (referrer_id,))
+            self.cursor.execute("UPDATE users SET balance_RUB = COALESCE(balance_RUB, 0) + ? WHERE user_id = ?", (total_earnings, referrer_id))
+            self.cursor.execute(
+                "INSERT INTO transactions (user_id, amount, currency, type, description) VALUES (?, ?, 'RUB', 'referral_payout', 'Автовыплата реферальных бонусов')",
+                (referrer_id, total_earnings)
+            )
+
         self.conn.commit()
         return {'referrer_id': referrer_id, 'reward': reward, 'currency': currency, 'commission_amount': commission_amount}
 
@@ -3447,6 +3537,10 @@ async def receive_cb(call: CallbackQuery):
         f"✅ *Сделка #{deal['display_id']} успешно завершена!*\n\nСредства переведены продавцу."
     )
 
+    # WebSocket real-time notification
+    asyncio.create_task(ws_notify_user(seller_id, {'type': 'notification', 'title': 'Сделка завершена', 'message': f'Получено {seller_amount} {currency}'}))
+    asyncio.create_task(ws_notify_user(call.from_user.id, {'type': 'notification', 'title': 'Сделка завершена', 'message': 'Средства переведены продавцу'}))
+
     if referral_bonus:
         await notify_user(
             referral_bonus['referrer_id'],
@@ -3454,6 +3548,7 @@ async def receive_cb(call: CallbackQuery):
             f"По сделке #{deal['display_id']} начислено {referral_bonus['reward']} RUB "
             f"(10% от сервисной комиссии)."
         )
+        asyncio.create_task(ws_notify_user(referral_bonus['referrer_id'], {'type': 'notification', 'title': 'Реферальный бонус', 'message': f'Начислено {referral_bonus["reward"]} RUB'}))
 
     # Предложение оценить партнёра после завершения сделки
     await send_rating_prompt(seller_id, did, deal["buyer"])
@@ -6097,11 +6192,16 @@ async def handle_confirm_receipt(request):
             f"✅ *Сделка #{deal['display_id']} успешно завершена!*\n\nСредства переведены продавцу."
         ))
 
+        # WebSocket notifications
+        asyncio.create_task(ws_notify_user(seller_id, {'type': 'notification', 'title': 'Сделка завершена', 'message': f'Получено {seller_amount} {currency}'}))
+        asyncio.create_task(ws_notify_user(user_id, {'type': 'notification', 'title': 'Сделка завершена', 'message': 'Средства переведены продавцу'}))
+
         if referral_bonus:
             asyncio.create_task(notify_user(
                 referral_bonus['referrer_id'],
                 f"👥 *Реферальный бонус*\n\nПо сделке #{deal['display_id']} начислено {referral_bonus['reward']} RUB (10% от сервисной комиссии)."
             ))
+            asyncio.create_task(ws_notify_user(referral_bonus['referrer_id'], {'type': 'notification', 'title': 'Реферальный бонус', 'message': f'Начислено {referral_bonus["reward"]} RUB'}))
 
         # Предложение оценки
         asyncio.create_task(send_rating_prompt(seller_id, did, user_id))
@@ -6296,6 +6396,11 @@ async def handle_2fa_request(request):
     return JSONResponse(content={'success': True, 'nonce': nonce, 'message': 'Подтверждение отправлено в Telegram'})
 
 
+# ========== WebSocket Connections (real-time notifications) ==========
+
+ws_connections: dict[int, list] = {}
+
+
 # ========== FASTAPI APP ==========
 
 @asynccontextmanager
@@ -6361,6 +6466,34 @@ fastapi_app.add_api_route("/api/pay_deal", handle_pay_deal, methods=["POST"])
 fastapi_app.add_api_route("/api/mark_sent", handle_mark_sent, methods=["POST"])
 fastapi_app.add_api_route("/api/confirm_receipt", handle_confirm_receipt, methods=["POST"])
 fastapi_app.add_api_route("/api/2fa/request", handle_2fa_request, methods=["POST"])
+
+# WebSocket endpoint for real-time notifications
+async def ws_notify_user(user_id: int, message: dict):
+    if user_id in ws_connections:
+        for ws in ws_connections[user_id][:]:
+            try:
+                await ws.send_json(message)
+            except:
+                ws_connections[user_id].remove(ws)
+
+@fastapi_app.websocket("/ws/{user_id}")
+async def websocket_endpoint(ws: WebSocket, user_id: int):
+    await ws.accept()
+    if user_id not in ws_connections:
+        ws_connections[user_id] = []
+    ws_connections[user_id].append(ws)
+    try:
+        while True:
+            data = await ws.receive_text()
+            if data == "ping":
+                await ws.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        if user_id in ws_connections and ws in ws_connections[user_id]:
+            ws_connections[user_id].remove(ws)
 
 frontend_dir = os.path.join(os.path.dirname(__file__), "frontend")
 if os.path.isdir(frontend_dir):

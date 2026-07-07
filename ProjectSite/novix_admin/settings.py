@@ -146,3 +146,15 @@ REFERRAL_PERCENT = int(os.getenv('REFERRAL_COMMISSION_SHARE', '10'))
 
 TELEGRAM_BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 TELEGRAM_BOT_USERNAME = os.getenv('BOT_USERNAME', 'NovixGift_Bot')
+
+# Email (восстановление пароля)
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@heyken.io')
+
+# WebSocket URL
+WS_URL = os.getenv('WS_URL', 'ws://93.115.101.179:9207/ws')

@@ -782,6 +782,7 @@
             <a href="/" class="slide-link" data-page="dashboard"><i class="fi fi-rr-home"></i> Главная</a>
             <a href="/usersite/profile/" class="slide-link" data-page="profile"><i class="fi fi-rr-user"></i> Профиль</a>
             <a href="/usersite/top/" class="slide-link" data-page="top"><i class="fi fi-rr-trophy"></i> Топ</a>
+            <a href="/usersite/exchange/" class="slide-link" data-page="exchange"><i class="fi fi-rr-refresh"></i> P2P Обмен</a>
             <a href="/usersite/transactions/" class="slide-link" data-page="transactions"><i class="fi fi-rr-exchange"></i> Операции</a>
             <a href="/usersite/reviews/" class="slide-link" data-page="reviews"><i class="fi fi-rr-star"></i> Отзывы</a>
             <a href="/usersite/withdraw/" class="slide-link" data-page="withdraw"><i class="fi fi-rr-coins"></i> Вывод</a>
@@ -967,5 +968,43 @@
     </script>
 
     {% block extra_js %}{% endblock %}
+
+    {% if request.session.user_id %}
+    <script>
+    (function() {
+        var uid = {{ request.session.user_id }};
+        var ws = null;
+        var reconnectTimer = null;
+
+        function connectWS() {
+            if (ws && ws.readyState === WebSocket.OPEN) return;
+            var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            var host = window.location.hostname === 'localhost' ? '93.115.101.179:9207' : (window.location.hostname + ':9207');
+            var url = proto + '//' + host + '/ws/' + uid;
+            try {
+                ws = new WebSocket(url);
+                ws.onopen = function() { if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } };
+                ws.onmessage = function(e) {
+                    try {
+                        var data = JSON.parse(e.data);
+                        if (data.type === 'notification') {
+                            if (window.showToast) showToast(data.title || data.message || 'Новое уведомление');
+                        }
+                    } catch(ex) {}
+                };
+                ws.onclose = function() {
+                    reconnectTimer = setTimeout(connectWS, 5000);
+                };
+                ws.onerror = function() {};
+            } catch(e) {}
+        }
+
+        connectWS();
+        setInterval(function() {
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send('ping');
+        }, 30000);
+    })();
+    </script>
+    {% endif %}
 </body>
 </html>

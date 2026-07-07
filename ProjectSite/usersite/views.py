@@ -474,6 +474,17 @@ def profile_view(request):
         cur.execute("SELECT * FROM users WHERE referred_by=?", (user_id,))
         referrals = [dict(r) for r in cur.fetchall()]
 
+        referral_earnings_rub = float(user_dict_raw.get('referral_earnings', 0) or 0) if user else 0
+        referral_earnings_level2 = float(user_dict_raw.get('referral_earnings_level2', 0) or 0) if user else 0
+        cur.execute("SELECT COALESCE(SUM(reward_amount), 0) FROM referral_commission_log WHERE referrer_id=?", (user_id,))
+        referral_total_commission = cur.fetchone()[0] or 0
+        cur.execute("SELECT COALESCE(SUM(reward_amount), 0) FROM referral_deposit_log WHERE referrer_id=?", (user_id,))
+        referral_deposit_total = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM referral_level2_log WHERE level1_id=?", (user_id,))
+        referral_level2_count = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM referral_commission_log WHERE referrer_id=?", (user_id,))
+        referral_commission_count = cur.fetchone()[0] or 0
+
         cur.execute("SELECT r.*, d.item AS deal_item FROM reviews r LEFT JOIN deals d ON r.deal_id=d.id WHERE r.reviewed_id=? ORDER BY r.created_at DESC LIMIT 10", (user_id,))
         reviews = [dict(r) for r in cur.fetchall()]
 
@@ -543,6 +554,13 @@ def profile_view(request):
         'notifications': notifications, 'unread_notifications': unread_notifications,
         'purchases': purchases, 'sales': sales,
         'active_deals': active_deals, 'tickets_count': tickets_count,
+        'referral_earnings_rub': referral_earnings_rub,
+        'referral_earnings_level2': referral_earnings_level2,
+        'referral_total_commission': referral_total_commission,
+        'referral_deposit_total': referral_deposit_total,
+        'referral_level2_count': referral_level2_count,
+        'referral_commission_count': referral_commission_count,
+        'referral_total_all': referral_total_commission + referral_deposit_total + referral_earnings_rub,
     })
 
 
@@ -1402,6 +1420,250 @@ def api_upload_avatar(request):
     conn.close()
 
     return JsonResponse({'success': True, 'avatar_url': _avatar_url(user_id)})
+
+
+# ===================== EMAIL RECOVERY =====================
+
+import secrets as _secrets
+from datetime import datetime as _dt, timedelta as _td
+from django.core.mail import send_mail as django_send_mail
+
+
+def password_reset_request_view(request):
+    return render(request, 'usersite/password_reset_request.html')
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_password_reset_request(request):
+    data = json.loads(request.body)
+    email = data.get('email', '').strip().lower()
+    if not email or not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
+        return JsonResponse({'success': False, 'error': 'Некорректный email'}, status=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, username FROM users WHERE LOWER(profile_email)=? AND profile_setup_complete=1", (email,))
+    user = cur.fetchone()
+    if not user:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Пользователь с таким email не найден'}, status=404)
+    user_id, username = user
+    token = _secrets.token_urlsafe(32)
+    expires = (_dt.now() + _td(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
+    cur.execute(
+        "INSERT INTO password_reset_tokens (user_id, token, email, expires_at) VALUES (?, ?, ?, ?)",
+        (user_id, token, email, expires)
+    )
+    conn.commit()
+    conn.close()
+    bot_name = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot')
+    reset_link = f"{request.scheme}://{request.get_host()}/usersite/password-reset/{token}/"
+    try:
+        django_send_mail(
+            subject='Восстановление пароля — Heyken',
+            message=f'Здравствуйте!\n\nВы запросили восстановление пароля.\n\n'
+                    f'Перейдите по ссылке для сброса пароля:\n{reset_link}\n\n'
+                    f'Ссылка действительна 1 час.\n\nЕсли вы не запрашивали сброс, проигнорируйте это письмо.',
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@heyken.io'),
+            recipient_list=[email],
+            fail_silently=False,
+        )
+        return JsonResponse({'success': True, 'message': 'Письмо отправлено на ваш email'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Ошибка отправки: {str(e)}. Проверьте настройки SMTP.'}, status=500)
+
+
+def password_reset_confirm_view(request, token):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT user_id, email, expires_at, used FROM password_reset_tokens WHERE token=?",
+        (token,)
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return render(request, 'usersite/password_reset_confirm.html', {'error': 'Недействительный токен'})
+    user_id, email, expires_at, used = row
+    if used:
+        return render(request, 'usersite/password_reset_confirm.html', {'error': 'Токен уже использован'})
+    try:
+        expires = _dt.fromisoformat(expires_at.replace('Z', ''))
+        if expires < _dt.now():
+            return render(request, 'usersite/password_reset_confirm.html', {'error': 'Срок действия токена истёк'})
+    except:
+        pass
+    return render(request, 'usersite/password_reset_confirm.html', {
+        'token': token,
+        'email': email,
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_password_reset_confirm(request):
+    data = json.loads(request.body)
+    token = data.get('token', '').strip()
+    password = data.get('password', '')
+    if not token or len(password) < 6:
+        return JsonResponse({'success': False, 'error': 'Пароль минимум 6 символов'}, status=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT user_id, email, expires_at, used FROM password_reset_tokens WHERE token=?",
+        (token,)
+    )
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Токен не найден'}, status=404)
+    user_id, email, expires_at, used = row
+    if used:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Токен уже использован'}, status=400)
+    try:
+        expires = _dt.fromisoformat(expires_at.replace('Z', ''))
+        if expires < _dt.now():
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Срок действия токена истёк'}, status=400)
+    except:
+        pass
+    password_hash = make_password(password)
+    cur.execute("UPDATE users SET profile_password_hash=? WHERE user_id=?", (password_hash, user_id))
+    cur.execute("UPDATE password_reset_tokens SET used=1 WHERE token=?", (token,))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Пароль успешно изменён'})
+
+
+# ===================== P2P EXCHANGE =====================
+
+@safe_db
+def exchange_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM exchange_offers WHERE status='active' ORDER BY created_at DESC LIMIT 50")
+    offers = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT * FROM exchange_offers WHERE user_id=? ORDER BY created_at DESC LIMIT 20", (user_id,))
+    my_offers = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT * FROM exchange_deals WHERE buyer_id=? OR seller_id=? ORDER BY created_at DESC LIMIT 20", (user_id, user_id))
+    my_deals_ex = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return render(request, 'usersite/exchange.html', {
+        'offers': offers,
+        'my_offers': my_offers,
+        'my_deals': my_deals_ex,
+        'currencies': ['RUB', 'USD', 'EUR', 'TON', 'USDT'],
+    })
+
+
+@csrf_exempt
+@safe_db
+@require_http_methods(["POST"])
+def api_exchange_create_offer(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    data = json.loads(request.body)
+    give_cur = data.get('give_currency', '').upper()
+    give_amt = float(data.get('give_amount', 0))
+    recv_cur = data.get('receive_currency', '').upper()
+    recv_amt = float(data.get('receive_amount', 0))
+    allowed = ['RUB', 'USD', 'EUR', 'TON', 'USDT']
+    if give_cur not in allowed or recv_cur not in allowed:
+        return JsonResponse({'error': 'Недопустимая валюта'}, status=400)
+    if give_amt <= 0 or recv_amt <= 0:
+        return JsonResponse({'error': 'Суммы должны быть > 0'}, status=400)
+    if give_cur == recv_cur:
+        return JsonResponse({'error': 'Валюты должны различаться'}, status=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT balance_{} FROM users WHERE user_id=?".format(give_cur), (user_id,))
+    row = cur.fetchone()
+    bal = row[0] or 0
+    if bal < give_amt:
+        conn.close()
+        return JsonResponse({'error': 'Недостаточно средств'}, status=400)
+    cur.execute(
+        "INSERT INTO exchange_offers (user_id, give_currency, give_amount, receive_currency, receive_amount) VALUES (?, ?, ?, ?, ?)",
+        (user_id, give_cur, give_amt, recv_cur, recv_amt)
+    )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@safe_db
+@require_http_methods(["POST"])
+def api_exchange_accept(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    buyer_id = request.session.get('user_id')
+    data = json.loads(request.body)
+    offer_id = int(data.get('offer_id', 0))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM exchange_offers WHERE id=? AND status='active'", (offer_id,))
+    offer = cur.fetchone()
+    if not offer:
+        conn.close()
+        return JsonResponse({'error': 'Ордер не найден или уже неактивен'}, status=404)
+    offer = dict(offer)
+    if offer['user_id'] == buyer_id:
+        conn.close()
+        return JsonResponse({'error': 'Нельзя принять свой ордер'}, status=400)
+    seller_id = offer['user_id']
+    give_cur, give_amt = offer['give_currency'], offer['give_amount']
+    recv_cur, recv_amt = offer['receive_currency'], offer['receive_amount']
+    cur.execute("SELECT balance_{} FROM users WHERE user_id=?".format(recv_cur), (buyer_id,))
+    row = cur.fetchone()
+    if (row[0] or 0) < recv_amt:
+        conn.close()
+        return JsonResponse({'error': 'Недостаточно средств для обмена'}, status=400)
+    commission_rate = 0.01
+    commission = recv_amt * commission_rate
+    seller_gets = recv_amt - commission
+    cur.execute("BEGIN IMMEDIATE")
+    try:
+        cur.execute("UPDATE exchange_offers SET status='completed' WHERE id=?", (offer_id,))
+        cur.execute("UPDATE users SET balance_{}=balance_{}-{} WHERE user_id=?".format(give_cur, give_cur, give_amt, seller_id) if False else
+                    "UPDATE users SET balance_{}=balance_{}-? WHERE user_id=?".format(give_cur, give_cur), (give_amt, seller_id))
+        cur.execute("UPDATE users SET balance_{}=balance_{}+? WHERE user_id=?".format(give_cur, give_cur), (give_amt, buyer_id))
+        cur.execute("UPDATE users SET balance_{}=balance_{}-? WHERE user_id=?".format(recv_cur, recv_cur), (recv_amt, buyer_id))
+        cur.execute("UPDATE users SET balance_{}=balance_{}+? WHERE user_id=?".format(recv_cur, recv_cur), (seller_gets, seller_id))
+        cur.execute(
+            "INSERT INTO exchange_deals (offer_id, buyer_id, seller_id, give_currency, give_amount, receive_currency, receive_amount, commission, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed')",
+            (offer_id, buyer_id, seller_id, give_cur, give_amt, recv_cur, seller_gets, commission)
+        )
+        conn.commit()
+        return JsonResponse({'success': True, 'message': 'Обмен выполнен'})
+    except Exception as e:
+        conn.rollback()
+        return JsonResponse({'error': str(e)}, status=500)
+    finally:
+        conn.close()
+
+
+@csrf_exempt
+@safe_db
+@require_http_methods(["POST"])
+def api_exchange_cancel(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    data = json.loads(request.body)
+    offer_id = int(data.get('offer_id', 0))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE exchange_offers SET status='cancelled' WHERE id=? AND user_id=? AND status='active'", (offer_id, user_id))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
 
 
 def terms_view(request):

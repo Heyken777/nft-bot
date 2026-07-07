@@ -65,19 +65,35 @@
 
         <!-- Реферальная программа -->
         <div class="card mt-4" data-reveal>
-            <h4><i class="fas fa-users"></i> Рефералы</h4>
+            <h4><i class="fas fa-users"></i> Партнёрская программа</h4>
             <div class="mt-2">
                 <div class="info-row">
-                    <span class="info-label">Приглашено</span>
+                    <span class="info-label">Приглашено лично</span>
                     <span class="info-value">{{ referrals|length }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="info-label">Заработано</span>
-                    <span class="info-value">{{ user.referral_earnings|default:"0"|floatformat:2 }} ₽</span>
+                    <span class="info-label">Рефералов 2-го уровня</span>
+                    <span class="info-value">{{ referral_level2_count }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Комиссионных начислений</span>
+                    <span class="info-value">{{ referral_commission_count }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">С комиссий сделок</span>
+                    <span class="info-value">{{ referral_total_commission|floatformat:2 }} ₽</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">С пополнений (10%)</span>
+                    <span class="info-value">{{ referral_deposit_total|floatformat:2 }} ₽</span>
+                </div>
+                <div class="info-row" style="font-weight:600;color:var(--accent);">
+                    <span class="info-label">Всего заработано</span>
+                    <span class="info-value">{{ referral_total_all|floatformat:2 }} ₽</span>
                 </div>
             </div>
             <div class="form-group mt-3">
-                <label class="form-label">Ваша ссылка</label>
+                <label class="form-label">Ваша партнёрская ссылка</label>
                 <div class="input-group">
                     <input type="text" id="refLink" class="form-control" value="https://t.me/{{ bot_username }}?start=ref{{ user.telegram_id }}" readonly>
                     <button class="btn btn-primary" onclick="copyRefLink()"><i class="fas fa-copy"></i></button>

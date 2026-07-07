@@ -56,4 +56,16 @@ urlpatterns = [
     path('reviews/', views.reviews_view, name='user_reviews'),
     path('api/reviews/update/', views.update_review_api, name='update_review'),
     path('api/reviews/report/', views.report_review_api, name='report_review'),
+
+    # Восстановление пароля (email recovery)
+    path('password-reset/', views.password_reset_request_view, name='password_reset_request'),
+    path('api/password-reset-request/', views.api_password_reset_request, name='api_password_reset_request'),
+    path('password-reset/<str:token>/', views.password_reset_confirm_view, name='password_reset_confirm'),
+    path('api/password-reset-confirm/', views.api_password_reset_confirm, name='api_password_reset_confirm'),
+
+    # P2P обмен валют
+    path('exchange/', views.exchange_view, name='exchange'),
+    path('api/exchange/create/', views.api_exchange_create_offer, name='api_exchange_create'),
+    path('api/exchange/accept/', views.api_exchange_accept, name='api_exchange_accept'),
+    path('api/exchange/cancel/', views.api_exchange_cancel, name='api_exchange_cancel'),
 ]

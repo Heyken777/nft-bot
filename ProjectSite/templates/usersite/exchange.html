@@ -1,0 +1,182 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}P2P Обмен валют{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/profile/">Главная</a>
+    <span class="separator">/</span>
+    <span class="current">P2P Обмен</span>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card" data-reveal>
+            <h4><i class="fas fa-exchange-alt"></i> Активные ордеры</h4>
+            <div class="table-responsive mt-3">
+                <table class="table-custom">
+                    <thead>
+                        <tr>
+                            <th>Продаёт</th>
+                            <th>Отдаёт</th>
+                            <th>Получает</th>
+                            <th>Курс</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in offers %}
+                        <tr>
+                            <td>#{{ o.user_id|truncatechars:8 }}</td>
+                            <td>{{ o.give_amount }} {{ o.give_currency }}</td>
+                            <td>{{ o.receive_amount }} {{ o.receive_currency }}</td>
+                            <td>{{ o.receive_amount|div:o.give_amount|floatformat:4 }}</td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="acceptOffer({{ o.id }})">
+                                    <i class="fas fa-handshake"></i> Принять
+                                </button>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-muted text-center py-3">Нет активных ордеров</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card mt-4" data-reveal>
+            <h4><i class="fas fa-clock"></i> Мои сделки обмена</h4>
+            <div class="table-responsive mt-3">
+                <table class="table-custom">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Статус</th>
+                            <th>Отдал</th>
+                            <th>Получил</th>
+                            <th>Комиссия</th>
+                            <th>Дата</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in my_deals %}
+                        <tr>
+                            <td>{{ d.id }}</td>
+                            <td><span class="badge badge-success">Выполнено</span></td>
+                            <td>{{ d.give_amount }} {{ d.give_currency }}</td>
+                            <td>{{ d.receive_amount }} {{ d.receive_currency }}</td>
+                            <td>{{ d.commission|floatformat:4 }}</td>
+                            <td>{{ d.created_at|date:"d.m H:i" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="text-muted text-center py-3">Нет сделок</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card" data-reveal>
+            <h4><i class="fas fa-plus-circle"></i> Создать ордер</h4>
+            <div class="form-group mt-2">
+                <label class="form-label">Отдаю</label>
+                <div class="flex gap-2">
+                    <select id="giveCur" class="form-control" style="max-width:100px;">
+                        {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                    </select>
+                    <input type="number" id="giveAmt" class="form-control" placeholder="Сумма" step="0.01">
+                </div>
+            </div>
+            <div class="form-group mt-2">
+                <label class="form-label">Получаю</label>
+                <div class="flex gap-2">
+                    <select id="recvCur" class="form-control" style="max-width:100px;">
+                        {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                    </select>
+                    <input type="number" id="recvAmt" class="form-control" placeholder="Сумма" step="0.01">
+                </div>
+            </div>
+            <div id="exchangeError" style="color:var(--danger);font-size:13px;margin-top:8px;display:none;"></div>
+            <button class="btn btn-primary mt-3" onclick="createOffer()" style="width:100%;">
+                <i class="fas fa-plus"></i> Создать ордер
+            </button>
+        </div>
+
+        <div class="card mt-4" data-reveal>
+            <h4><i class="fas fa-list"></i> Мои ордеры</h4>
+            <div class="mt-2">
+                {% for o in my_offers %}
+                <div style="padding:10px;border-bottom:1px solid var(--border-color);font-size:13px;">
+                    <div>{{ o.give_amount }} {{ o.give_currency }} → {{ o.receive_amount }} {{ o.receive_currency }}</div>
+                    <div class="text-muted" style="font-size:11px;">
+                        {% if o.status == 'active' %}
+                        <span style="color:var(--success);">Активен</span>
+                        <button class="btn btn-sm" style="color:var(--danger);" onclick="cancelOffer({{ o.id }})">Отменить</button>
+                        {% else %}{{ o.status }}{% endif %}
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted" style="font-size:13px;padding:8px 0;">Нет ордеров</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var csrf = '{{ csrf_token }}';
+
+async function createOffer() {
+    var giveCur = document.getElementById('giveCur').value;
+    var giveAmt = parseFloat(document.getElementById('giveAmt').value);
+    var recvCur = document.getElementById('recvCur').value;
+    var recvAmt = parseFloat(document.getElementById('recvAmt').value);
+    var err = document.getElementById('exchangeError');
+    err.style.display = 'none';
+    if (!giveAmt || !recvAmt || giveAmt <= 0 || recvAmt <= 0) {
+        err.textContent = 'Введите корректные суммы'; err.style.display = 'block'; return;
+    }
+    if (giveCur === recvCur) {
+        err.textContent = 'Валюты должны различаться'; err.style.display = 'block'; return;
+    }
+    var r = await fetch('/usersite/api/exchange/create/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({give_currency: giveCur, give_amount: giveAmt, receive_currency: recvCur, receive_amount: recvAmt})
+    });
+    var d = await r.json();
+    if (d.success) { showToast('Ордер создан'); setTimeout(function() { location.reload(); }, 1000); }
+    else { err.textContent = d.error || 'Ошибка'; err.style.display = 'block'; }
+}
+
+async function acceptOffer(id) {
+    if (!confirm('Принять этот ордер?')) return;
+    var r = await fetch('/usersite/api/exchange/accept/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({offer_id: id})
+    });
+    var d = await r.json();
+    if (d.success) { showToast('Обмен выполнен'); setTimeout(function() { location.reload(); }, 1000); }
+    else { showToast(d.error || 'Ошибка', 'error'); }
+}
+
+async function cancelOffer(id) {
+    if (!confirm('Отменить ордер?')) return;
+    var r = await fetch('/usersite/api/exchange/cancel/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({offer_id: id})
+    });
+    var d = await r.json();
+    if (d.success) { showToast('Ордер отменён'); setTimeout(function() { location.reload(); }, 1000); }
+    else { showToast(d.error || 'Ошибка', 'error'); }
+}
+</script>
+
+<style>
+.flex { display:flex; gap:8px; align-items:center; }
+</style>
+{% endblock %}
