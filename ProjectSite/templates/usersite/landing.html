@@ -239,7 +239,7 @@
             position: relative;
             border-radius: 0;
             overflow: hidden;
-            min-height: calc(100vh + 76px);
+            height: 100vh; min-height: 100vh;
             display: flex;
             flex-direction: column;
             background: #1a1a1a;
@@ -270,8 +270,14 @@
             position: relative; z-index: 2;
             flex: 1;
             display: flex; flex-direction: column;
-            justify-content: flex-end;
-            padding: 100px 48px 80px;
+            justify-content: center;
+            padding: 100px 48px 40px;
+            max-width: 100%;
+        }
+        .hero-content .hero-tagline,
+        .hero-content h1,
+        .hero-content p,
+        .hero-content .hero-actions {
             max-width: 680px;
         }
         .hero-tagline {
@@ -345,9 +351,9 @@
         .hero-actions .btn-secondary:hover { background: rgba(255,255,255,0.18); transform: translateY(-2px); }
 
         .hero-stats {
-            position: relative; z-index: 2;
             display: flex; gap: 40px;
-            padding: 0 48px 40px;
+            margin-top: auto;
+            padding: 32px 0 0;
         }
         .hero-stat { display: flex; flex-direction: column; }
         .hero-stat__value { font-size: 1.6rem; font-weight: 700; color: #fff; line-height: 1; text-shadow: 0 1px 8px rgba(0,0,0,0.3); }
@@ -473,10 +479,10 @@
         .landing-footer__social:hover { color: var(--text-primary); }
 
         @media (max-width: 768px) {
-            .hero-container { min-height: calc(100vh + 76px); border-radius: 0; margin: 0; margin-top: -76px; }
-            .hero-content { padding: 100px 24px 50px; }
+            .hero-container { height: 100vh; min-height: 100vh; border-radius: 0; margin: 0; margin-top: -76px; }
+            .hero-content { padding: 80px 24px 24px; }
             .hero-title__primary, .hero-title__secondary { font-size: clamp(1.6rem,7vw,2.2rem); }
-            .hero-stats { padding: 0 24px 28px; gap: 24px; flex-wrap: wrap; }
+            .hero-stats { gap: 24px; flex-wrap: wrap; padding-top: 20px; }
             .hero-stat__value { font-size: 1.3rem; }
             .section-full, .section-actions, .section-sellers { margin-left: 12px; margin-right: 12px; }
             .section-full .section-content { padding: 40px 24px; }
@@ -571,20 +577,19 @@
                     Как это работает
                 </a>
             </div>
-        </div>
-
-        <div class="hero-stats">
-            <div class="hero-stat">
-                <span class="hero-stat__value">5 000+</span>
-                <span class="hero-stat__label">Успешных сделок</span>
-            </div>
-            <div class="hero-stat">
-                <span class="hero-stat__value">98.7%</span>
-                <span class="hero-stat__label">Положительных отзывов</span>
-            </div>
-            <div class="hero-stat">
-                <span class="hero-stat__value">₽15M+</span>
-                <span class="hero-stat__label">Оборота в месяц</span>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <span class="hero-stat__value">5 000+</span>
+                    <span class="hero-stat__label">Успешных сделок</span>
+                </div>
+                <div class="hero-stat">
+                    <span class="hero-stat__value">98.7%</span>
+                    <span class="hero-stat__label">Положительных отзывов</span>
+                </div>
+                <div class="hero-stat">
+                    <span class="hero-stat__value">₽15M+</span>
+                    <span class="hero-stat__label">Оборота в месяц</span>
+                </div>
             </div>
         </div>
     </div>
