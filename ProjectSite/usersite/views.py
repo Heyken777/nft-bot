@@ -357,7 +357,7 @@ def _ensure_avatar_column():
 def _avatar_url(user_id):
     return f'/usersite/avatar/{user_id}/'
 CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': "so'm", 'TON': 'TON', 'USDT': 'USDT', 'STARS': '★'}
-EXCHANGE_RATES = {'RUB': 1, 'USD': 90, 'EUR': 95, 'BYN': 28, 'UAH': 2.3, 'KZT': 0.19, 'UZS': 0.0075, 'TON': 500, 'USDT': 90, 'STARS': 1.5}
+EXCHANGE_RATES = {'RUB': 1, 'USD': 77.5, 'EUR': 88.1, 'BYN': 26.5, 'UAH': 1.7, 'KZT': 0.16, 'UZS': 0.0065, 'TON': 130, 'USDT': 77.5, 'STARS': 2.0}
 TIER_BADGES = {'free': 'FREE', 'premium': 'PREMIUM', 'platinum': 'PLATINUM', 'vip': 'VIP'}
 TIER_COMMISSION = {'free': 4, 'premium': 2, 'platinum': 1, 'vip': 0}
 
@@ -1735,6 +1735,11 @@ def exchange_view(request):
         my_deals_ex = [dict(r) for r in cur.fetchall()]
     except Exception:
         my_deals_ex = []
+    # User's tier & commission for display
+    cur.execute("SELECT premium_tier FROM users WHERE user_id=?", (user_id,))
+    tier_row = cur.fetchone()
+    user_tier = tier_row[0] if tier_row else 'free'
+    commission_rate = TIER_COMMISSION.get(user_tier, 4)
     conn.close()
     return render(request, 'usersite/exchange.html', {
         'offers': offers,
@@ -1742,6 +1747,8 @@ def exchange_view(request):
         'my_deals': my_deals_ex,
         'currencies': ['RUB', 'USD', 'EUR', 'TON', 'USDT'],
         'exchange_rates': EXCHANGE_RATES,
+        'user_tier': user_tier,
+        'user_commission': commission_rate,
     })
 
 

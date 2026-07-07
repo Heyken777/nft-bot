@@ -91,21 +91,24 @@
             <div class="form-group mt-2">
                 <label class="form-label">Отдаю</label>
                 <div class="flex gap-2">
-                    <select id="giveCur" class="form-control" style="max-width:100px;" onchange="autoCalcReceive()">
+                    <select id="giveCur" class="form-control" style="max-width:100px;" onchange="calcFromGive()">
                         {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
                     </select>
-                    <input type="number" id="giveAmt" class="form-control" placeholder="Сумма" step="0.01" oninput="autoCalcReceive()">
+                    <input type="number" id="giveAmt" class="form-control" placeholder="Сумма" step="0.01" oninput="calcFromGive()">
                 </div>
             </div>
             <div class="form-group mt-2">
                 <label class="form-label">Получаю</label>
                 <div class="flex gap-2">
-                    <select id="recvCur" class="form-control" style="max-width:100px;" onchange="autoCalcReceive()">
+                    <select id="recvCur" class="form-control" style="max-width:100px;" onchange="calcFromRecv()">
                         {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
                     </select>
-                    <input type="number" id="recvAmt" class="form-control" placeholder="Авторасчёт" step="0.01" readonly style="background:rgba(0,0,0,0.05);">
+                    <input type="number" id="recvAmt" class="form-control" placeholder="Сумма" step="0.01" oninput="calcFromRecv()">
                 </div>
                 <div id="exchangeRateInfo"></div>
+                <div id="commissionInfo" style="font-size:12px;margin-top:4px;color:var(--text-secondary);">
+                    Комиссия {{ user_tier|title }}: {{ user_commission }}% — к получению <span id="afterCommission">0</span>
+                </div>
             </div>
             <div id="exchangeError" style="color:var(--danger);font-size:13px;margin-top:8px;display:none;"></div>
             <button class="btn btn-primary mt-3" onclick="createOffer()" style="width:100%;">
@@ -137,23 +140,72 @@
 <script>
 var csrf = '{{ csrf_token }}';
 var EXCHANGE_RATES = {{ exchange_rates|safe }};
+var COMMISSION_PCT = {{ user_commission|default:4 }};
+var _calculating = false;
 
-function autoCalcReceive() {
+function updateRateAndCommission(giveCur, recvCur, giveAmt, recvAmt) {
+    var rateInfo = document.getElementById('exchangeRateInfo');
+    var commissionEl = document.getElementById('commissionInfo');
+    var afterSpan = document.getElementById('afterCommission');
+    if (giveCur !== recvCur) {
+        var giveRate = EXCHANGE_RATES[giveCur] || 1;
+        var recvRate = EXCHANGE_RATES[recvCur] || 1;
+        rateInfo.textContent = '1 ' + giveCur + ' = ' + (giveRate / recvRate).toFixed(4) + ' ' + recvCur + '  •  1 ' + recvCur + ' = ' + (recvRate / giveRate).toFixed(4) + ' ' + giveCur;
+        rateInfo.style.display = 'block';
+        var after = recvAmt * (1 - COMMISSION_PCT / 100);
+        afterSpan.textContent = after.toFixed(2) + ' ' + recvCur;
+    } else {
+        rateInfo.textContent = 'Валюты должны различаться';
+        rateInfo.style.display = 'block';
+        afterSpan.textContent = '0';
+    }
+}
+
+function calcFromGive() {
+    if (_calculating) return;
     var giveCur = document.getElementById('giveCur').value;
     var giveAmt = parseFloat(document.getElementById('giveAmt').value);
     var recvCur = document.getElementById('recvCur').value;
-    var rateInfo = document.getElementById('exchangeRateInfo');
     if (giveAmt > 0 && giveCur !== recvCur) {
         var giveRate = EXCHANGE_RATES[giveCur] || 1;
         var recvRate = EXCHANGE_RATES[recvCur] || 1;
-        var recvAmt = (giveAmt * giveRate / recvRate).toFixed(2);
-        document.getElementById('recvAmt').value = recvAmt;
-        rateInfo.textContent = '1 ' + giveCur + ' = ' + (giveRate / recvRate).toFixed(4) + ' ' + recvCur;
-        rateInfo.style.display = 'block';
+        var recvAmt = (giveAmt * giveRate / recvRate);
+        _calculating = true;
+        document.getElementById('recvAmt').value = recvAmt.toFixed(2);
+        _calculating = false;
+        updateRateAndCommission(giveCur, recvCur, giveAmt, recvAmt);
     } else {
-        document.getElementById('recvAmt').value = '';
-        if (giveCur === recvCur) rateInfo.textContent = 'Валюты должны различаться';
-        else rateInfo.style.display = 'none';
+        if (!_calculating) {
+            _calculating = true;
+            if (!giveAmt) document.getElementById('recvAmt').value = '';
+            _calculating = false;
+        }
+        if (giveCur === recvCur) updateRateAndCommission(giveCur, recvCur, 0, 0);
+        else document.getElementById('exchangeRateInfo').style.display = 'none';
+    }
+}
+
+function calcFromRecv() {
+    if (_calculating) return;
+    var recvCur = document.getElementById('recvCur').value;
+    var recvAmt = parseFloat(document.getElementById('recvAmt').value);
+    var giveCur = document.getElementById('giveCur').value;
+    if (recvAmt > 0 && giveCur !== recvCur) {
+        var giveRate = EXCHANGE_RATES[giveCur] || 1;
+        var recvRate = EXCHANGE_RATES[recvCur] || 1;
+        var giveAmt = (recvAmt * recvRate / giveRate);
+        _calculating = true;
+        document.getElementById('giveAmt').value = giveAmt.toFixed(2);
+        _calculating = false;
+        updateRateAndCommission(giveCur, recvCur, giveAmt, recvAmt);
+    } else {
+        if (!_calculating) {
+            _calculating = true;
+            if (!recvAmt) document.getElementById('giveAmt').value = '';
+            _calculating = false;
+        }
+        if (giveCur === recvCur) updateRateAndCommission(giveCur, recvCur, 0, 0);
+        else document.getElementById('exchangeRateInfo').style.display = 'none';
     }
 }
 
