@@ -22,6 +22,30 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def _ensure_profile_reviews_table():
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM profile_reviews")
+    except sqlite3.OperationalError:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS profile_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reviewer_id INTEGER NOT NULL,
+                reviewed_id INTEGER NOT NULL,
+                rating INTEGER NOT NULL,
+                comment TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP,
+                is_moderated INTEGER DEFAULT 0,
+                moderated_by INTEGER,
+                moderated_at TIMESTAMP,
+                UNIQUE(reviewer_id, reviewed_id)
+            )
+        """)
+        conn.commit()
+    conn.close()
+
 LEDGER_PRECISION = {'TON': 4, 'USDT': 4, 'STARS': 0}
 
 def _ledger_round(value, currency):
@@ -452,7 +476,7 @@ def users_view(request):
 def user_detail_view(request, telegram_id):
     log_page_view(request, 'Просмотр Карточки', f'Администратор открыл карточку пользователя {telegram_id}', target_id=telegram_id)
     user_dict = None; deals = []; disputes = []; referrals = []; inviter = None
-    audit_logs = []; latest_backup = None; tickets = []; reviews = []; avg_rating = 0
+    audit_logs = []; latest_backup = None; tickets = []; reviews = []; avg_rating = 0; profile_reviews = []
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -495,6 +519,12 @@ def user_detail_view(request, telegram_id):
 
         cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (telegram_id,))
         avg_rating = cur.fetchone()[0] or 0
+
+        try:
+            cur.execute("SELECT pr.*, u.username AS reviewer_name FROM profile_reviews pr LEFT JOIN users u ON pr.reviewer_id=u.user_id WHERE pr.reviewed_id=? ORDER BY pr.created_at DESC LIMIT 20", (telegram_id,))
+            profile_reviews = [dict(r) for r in cur.fetchall()]
+        except Exception:
+            profile_reviews = []
 
         cur.execute(
             "SELECT id, user_id, sender_type, text, timestamp FROM user_messages WHERE user_id=? ORDER BY id ASC",
@@ -554,6 +584,7 @@ def user_detail_view(request, telegram_id):
             'latest_backup': dict(latest_backup) if latest_backup else None,
             'tickets': [dict(t) for t in tickets],
             'reviews': [dict(r) for r in reviews],
+            'profile_reviews': profile_reviews,
             'avg_rating': round(avg_rating, 1),
             'premium_active': premium_active,
             'now': datetime.now(),
@@ -568,7 +599,7 @@ def user_detail_view(request, telegram_id):
         'user': user_dict, 'deals': [], 'disputes': [], 'referrals': [],
         'inviter': None, 'invited_users': [],
         'audit_logs': [], 'latest_backup': None,
-        'tickets': [], 'reviews': [],
+        'tickets': [], 'reviews': [], 'profile_reviews': [],
         'avg_rating': 0, 'premium_active': False,
         'now': datetime.now(), 'currencies': CURRENCY_LIST,
         'referral_link': '',
@@ -1935,6 +1966,89 @@ def api_reported_reviews(request):
         return JsonResponse({'reviews': reviews})
     except Exception as e:
         print(f"[reported_reviews] Error: {e}")
+        return JsonResponse({'reviews': []})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@session_required
+@require_permission('reviews')
+def api_moderate_profile_review(request, review_id):
+    try:
+        _ensure_profile_reviews_table()
+        conn = get_db()
+        cur = conn.cursor()
+        data = json.loads(request.body)
+        action = data.get('action', '')
+
+        if action == 'delete':
+            cur.execute("SELECT reviewed_id FROM profile_reviews WHERE id=?", (review_id,))
+            row = cur.fetchone()
+            cur.execute("DELETE FROM profile_reviews WHERE id=?", (review_id,))
+            if row:
+                cur.execute("SELECT AVG(rating), COUNT(*) FROM profile_reviews WHERE reviewed_id=?", (row[0],))
+                r2 = cur.fetchone()
+                cur.execute("UPDATE users SET rating=?, reviews_count=? WHERE user_id=?", (round(r2[0] or 0, 1), r2[1] or 0, row[0]))
+            conn.commit()
+            conn.close()
+            log_admin_action(request, f"Удалил отзыв на профиль #{review_id}")
+            return JsonResponse({'success': True, 'message': 'Отзыв удалён'})
+
+        if action == 'edit':
+            rating = data.get('rating')
+            comment = data.get('comment')
+            sets = []; params = []
+            if rating is not None:
+                sets.append("rating = ?")
+                params.append(int(rating))
+            if comment is not None:
+                sets.append("comment = ?")
+                params.append(comment)
+            if not sets:
+                conn.close()
+                return JsonResponse({'success': False, 'error': 'Нет данных для изменения'})
+            params.append(review_id)
+            cur.execute(f"UPDATE profile_reviews SET {', '.join(sets)} WHERE id=?", params)
+            # Recalculate rating
+            cur.execute("SELECT reviewed_id FROM profile_reviews WHERE id=?", (review_id,))
+            row = cur.fetchone()
+            if row:
+                cur.execute("SELECT AVG(rating) FROM profile_reviews WHERE reviewed_id=?", (row[0],))
+                avg = cur.fetchone()[0] or 0
+                cur.execute("UPDATE users SET rating=? WHERE user_id=?", (round(avg, 1), row[0]))
+            conn.commit()
+            conn.close()
+            log_admin_action(request, f"Изменил отзыв на профиль #{review_id}")
+            return JsonResponse({'success': True, 'message': 'Отзыв изменён'})
+
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Неизвестное действие'})
+    except Exception as e:
+        print(f"[moderate_profile_review] Error: {e}")
+        return JsonResponse({'success': False, 'error': 'Server error'}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@session_required
+@require_permission('reviews')
+def api_list_profile_reviews(request):
+    try:
+        _ensure_profile_reviews_table()
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT pr.*, u.username AS reviewer_name, u2.username AS reviewed_name
+            FROM profile_reviews pr
+            LEFT JOIN users u ON pr.reviewer_id = u.user_id
+            LEFT JOIN users u2 ON pr.reviewed_id = u2.user_id
+            ORDER BY pr.created_at DESC LIMIT 100
+        """)
+        reviews = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+        conn.close()
+        return JsonResponse({'reviews': reviews})
+    except Exception as e:
+        print(f"[list_profile_reviews] Error: {e}")
         return JsonResponse({'reviews': []})
 
 

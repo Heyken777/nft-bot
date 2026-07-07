@@ -56,6 +56,9 @@ urlpatterns = [
     path('reviews/', views.reviews_view, name='user_reviews'),
     path('api/reviews/update/', views.update_review_api, name='update_review'),
     path('api/reviews/report/', views.report_review_api, name='report_review'),
+    path('api/profile-reviews/create/', views.api_create_profile_review, name='api_create_profile_review'),
+    path('api/profile-reviews/update/', views.api_update_profile_review, name='api_update_profile_review'),
+    path('api/profile-reviews/delete/', views.api_delete_profile_review, name='api_delete_profile_review'),
 
     # Восстановление пароля (email recovery)
     path('password-reset/', views.password_reset_request_view, name='password_reset_request'),

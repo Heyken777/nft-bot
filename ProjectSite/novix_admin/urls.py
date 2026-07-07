@@ -84,6 +84,8 @@ urlpatterns = [
     # API: модерация отзывов
     path('api/reviews/<int:review_id>/moderate/', views.api_moderate_review, name='api_moderate_review'),
     path('api/reviews/reported/', views.api_reported_reviews, name='api_reported_reviews'),
+    path('api/profile-reviews/<int:review_id>/moderate/', views.api_moderate_profile_review, name='api_moderate_profile_review'),
+    path('api/profile-reviews/list/', views.api_list_profile_reviews, name='api_list_profile_reviews'),
 
     # Новости
     path('news/', news_views.news_list_view, name='news_list'),

@@ -23,6 +23,29 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def _ensure_profile_reviews_table():
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM profile_reviews")
+    except sqlite3.OperationalError:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS profile_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reviewer_id INTEGER NOT NULL,
+                reviewed_id INTEGER NOT NULL,
+                rating INTEGER NOT NULL,
+                comment TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP,
+                is_moderated INTEGER DEFAULT 0,
+                moderated_by INTEGER,
+                moderated_at TIMESTAMP,
+                UNIQUE(reviewer_id, reviewed_id)
+            )
+        """)
+        conn.commit()
+    conn.close()
 
 
 
@@ -636,6 +659,7 @@ def api_update_profile(request):
 
 def public_profile_view(request, username):
     _ensure_avatar_column()
+    _ensure_profile_reviews_table()
     user = None; deals = []
     try:
         conn = get_db()
@@ -695,8 +719,29 @@ def public_profile_view(request, username):
             cur.execute("SELECT * FROM deals WHERE buyer=? OR seller=? ORDER BY created DESC LIMIT 20", (u['user_id'], u['user_id']))
             deals = [dict(d) for d in cur.fetchall()]
 
-            cur.execute("SELECT AVG(rating) FROM reviews WHERE reviewed_id=?", (u['user_id'],))
+            # Profile reviews
+            cur.execute(
+                "SELECT pr.*, u.username AS reviewer_name FROM profile_reviews pr "
+                "LEFT JOIN users u ON pr.reviewer_id = u.user_id "
+                "WHERE pr.reviewed_id=? ORDER BY pr.created_at DESC LIMIT 20",
+                (u['user_id'],)
+            )
+            profile_reviews = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("SELECT AVG(rating) FROM profile_reviews WHERE reviewed_id=?", (u['user_id'],))
             avg_rating = cur.fetchone()[0] or 0
+
+            # Check if current user has already reviewed
+            current_user_id = request.session.get('user_id')
+            has_reviewed = False
+            my_profile_review = None
+            if current_user_id:
+                cur.execute("SELECT id FROM profile_reviews WHERE reviewer_id=? AND reviewed_id=?", (current_user_id, u['user_id']))
+                row = cur.fetchone()
+                has_reviewed = row is not None
+                if has_reviewed:
+                    cur.execute("SELECT * FROM profile_reviews WHERE id=?", (row[0],))
+                    my_profile_review = dict(cur.fetchone()) if cur.fetchone() else None
 
             avatar_url = _avatar_url(u.get('user_id')) if u.get('avatar') else None
             conn.close()
@@ -706,6 +751,9 @@ def public_profile_view(request, username):
                 'tier_active': tier_active, 'days_left': days_left,
                 'avg_rating': round(avg_rating, 1), 'now': datetime.now(),
                 'avatar_url': avatar_url,
+                'profile_reviews': profile_reviews,
+                'has_reviewed': has_reviewed,
+                'my_profile_review': my_profile_review,
             })
         conn.close()
     except Exception as e:
@@ -1373,6 +1421,121 @@ def report_review_api(request):
     return JsonResponse({'success': True, 'message': 'Жалоба отправлена администрации'})
 
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_create_profile_review(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    _ensure_profile_reviews_table()
+    user_id = request.session.get('user_id')
+    data = json.loads(request.body)
+    reviewed_id = int(data.get('reviewed_id', 0))
+    rating = int(data.get('rating', 0))
+    comment = data.get('comment', '').strip()
+    if reviewed_id == user_id:
+        return JsonResponse({'error': 'Нельзя оставить отзыв на себя'}, status=400)
+    if rating < 1 or rating > 5:
+        return JsonResponse({'error': 'Рейтинг от 1 до 5'}, status=400)
+    if not comment:
+        return JsonResponse({'error': 'Напишите отзыв'}, status=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users WHERE user_id=?", (reviewed_id,))
+    if not cur.fetchone():
+        conn.close()
+        return JsonResponse({'error': 'Пользователь не найден'}, status=404)
+    cur.execute("SELECT id FROM profile_reviews WHERE reviewer_id=? AND reviewed_id=?", (user_id, reviewed_id))
+    if cur.fetchone():
+        conn.close()
+        return JsonResponse({'error': 'Вы уже оставили отзыв этому пользователю'}, status=400)
+    cur.execute(
+        "INSERT INTO profile_reviews (reviewer_id, reviewed_id, rating, comment) VALUES (?, ?, ?, ?)",
+        (user_id, reviewed_id, rating, comment)
+    )
+    # Update rating stats on the reviewed user
+    cur.execute("SELECT AVG(rating), COUNT(*) FROM profile_reviews WHERE reviewed_id=?", (reviewed_id,))
+    row = cur.fetchone()
+    avg = round(row[0] or rating, 1)
+    cnt = row[1] or 1
+    cur.execute("UPDATE users SET rating=?, reviews_count=? WHERE user_id=?", (avg, cnt, reviewed_id))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Отзыв оставлен'})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_update_profile_review(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    _ensure_profile_reviews_table()
+    user_id = request.session.get('user_id')
+    data = json.loads(request.body)
+    review_id = int(data.get('review_id', 0))
+    rating = int(data.get('rating', 0))
+    comment = data.get('comment', '').strip()
+    if rating < 1 or rating > 5:
+        return JsonResponse({'error': 'Рейтинг от 1 до 5'}, status=400)
+    if not comment:
+        return JsonResponse({'error': 'Напишите отзыв'}, status=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT reviewer_id, reviewed_id, created_at FROM profile_reviews WHERE id=?", (review_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return JsonResponse({'error': 'Отзыв не найден'}, status=404)
+    if row[0] != user_id:
+        conn.close()
+        return JsonResponse({'error': 'Это не ваш отзыв'}, status=403)
+    reviewed_id = row[1]
+    created_at = datetime.fromisoformat(row[2].replace('Z', ''))
+    if (datetime.now() - created_at) > timedelta(days=14):
+        conn.close()
+        return JsonResponse({'error': 'Прошло более 14 дней, отзыв нельзя изменить'}, status=400)
+    cur.execute(
+        "UPDATE profile_reviews SET rating=?, comment=?, updated_at=datetime('now') WHERE id=?",
+        (rating, comment, review_id)
+    )
+    cur.execute("SELECT AVG(rating) FROM profile_reviews WHERE reviewed_id=?", (reviewed_id,))
+    avg = cur.fetchone()[0] or rating
+    cur.execute("UPDATE users SET rating=? WHERE user_id=?", (round(avg, 1), reviewed_id))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Отзыв обновлён'})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_delete_profile_review(request):
+    if not check_auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    _ensure_profile_reviews_table()
+    user_id = request.session.get('user_id')
+    data = json.loads(request.body)
+    review_id = int(data.get('review_id', 0))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT reviewer_id, reviewed_id FROM profile_reviews WHERE id=?", (review_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return JsonResponse({'error': 'Отзыв не найден'}, status=404)
+    if row[0] != user_id:
+        conn.close()
+        return JsonResponse({'error': 'Это не ваш отзыв'}, status=403)
+    reviewed_id = row[1]
+    cur.execute("DELETE FROM profile_reviews WHERE id=?", (review_id,))
+    cur.execute("SELECT AVG(rating), COUNT(*) FROM profile_reviews WHERE reviewed_id=?", (reviewed_id,))
+    row2 = cur.fetchone()
+    avg = round(row2[0] or 0, 1)
+    cnt = row2[1] or 0
+    cur.execute("UPDATE users SET rating=?, reviews_count=? WHERE user_id=?", (avg, cnt, reviewed_id))
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True, 'message': 'Отзыв удалён'})
+
+
 def avatar_serve_view(request, user_id):
     _ensure_avatar_column()
     conn = get_db()
@@ -1578,6 +1741,7 @@ def exchange_view(request):
         'my_offers': my_offers,
         'my_deals': my_deals_ex,
         'currencies': ['RUB', 'USD', 'EUR', 'TON', 'USDT'],
+        'exchange_rates': EXCHANGE_RATES,
     })
 
 
@@ -1595,11 +1759,18 @@ def api_exchange_create_offer(request):
     recv_amt = float(data.get('receive_amount', 0))
     allowed = ['RUB', 'USD', 'EUR', 'TON', 'USDT']
     if give_cur not in allowed or recv_cur not in allowed:
-        return JsonResponse({'error': 'Недопустимая валюта'}, status=400)
-    if give_amt <= 0 or recv_amt <= 0:
-        return JsonResponse({'error': 'Суммы должны быть > 0'}, status=400)
+        return JsonResponse({'error': 'Недопустимая валюты'}, status=400)
+    if give_amt <= 0:
+        return JsonResponse({'error': 'Сумма должна быть > 0'}, status=400)
     if give_cur == recv_cur:
         return JsonResponse({'error': 'Валюты должны различаться'}, status=400)
+    # Auto-calculate receive amount if not provided
+    if recv_amt <= 0:
+        give_rate = EXCHANGE_RATES.get(give_cur, 1)
+        recv_rate = EXCHANGE_RATES.get(recv_cur, 1)
+        recv_amt = round(give_amt * give_rate / recv_rate, 2) if recv_rate else 0
+        if recv_amt <= 0:
+            return JsonResponse({'error': 'Не удалось рассчитать сумму'}, status=400)
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT balance_{} FROM users WHERE user_id=?".format(give_cur), (user_id,))
@@ -1645,8 +1816,12 @@ def api_exchange_accept(request):
     if (row[0] or 0) < recv_amt:
         conn.close()
         return JsonResponse({'error': 'Недостаточно средств для обмена'}, status=400)
-    commission_rate = 0.01
-    commission = recv_amt * commission_rate
+    # Commission based on buyer's subscription tier
+    cur.execute("SELECT premium_tier FROM users WHERE user_id=?", (buyer_id,))
+    tier_row = cur.fetchone()
+    tier = tier_row[0] if tier_row else 'free'
+    commission_rate = TIER_COMMISSION.get(tier, 4) / 100
+    commission = round(recv_amt * commission_rate, 2)
     seller_gets = recv_amt - commission
     cur.execute("BEGIN IMMEDIATE")
     try:

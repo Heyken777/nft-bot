@@ -858,6 +858,23 @@ class Database:
             )
         """)
 
+        # Таблица отзывов на профили
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS profile_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reviewer_id INTEGER NOT NULL,
+                reviewed_id INTEGER NOT NULL,
+                rating INTEGER NOT NULL,
+                comment TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP,
+                is_moderated INTEGER DEFAULT 0,
+                moderated_by INTEGER,
+                moderated_at TIMESTAMP,
+                UNIQUE(reviewer_id, reviewed_id)
+            )
+        """)
+
         # Таблица реферальных уровней (multi-level)
         self.add_column_if_not_exists("users", "referral_level2_id", "INTEGER")
         self.add_column_if_not_exists("users", "referral_earnings_level2", "REAL DEFAULT 0")

@@ -2,6 +2,13 @@
 {% load static %}
 {% load dict_filters %}
 {% block title %}P2P Обмен валют{% endblock %}
+{% block extra_css %}
+<style>
+    #exchangeRateInfo {
+        font-size: 12px; color: var(--text-muted); margin-top: 4px; display: none;
+    }
+</style>
+{% endblock %}
 {% block content %}
 <div class="breadcrumb">
     <a href="/usersite/profile/">Главная</a>
@@ -84,20 +91,21 @@
             <div class="form-group mt-2">
                 <label class="form-label">Отдаю</label>
                 <div class="flex gap-2">
-                    <select id="giveCur" class="form-control" style="max-width:100px;">
+                    <select id="giveCur" class="form-control" style="max-width:100px;" onchange="autoCalcReceive()">
                         {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
                     </select>
-                    <input type="number" id="giveAmt" class="form-control" placeholder="Сумма" step="0.01">
+                    <input type="number" id="giveAmt" class="form-control" placeholder="Сумма" step="0.01" oninput="autoCalcReceive()">
                 </div>
             </div>
             <div class="form-group mt-2">
                 <label class="form-label">Получаю</label>
                 <div class="flex gap-2">
-                    <select id="recvCur" class="form-control" style="max-width:100px;">
+                    <select id="recvCur" class="form-control" style="max-width:100px;" onchange="autoCalcReceive()">
                         {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
                     </select>
-                    <input type="number" id="recvAmt" class="form-control" placeholder="Сумма" step="0.01">
+                    <input type="number" id="recvAmt" class="form-control" placeholder="Авторасчёт" step="0.01" readonly style="background:rgba(0,0,0,0.05);">
                 </div>
+                <div id="exchangeRateInfo"></div>
             </div>
             <div id="exchangeError" style="color:var(--danger);font-size:13px;margin-top:8px;display:none;"></div>
             <button class="btn btn-primary mt-3" onclick="createOffer()" style="width:100%;">
@@ -128,16 +136,36 @@
 
 <script>
 var csrf = '{{ csrf_token }}';
+var EXCHANGE_RATES = {{ exchange_rates|safe }};
+
+function autoCalcReceive() {
+    var giveCur = document.getElementById('giveCur').value;
+    var giveAmt = parseFloat(document.getElementById('giveAmt').value);
+    var recvCur = document.getElementById('recvCur').value;
+    var rateInfo = document.getElementById('exchangeRateInfo');
+    if (giveAmt > 0 && giveCur !== recvCur) {
+        var giveRate = EXCHANGE_RATES[giveCur] || 1;
+        var recvRate = EXCHANGE_RATES[recvCur] || 1;
+        var recvAmt = (giveAmt * giveRate / recvRate).toFixed(2);
+        document.getElementById('recvAmt').value = recvAmt;
+        rateInfo.textContent = '1 ' + giveCur + ' = ' + (giveRate / recvRate).toFixed(4) + ' ' + recvCur;
+        rateInfo.style.display = 'block';
+    } else {
+        document.getElementById('recvAmt').value = '';
+        if (giveCur === recvCur) rateInfo.textContent = 'Валюты должны различаться';
+        else rateInfo.style.display = 'none';
+    }
+}
 
 async function createOffer() {
     var giveCur = document.getElementById('giveCur').value;
     var giveAmt = parseFloat(document.getElementById('giveAmt').value);
     var recvCur = document.getElementById('recvCur').value;
-    var recvAmt = parseFloat(document.getElementById('recvAmt').value);
+    var recvAmt = parseFloat(document.getElementById('recvAmt').value || 0);
     var err = document.getElementById('exchangeError');
     err.style.display = 'none';
-    if (!giveAmt || !recvAmt || giveAmt <= 0 || recvAmt <= 0) {
-        err.textContent = 'Введите корректные суммы'; err.style.display = 'block'; return;
+    if (!giveAmt || giveAmt <= 0) {
+        err.textContent = 'Введите корректную сумму'; err.style.display = 'block'; return;
     }
     if (giveCur === recvCur) {
         err.textContent = 'Валюты должны различаться'; err.style.display = 'block'; return;
