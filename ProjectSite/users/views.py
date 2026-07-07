@@ -1,4 +1,4 @@
-import json, os, sys, sqlite3, requests
+import json, os, sys, sqlite3, requests, secrets
 from datetime import datetime, timedelta
 from functools import wraps
 from django.shortcuts import render, redirect
@@ -12,9 +12,69 @@ from django.contrib.auth import authenticate, login as auth_login
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..'))
 from crypto import encrypt_value, decrypt_value
 
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:9207")
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
 OWNER_TELEGRAM_ID = int(os.getenv("OWNER_TELEGRAM_ID", "1803437347"))
+
+
+def _get_client_ip(request):
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+
+def _is_ip_blocked(ip):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM login_attempts "
+        "WHERE ip_address = ? AND success = 0 "
+        "AND attempted_at > datetime('now', '-15 minutes')",
+        (ip,)
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count >= 5
+
+
+def _record_login_attempt(ip, success):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO login_attempts (ip_address, success) VALUES (?, ?)", (ip, 1 if success else 0))
+    conn.commit()
+    conn.close()
+
+
+def _initiate_admin_2fa(user_id, username):
+    """Создаёт 2FA-код, сохраняет в pending_verifications, отправляет в Telegram.
+    Возвращает verify_token или raises Exception."""
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    verify_token = secrets.token_urlsafe(16)
+    payload = json.dumps({"code": code, "attempts": 0})
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO pending_verifications (nonce, user_id, action_type, payload, expires_at) "
+            "VALUES (?, ?, ?, ?, datetime('now', '+5 minutes'))",
+            (verify_token, user_id, 'admin_login', payload)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    resp = requests.post(
+        f"{BACKEND_URL}/api/send_admin_login_code",
+        json={"user_id": user_id, "code": code},
+        timeout=10
+    )
+    data = resp.json()
+    if not data.get('success'):
+        raise Exception('Telegram bot not started')
+    return verify_token
 
 
 def get_db():
@@ -1572,55 +1632,129 @@ def api_search_deals(request):
 def api_login(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    ip = _get_client_ip(request)
+    if _is_ip_blocked(ip):
+        return JsonResponse({'success': False, 'error': 'Слишком много попыток. Попробуйте через 15 минут.'}, status=429)
     try:
         data = json.loads(request.body)
         raw = data.get('username', '').strip()
         password = data.get('password', '')
+        uid = None
 
+        # — Путь 1: Django superuser —
         django_user = authenticate(request, username=raw, password=password) if password else None
         if django_user:
-            auth_login(request, django_user)
             uid = int(django_user.username) if django_user.username.lstrip('-').isdigit() else OWNER_TELEGRAM_ID
-            request.session['telegram_id'] = uid
-            request.session['user_id'] = uid
-            request.session['username'] = django_user.first_name or raw
-            request.session['admin'] = django_user.first_name or raw
-            request.session['admin_role'] = 'CEO' if django_user.is_superuser else 'Admin'
-            if django_user.is_superuser:
-                request.session['is_owner'] = True
-                request.session['role'] = 'owner'
-            request.session.modified = True
-            request.session.save()
-            return JsonResponse({'success': True, 'token': 'session', 'username': request.session['username'], 'role': 'owner' if django_user.is_superuser else 'admin'})
+            username = django_user.first_name or raw
+            role = 'CEO' if django_user.is_superuser else 'Admin'
 
-        if raw.lstrip('-').isdigit():
+        # — Путь 2: user_id в БД —
+        if not django_user and raw.lstrip('-').isdigit():
             uid = int(raw)
             conn = get_db()
             cur = conn.cursor()
-            cur.execute("SELECT * FROM users WHERE user_id=?", (uid,))
-            user = cur.fetchone()
-            if not user:
+            cur.execute("SELECT username, admin_role FROM users WHERE user_id=?", (uid,))
+            row = cur.fetchone()
+            if not row:
                 cur.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (uid, raw))
                 conn.commit()
-                cur.execute("SELECT * FROM users WHERE user_id=?", (uid,))
-                user = cur.fetchone()
+                cur.execute("SELECT username, admin_role FROM users WHERE user_id=?", (uid,))
+                row = cur.fetchone()
             conn.close()
-            if user:
-                u = dict(user)
-                request.session['telegram_id'] = uid
-                request.session['user_id'] = uid
-                request.session['username'] = u.get('username', str(uid))
-                request.session['admin'] = u.get('username', str(uid))
-                request.session['admin_role'] = u.get('admin_role', 'Admin') or 'Admin'
-                if uid == OWNER_TELEGRAM_ID:
-                    request.session['is_owner'] = True
-                    request.session['role'] = 'owner'
-                request.session.modified = True
-                request.session.save()
-                return JsonResponse({'success': True, 'token': 'session', 'username': u.get('username', str(uid)), 'role': 'owner' if uid == OWNER_TELEGRAM_ID else 'admin'})
-        return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=401)
+            if row:
+                username = row['username'] or str(uid)
+                role = 'CEO' if uid == OWNER_TELEGRAM_ID else (row['admin_role'] or 'Admin')
+
+        if not uid:
+            _record_login_attempt(ip, False)
+            return JsonResponse({'success': False, 'error': 'Пользователь не найден'}, status=401)
+
+        # — 2FA: отправляем код в Telegram —
+        try:
+            verify_token = _initiate_admin_2fa(uid, username)
+        except Exception:
+            _record_login_attempt(ip, False)
+            return JsonResponse({
+                'success': False,
+                'need_verify': False,
+                'error': 'Напишите /start боту, затем попробуйте снова.'
+            }, status=400)
+
+        _record_login_attempt(ip, True)
+        return JsonResponse({
+            'success': True,
+            'need_verify': True,
+            'verify_token': verify_token,
+            'username': username
+        })
     except Exception as e:
         print(f"[api_login] Error: {e}")
+        return JsonResponse({'success': False, 'error': 'Server error'}, status=500)
+
+
+@csrf_exempt
+def api_verify_login_code(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+        token = data.get('token', '').strip()
+        code = data.get('code', '').strip()
+        if not token or not code:
+            return JsonResponse({'success': False, 'error': 'Missing fields'})
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM pending_verifications WHERE nonce = ? AND action_type = 'admin_login' "
+            "AND status = 'pending' AND expires_at > datetime('now')",
+            (token,)
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Код недействителен или истёк'})
+        v = dict(row)
+        payload = json.loads(v['payload'])
+        attempts = payload.get('attempts', 0)
+        if attempts >= 5:
+            cur.execute("UPDATE pending_verifications SET status = 'expired' WHERE nonce = ?", (token,))
+            conn.commit()
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Слишком много попыток. Запросите новый код.'})
+        if payload.get('code') != code:
+            payload['attempts'] = attempts + 1
+            cur.execute("UPDATE pending_verifications SET payload = ? WHERE nonce = ?",
+                        (json.dumps(payload), token))
+            conn.commit()
+            conn.close()
+            remaining = 5 - (attempts + 1)
+            return JsonResponse({'success': False, 'error': f'Неверный код. Осталось попыток: {remaining}'})
+
+        # — Код верный — выдаём сессию —
+        uid = v['user_id']
+        cur.execute("SELECT username, admin_role FROM users WHERE user_id=?", (uid,))
+        user = cur.fetchone()
+        u = dict(user) if user else {}
+        username = u.get('username', str(uid))
+        admin_role = 'CEO' if uid == OWNER_TELEGRAM_ID else (u.get('admin_role', 'Admin') or 'Admin')
+
+        request.session['telegram_id'] = uid
+        request.session['user_id'] = uid
+        request.session['username'] = username
+        request.session['admin'] = username
+        request.session['admin_role'] = admin_role
+        if uid == OWNER_TELEGRAM_ID:
+            request.session['is_owner'] = True
+            request.session['role'] = 'owner'
+        request.session.modified = True
+        request.session.save()
+
+        cur.execute("UPDATE pending_verifications SET status = 'confirmed' WHERE nonce = ?", (token,))
+        conn.commit()
+        conn.close()
+        return JsonResponse({'success': True, 'token': 'session', 'username': username, 'role': 'owner' if uid == OWNER_TELEGRAM_ID else 'admin'})
+    except Exception as e:
+        print(f"[api_verify_login_code] Error: {e}")
         return JsonResponse({'success': False, 'error': 'Server error'}, status=500)
 
 

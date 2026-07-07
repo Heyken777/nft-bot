@@ -38,6 +38,7 @@ urlpatterns = [
 
     # API: вход
     path('api/login/', views.api_login, name='api_login'),
+    path('api/verify-login-code/', views.api_verify_login_code, name='api_verify_login_code'),
 
     # API: пользователи
     path('api/users/<int:telegram_id>/balance/', views.api_change_balance),

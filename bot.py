@@ -6620,6 +6620,30 @@ async def handle_2fa_request(request):
     return JSONResponse(content={'success': True, 'nonce': nonce, 'message': 'Подтверждение отправлено в Telegram'})
 
 
+# ========== Admin Login 2FA Code Sender ==========
+async def handle_send_admin_login_code(request):
+    """Отправляет 6-значный код подтверждения входа в админ-панель."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'error': 'Invalid JSON'}, status_code=400)
+    user_id = data.get('user_id')
+    code = data.get('code')
+    if not user_id or not code:
+        return JSONResponse(content={'error': 'Missing fields'}, status_code=400)
+    try:
+        await bot.send_message(
+            user_id,
+            f"🔐 *Код подтверждения входа в админ-панель*\n\n"
+            f"Ваш код: `{code}`\n\n"
+            f"Код действителен 5 минут. Никому не сообщайте его.",
+            parse_mode="Markdown"
+        )
+        return JSONResponse(content={'success': True})
+    except Exception as e:
+        return JSONResponse(content={'success': False, 'error': str(e)}, status_code=400)
+
+
 # ========== WebSocket Connections (real-time notifications) ==========
 
 ws_connections: dict[int, list] = {}
@@ -6690,6 +6714,7 @@ fastapi_app.add_api_route("/api/pay_deal", handle_pay_deal, methods=["POST"])
 fastapi_app.add_api_route("/api/mark_sent", handle_mark_sent, methods=["POST"])
 fastapi_app.add_api_route("/api/confirm_receipt", handle_confirm_receipt, methods=["POST"])
 fastapi_app.add_api_route("/api/2fa/request", handle_2fa_request, methods=["POST"])
+fastapi_app.add_api_route("/api/send_admin_login_code", handle_send_admin_login_code, methods=["POST"])
 
 # WebSocket endpoint for real-time notifications
 async def ws_notify_user(user_id: int, message: dict):

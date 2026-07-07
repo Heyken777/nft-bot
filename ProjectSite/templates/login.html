@@ -207,18 +207,49 @@
         <h1>HeykenVPN</h1>
         <div class="subtitle">✦ COSMIC ADMIN v3.0 ✦</div>
         
-        <form onsubmit="login(event)">
-            <input type="text" id="username" class="neon-input" placeholder="Логин" required autocomplete="off">
-            <input type="password" id="password" class="neon-input" placeholder="UUID-ключ" required>
-            <button type="submit" class="neon-button">
-                <i class="fas fa-rocket me-2"></i> Войти в систему
-            </button>
-        </form>
+        <!-- ШАГ 1: логин + пароль -->
+        <div id="step1">
+            <form onsubmit="login(event)">
+                <input type="text" id="username" class="neon-input" placeholder="Логин" required autocomplete="off">
+                <input type="password" id="password" class="neon-input" placeholder="UUID-ключ" required>
+                <button type="submit" class="neon-button">
+                    <i class="fas fa-rocket me-2"></i> Войти в систему
+                </button>
+            </form>
+        </div>
+
+        <!-- ШАГ 2: код из Telegram -->
+        <div id="step2" style="display:none;">
+            <div class="subtitle" style="color:rgba(255,255,255,0.6);margin-bottom:12px;">
+                <i class="fas fa-shield-alt me-1"></i> Код отправлен в Telegram
+            </div>
+            <div class="text-center" style="color:rgba(255,255,255,0.35);font-size:12px;margin-bottom:18px;">
+                Введите 6-значный код из сообщения бота
+            </div>
+            <form onsubmit="verifyCode(event)">
+                <input type="text" id="codeInput" class="neon-input" placeholder="000000" maxlength="6"
+                       autocomplete="off" inputmode="numeric" pattern="[0-9]*"
+                       style="text-align:center;font-size:28px;letter-spacing:8px;font-weight:700;">
+                <button type="submit" class="neon-button">
+                    <i class="fas fa-check-circle me-2"></i> Подтвердить
+                </button>
+            </form>
+            <div style="text-align:center;margin-top:12px;">
+                <button onclick="backToLogin()" class="neon-button" style="background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.1);font-size:13px;">
+                    <i class="fas fa-arrow-left me-1"></i> Назад
+                </button>
+            </div>
+        </div>
         
         <div id="error" class="error"></div>
+        <div id="codeSentInfo" class="subtitle" style="display:none;margin-top:8px;color:rgba(0,255,150,0.6);font-size:11px;">
+            <i class="fas fa-check-circle"></i> Код отправлен в Telegram
+        </div>
     </div>
 
     <script>
+        var _verifyToken = '';
+        
         function generateStars() {
             const starsContainer = document.getElementById('stars');
             for (let i = 0; i < 250; i++) {
@@ -236,18 +267,20 @@
         }
         generateStars();
         
-        function showToast(msg, type = 'success') {
-            const toast = document.createElement('div');
-            toast.className = 'toast-custom';
-            toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i> ${msg}`;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
+        function showToast(msg, type) {
+            const div = document.createElement('div');
+            div.className = 'toast-custom';
+            div.style.background = type === 'error' ? 'rgba(255,50,50,0.85)' : 'rgba(255,0,102,0.85)';
+            div.innerHTML = msg;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 3500);
         }
         
         async function login(e) {
             e.preventDefault();
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
+            document.getElementById('error').style.display = 'none';
             
             try {
                 const response = await fetch('/api/login/', {
@@ -257,18 +290,64 @@
                 });
                 const data = await response.json();
     
-                if (data.success) {
+                if (data.success && data.need_verify) {
+                    _verifyToken = data.verify_token;
+                    document.getElementById('step1').style.display = 'none';
+                    document.getElementById('step2').style.display = 'block';
+                    document.getElementById('codeSentInfo').style.display = 'block';
+                    document.getElementById('codeInput').focus();
+                    showToast('<i class="fas fa-paper-plane me-1"></i> Код отправлен в Telegram');
+                } else if (data.success) {
                     localStorage.setItem('admin_token', data.token);
                     localStorage.setItem('admin_username', data.username);
-                    showToast('<i class="fi fi-rr-rocket"></i> Добро пожаловать в космос!', 'success');
+                    showToast('<i class="fas fa-rocket"></i> Добро пожаловать в космос!');
                     setTimeout(() => window.location.href = '/dashboard/', 500);
                 } else {
                     document.getElementById('error').style.display = 'block';
                     document.getElementById('error').innerText = data.error || 'Неверный логин или пароль';
                 }
             } catch (err) {
-                showToast('<i class="fi fi-rr-cross"></i> Ошибка соединения', 'error');
-            }}
+                showToast('<i class="fas fa-exclamation-circle"></i> Ошибка соединения', 'error');
+            }
+        }
+        
+        async function verifyCode(e) {
+            e.preventDefault();
+            const code = document.getElementById('codeInput').value.trim();
+            document.getElementById('error').style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/verify-login-code/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: _verifyToken, code: code })
+                });
+                const data = await response.json();
+    
+                if (data.success) {
+                    localStorage.setItem('admin_token', data.token);
+                    localStorage.setItem('admin_username', data.username);
+                    showToast('<i class="fas fa-rocket"></i> Добро пожаловать в космос!');
+                    setTimeout(() => window.location.href = '/dashboard/', 500);
+                } else {
+                    document.getElementById('error').style.display = 'block';
+                    document.getElementById('error').innerText = data.error || 'Неверный код';
+                    document.getElementById('codeInput').value = '';
+                    document.getElementById('codeInput').focus();
+                }
+            } catch (err) {
+                showToast('<i class="fas fa-exclamation-circle"></i> Ошибка соединения', 'error');
+            }
+        }
+        
+        function backToLogin() {
+            document.getElementById('step2').style.display = 'none';
+            document.getElementById('step1').style.display = 'block';
+            document.getElementById('codeSentInfo').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('codeInput').value = '';
+            _verifyToken = '';
+        }
     </script>
 </body>
 </html>
