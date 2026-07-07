@@ -136,6 +136,7 @@
     @keyframes spin {
         to { transform: rotate(360deg); }
     }
+    #customCategoryWrap textarea { min-height: 60px; resize: vertical; }
 </style>
 {% endblock %}
 
@@ -174,7 +175,11 @@
                         <option value="payment">Проблема с платежом</option>
                         <option value="account">Проблема с аккаунтом</option>
                         <option value="other">Другое</option>
+                        <option value="custom">Свой выбор (напишу причину)</option>
                     </select>
+                    <div id="customCategoryWrap" style="display:none;margin-top:10px;">
+                        <textarea id="customCategoryText" class="form-control" rows="2" placeholder="Опишите причину обращения..."></textarea>
+                    </div>
                 </div>
                 
                 <div class="form-group">
@@ -273,6 +278,11 @@
         }
     });
     
+    document.getElementById('ticketCategory').addEventListener('change', function() {
+        var wrap = document.getElementById('customCategoryWrap');
+        wrap.style.display = this.value === 'custom' ? 'block' : 'none';
+    });
+
     document.getElementById('fileInput').addEventListener('change', function(e) {
         const files = Array.from(e.target.files);
         if (selectedFiles.length + files.length > 10) {
@@ -352,7 +362,14 @@
         submitBtn.textContent = ' Отправка...';
         
         const formData = new FormData();
-        formData.append('subject', document.getElementById('ticketCategory').options[document.getElementById('ticketCategory').selectedIndex]?.text || 'Другое');
+        var catSelect = document.getElementById('ticketCategory');
+        var catValue = catSelect.value;
+        var catText = catSelect.options[catSelect.selectedIndex]?.text || 'Другое';
+        if (catValue === 'custom') {
+            catText = document.getElementById('customCategoryText').value.trim() || 'Свой выбор';
+        }
+        formData.append('category', catValue);
+        formData.append('subject', catText);
         formData.append('message', quill.root.innerHTML);
         formData.append('user_login', document.getElementById('userLogin').value);
         formData.append('order_number', document.getElementById('orderNumber').value);

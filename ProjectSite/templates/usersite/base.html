@@ -128,7 +128,8 @@
         .status-circle.danger { background:#ff4757; }
         .status-circle.info { background:#3498db; }
         .status-circle.muted { background:#9CA3AF; }
-        .fi { vertical-align:middle; margin-top:-2px; }
+        .fi, .card h4 i, .card h4 .fi { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; width: 1em; height: 1em; }
+        .card h4 i, .card h4 .fi { margin-top: -2px; }
 
         /* ── Glass Navigation ── */
         .glass-nav {
@@ -654,11 +655,12 @@
             border: 1px solid var(--border-color);
             border-radius: var(--radius-sm);
             padding: 14px 12px; text-align: center;
+            color: var(--text-primary);
             transition: var(--transition-color), border-color var(--transition-long), transform var(--transition-long);
             will-change: transform;
         }
         .balance-chip:hover { border-color: var(--accent); transform: translateY(-3px) scale(1.02); }
-        .balance-amount { font-size: 18px; font-weight: 700; }
+        .balance-amount { font-size: 18px; font-weight: 700; color: var(--text-primary); }
         .balance-currency { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
         .balance-rub { font-size: 10px; color: var(--text-secondary); }
 
@@ -724,6 +726,20 @@
         [data-reveal] { opacity: 0; transform: translateY(16px); transition: opacity 0.6s var(--ease-out-expo), transform 0.6s var(--ease-out-expo); }
         [data-reveal].revealed { opacity: 1; transform: translateY(0); }
         @media (prefers-reduced-motion: reduce) { [data-reveal] { opacity: 1; transform: none; transition: none; } }
+
+        /* Dark theme overrides */
+        [data-theme="dark"] select, [data-theme="dark"] select.form-control {
+            background: #1A1D23; color: #F0F2F5; border-color: #2D3139;
+            appearance: auto; -webkit-appearance: auto;
+        }
+        [data-theme="dark"] .ql-editor { color: #F0F2F5; background: #1A1D23; }
+        [data-theme="dark"] .ql-editor.ql-blank::before { color: #9CA3AF; }
+        [data-theme="dark"] .ql-toolbar { background: #22262E; border-color: #2D3139; }
+        [data-theme="dark"] .ql-container { border-color: #2D3139; }
+        [data-theme="dark"] .file-attachments i { color: var(--text-secondary); }
+        [data-theme="dark"] .form-control, [data-theme="dark"] textarea, [data-theme="dark"] input[type="text"], [data-theme="dark"] input[type="email"], [data-theme="dark"] input[type="password"], [data-theme="dark"] input[type="number"] {
+            background: #1A1D23; color: #F0F2F5; border-color: #2D3139;
+        }
     </style>
 
     {% block extra_css %}{% endblock %}

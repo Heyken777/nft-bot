@@ -986,6 +986,7 @@ def create_ticket(request):
         return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
     user_id = request.session.get('user_id')
     subject = request.POST.get('subject', '')
+    category = request.POST.get('category', subject)
     message = request.POST.get('message', '')
     user_login = request.POST.get('user_login', '')
     order_number = request.POST.get('order_number', '')
@@ -1002,7 +1003,7 @@ def create_ticket(request):
 
     cur.execute(
         "INSERT INTO support_tickets (user_id, subject, category, user_type, order_number) VALUES (?,?,?,?,?)",
-        (user_id, f"{vip_tag}{subject}", subject, user_type, order_number)
+        (user_id, f"{vip_tag}{subject}", category, user_type, order_number)
     )
     ticket_id = cur.lastrowid
     if not user_login:
