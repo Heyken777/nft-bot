@@ -23,7 +23,7 @@
                 </div>
                 <div class="info-row">
                     <span class="info-label">На сайте с</span>
-                    <span class="info-value">{{ user.created_at|date:"d.m.Y"|default:"—" }}</span>
+                    <span class="info-value">{{ user.created_at_dt|date:"d.m.Y"|default:"—" }}</span>
                 </div>
                 {% if user.referral_code %}
                 <div class="info-row">
@@ -34,7 +34,7 @@
                 {% if tier_active %}
                 <div class="info-row">
                     <span class="info-label">Подписка</span>
-                    <span class="info-value">до {{ user.premium_until|date:"d.m.Y"|default:"—" }}</span>
+                    <span class="info-value">до {{ user.premium_until_dt|date:"d.m.Y"|default:"—" }}</span>
                 </div>
                 {% endif %}
             </div>

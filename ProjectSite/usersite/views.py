@@ -614,14 +614,28 @@ def public_profile_view(request, username):
         row = cur.fetchone()
         if row:
             u = dict(row)
+            created_at_dt = None
+            if u.get('created_at'):
+                try:
+                    created_at_dt = datetime.fromisoformat(u['created_at'].replace('Z', '')) + timedelta(hours=3)
+                except:
+                    pass
+            premium_until_dt = None
+            if u.get('premium_until'):
+                try:
+                    premium_until_dt = datetime.fromisoformat(u['premium_until'].replace('Z', '')) + timedelta(hours=3)
+                except:
+                    pass
             user = {
                 'telegram_id': u.get('user_id'),
                 'username': u.get('username'),
                 'created_at': u.get('created_at'),
+                'created_at_dt': created_at_dt,
                 'premium_tier': u.get('premium_tier') or 'free',
                 'rating': u.get('rating') or 0,
                 'reviews_count': u.get('reviews_count') or 0,
                 'premium_until': u.get('premium_until'),
+                'premium_until_dt': premium_until_dt,
                 'referral_code': u.get('referral_code'),
                 'referred_by': u.get('referred_by'),
             }
@@ -1257,6 +1271,7 @@ def reviews_view(request):
         cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
         u = cur.fetchone()
         user = dict(u) if u else {}
+        avatar_url = _avatar_url(user_id) if user.get('avatar') else None
         conn.close()
     except Exception as e:
         print(f"Ошибка reviews: {e}")
@@ -1264,6 +1279,7 @@ def reviews_view(request):
     return render(request, 'usersite/reviews.html', {
         'user': user, 'received': received, 'given': given,
         'avg_rating': avg_rating, 'total': total, 'positive_pct': positive_pct,
+        'avatar_url': avatar_url,
     })
 
 
