@@ -161,10 +161,12 @@ def escape_md(text: str) -> str:
 def fmt_num(num: float) -> str:
     return f"{num:,.0f}".replace(",", " ")
 
-DURATION_OPTIONS = [(30, 1, 0), (90, 3, 5), (180, 6, 10), (365, 12, 20)]
+DURATION_OPTIONS = [(30, 1, 0), (90, 3, 5), (180, 6, 10), (365, 12, 20), (36500, 0, 0)]
 
 def calc_tier_price(tier: str, days: int) -> float:
     price_month = TIER_CONFIG[tier]['price_month']
+    if days == 36500:
+        return price_month * 12 * 10
     for d, m, disc in DURATION_OPTIONS:
         if d == days:
             return price_month * m * (1 - disc / 100)
@@ -289,7 +291,8 @@ def tier_selection_kb():
         [InlineKeyboardButton(text="⭐ Premium", callback_data="prem_tier_premium")],
         [InlineKeyboardButton(text="💎 Platinum", callback_data="prem_tier_platinum")],
         [InlineKeyboardButton(text="👑 VIP-статус", callback_data="prem_tier_vip")],
-        [InlineKeyboardButton(text="⬅️ Назад в главное меню", callback_data="menu")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="profile")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")],
     ])
 
 def currency_selection_kb(tier: str):
@@ -314,10 +317,14 @@ def duration_kb(tier: str, currency: str):
     price_month = TIER_CONFIG[tier]['price_month']
     kb = []
     for days, months, discount in DURATION_OPTIONS:
-        total_rub = price_month * months * (1 - discount / 100)
+        if days == 36500:
+            total_rub = price_month * 12 * 10
+            label_months = "FOREVER ♾️"
+        else:
+            total_rub = price_month * months * (1 - discount / 100)
+            label_months = f"{months} мес." if months > 1 else "1 месяц"
         price_in_currency = total_rub / rate if rate > 0 else total_rub
         price_str = fmt_price(price_in_currency)
-        label_months = f"{months} мес." if months > 1 else "1 месяц"
         kb.append([InlineKeyboardButton(text=f"[{label_months} — {price_str} {currency}]", callback_data=f"prem_dur_{tier}_{days}_{currency}")])
     kb.append([InlineKeyboardButton(text="🔙 Назад к валютам", callback_data=f"prem_tier_{tier}")])
     kb.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")])
@@ -1180,7 +1187,17 @@ class Database:
             return
         self.cursor.execute("SAVEPOINT sp_set_premium")
         try:
-            expires = datetime.now() + timedelta(days=days)
+            self.cursor.execute("SELECT premium_until FROM users WHERE user_id=?", (user_id,))
+            existing = self.cursor.fetchone()
+            base = datetime.now()
+            if existing and existing[0]:
+                try:
+                    existing_exp = datetime.fromisoformat(str(existing[0]).replace('Z', ''))
+                    if existing_exp > base:
+                        base = existing_exp
+                except:
+                    pass
+            expires = base + timedelta(days=days)
             self.cursor.execute("""
                 UPDATE users SET
                     premium_tier = ?,
@@ -1188,7 +1205,7 @@ class Database:
                     premium_until = ?,
                     premium_granted_by = ?,
                     premium_granted_at = CURRENT_TIMESTAMP,
-                    premium_duration_days = ?
+                    premium_duration_days = COALESCE(premium_duration_days, 0) + ?
                 WHERE user_id = ?
             """, (tier, expires, granted_by, days, user_id))
             self.cursor.execute("RELEASE sp_set_premium")
@@ -2099,6 +2116,9 @@ class AdminStates(StatesGroup):
 
 class PromoActivateState(StatesGroup):
     code = State()
+
+class AdminDealEditState(StatesGroup):
+    value = State()
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ ==========
 @dp.message(Command("start"))
@@ -3131,6 +3151,178 @@ async def upgrade_tier_cb(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+# ========== ADMIN: УПРАВЛЕНИЕ СДЕЛКАМИ ==========
+
+@dp.callback_query(lambda c: c.data.startswith("admin_deal_detail_"))
+async def admin_deal_detail_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    did = int(call.data.split("_")[3])
+    deal = db.get_deal(did)
+    if not deal:
+        await call.answer("Сделка не найдена", show_alert=True)
+        return
+    await state.update_data(edit_deal_id=did)
+    status_emoji = {"awaiting": "⏳", "paid": "💰", "item_sent": "📦", "completed": "✅", "cancelled": "❌", "disputed": "⚖️"}
+    emoji = status_emoji.get(deal['status'], "❓")
+    text = (
+        f"{emoji} *Сделка #{deal['id']}*\n\n"
+        f"📦 Товар: `{escape_md(deal['item'])}`\n"
+        f"💰 Сумма: {deal['amount']} {deal['currency']}\n"
+        f"📊 Комиссия: {deal['commission']*100:.0f}%\n"
+        f"👤 Продавец: `{deal['seller']}`\n"
+        f"👤 Покупатель: `{deal['buyer'] or '—'}`\n"
+        f"📌 Статус: {status_emoji.get(deal['status'], '❓')} {deal['status']}\n"
+        f"📅 Создана: {deal['created'][:16] if deal.get('created') else '—'}"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Название", callback_data=f"admin_deal_edit_name_{did}"),
+         InlineKeyboardButton(text="💰 Цена", callback_data=f"admin_deal_edit_price_{did}")],
+        [InlineKeyboardButton(text="💱 Валюта", callback_data=f"admin_deal_edit_cur_{did}"),
+         InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin_deal_delete_{did}")],
+        [InlineKeyboardButton(text="💾 Бэкап", callback_data=f"admin_deal_backup_{did}")],
+        [InlineKeyboardButton(text="🔙 К списку сделок", callback_data="admin_deals")]
+    ])
+    if img_exists("АКТИВНЫЕ СДЕЛКИ.jpg"):
+        await call.message.edit_media(
+            InputMediaPhoto(media=FSInputFile(img_path("АКТИВНЫЕ СДЕЛКИ.jpg")), caption=text, parse_mode="Markdown"),
+            reply_markup=kb
+        )
+    else:
+        await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_deal_edit_name_"))
+async def admin_deal_edit_name_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    did = int(call.data.split("_")[4])
+    await state.update_data(edit_deal_id=did, edit_field='name')
+    await state.set_state(AdminDealEditState.value)
+    await call.message.edit_text("✏️ *Введите новое название сделки:*", parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data=f"admin_deal_detail_{did}")]]))
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_deal_edit_price_"))
+async def admin_deal_edit_price_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    did = int(call.data.split("_")[4])
+    await state.update_data(edit_deal_id=did, edit_field='price')
+    await state.set_state(AdminDealEditState.value)
+    await call.message.edit_text("💰 *Введите новую цену сделки:*", parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data=f"admin_deal_detail_{did}")]]))
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_deal_edit_cur_"))
+async def admin_deal_edit_cur_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    did = int(call.data.split("_")[4])
+    await state.update_data(edit_deal_id=did)
+    currencies = ["RUB", "USD", "EUR", "BYN", "UAH", "KZT", "UZS", "TON", "USDT", "STARS"]
+    kb = []
+    row = []
+    for c in currencies:
+        row.append(InlineKeyboardButton(text=c, callback_data=f"admin_deal_setcur_{did}_{c}"))
+        if len(row) == 3:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"admin_deal_detail_{did}")])
+    await call.message.edit_text("💱 *Выберите новую валюту:*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_deal_setcur_"))
+async def admin_deal_setcur_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    parts = call.data.split("_")
+    did = int(parts[3])
+    currency = parts[4]
+    db.cursor.execute("UPDATE deals SET currency=? WHERE id=?", (currency, did))
+    db.conn.commit()
+    await call.answer(f"✅ Валюта изменена на {currency}")
+    await admin_deal_detail_cb(call, state)
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_deal_delete_"))
+async def admin_deal_delete_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    did = int(call.data.split("_")[3])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"admin_deal_delete_confirm_{did}")],
+        [InlineKeyboardButton(text="❌ Нет", callback_data=f"admin_deal_detail_{did}")]
+    ])
+    await call.message.edit_text(f"🗑 *Подтвердите удаление сделки #{did}*\nЭто действие необратимо.", parse_mode="Markdown", reply_markup=kb)
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_deal_delete_confirm_"))
+async def admin_deal_delete_confirm_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    did = int(call.data.split("_")[4])
+    db.cursor.execute("DELETE FROM deals WHERE id=?", (did,))
+    db.conn.commit()
+    db.add_audit_log(call.from_user.id, "admin_deal_delete", target=f"deal_{did}", details=f"Сделка #{did} удалена")
+    await call.answer(f"✅ Сделка #{did} удалена", show_alert=True)
+    await call.message.edit_text("📦 Сделка удалена. Выберите действие:", reply_markup=admin_kb())
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_deal_backup_"))
+async def admin_deal_backup_cb(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    did = int(call.data.split("_")[3])
+    import shutil
+    backup_path = f"novixgift_backup_deal_{did}_{int(time.time())}.db"
+    try:
+        shutil.copy2("novixgift.db", backup_path)
+        db.add_audit_log(call.from_user.id, "admin_deal_backup", target=f"deal_{did}", details=f"Бэкап БД для сделки #{did}: {backup_path}")
+        await call.answer(f"✅ Бэкап создан: {backup_path}", show_alert=True)
+    except Exception as e:
+        await call.answer(f"❌ Ошибка: {e}", show_alert=True)
+
+
+@dp.message(StateFilter(AdminDealEditState.value))
+async def admin_deal_edit_value(msg: types.Message, state: FSMContext):
+    if msg.from_user.id not in ADMIN_IDS:
+        return
+    data = await state.get_data()
+    did = data.get('edit_deal_id')
+    field = data.get('edit_field')
+    if not did or not field:
+        await msg.answer("❌ Сессия истекла")
+        await state.clear()
+        return
+    if field == 'name':
+        new_val = msg.text.strip()
+        if not new_val or len(new_val) > 200:
+            await msg.answer("❌ Название от 1 до 200 символов")
+            return
+        db.cursor.execute("UPDATE deals SET item=? WHERE id=?", (new_val, did))
+        db.conn.commit()
+        db.add_audit_log(msg.from_user.id, "admin_deal_edit_name", target=f"deal_{did}", details=f"Новое название: {new_val}")
+        await msg.answer(f"✅ Название сделки #{did} изменено на: {new_val}")
+    elif field == 'price':
+        try:
+            new_price = float(msg.text)
+            if new_price <= 0:
+                await msg.answer("❌ Цена должна быть > 0")
+                return
+            db.cursor.execute("UPDATE deals SET amount=? WHERE id=?", (new_price, did))
+            db.conn.commit()
+            db.add_audit_log(msg.from_user.id, "admin_deal_edit_price", target=f"deal_{did}", details=f"Новая цена: {new_price}")
+            await msg.answer(f"✅ Цена сделки #{did} изменена на {new_price}")
+        except ValueError:
+            await msg.answer("❌ Введите число")
+            return
+    await state.clear()
+    await send_admin_menu(msg)
+
+
 # ========== СОЗДАНИЕ СДЕЛКИ ==========
 @dp.callback_query(lambda c: c.data == "create_deal")
 async def create_deal_cb(call: CallbackQuery, state: FSMContext):
@@ -3888,21 +4080,30 @@ async def admin_actions_cb(call: CallbackQuery, state: FSMContext):
         deals = db.get_active_deals()
         if not deals:
             text = "📭 Нет активных сделок"
+            kb = admin_kb()
         else:
             text = "📦 *Активные сделки*\n\n"
+            deal_buttons = []
             for d in deals:
-                status = d[7] if len(d) > 7 else "awaiting"
+                did = d[0]
+                item = d[3] if len(d) > 3 else "?"
+                amount = d[4] if len(d) > 4 else 0
                 currency = d[6] if len(d) > 6 else "RUB"
+                status = d[7] if len(d) > 7 else "awaiting"
                 emoji = {"awaiting": "⏳", "paid": "💰", "item_sent": "📦"}.get(status, "❓")
-                text += f"{emoji} #{d[0]} | {escape_md(d[3][:20])} | {fmt_num(d[4])} {currency} | {status}\n"
+                label = f"{emoji} #{did} | {escape_md(str(item)[:18])} | {fmt_num(amount)} {currency}"
+                deal_buttons.append([InlineKeyboardButton(text=label, callback_data=f"admin_deal_detail_{did}")])
+            text = "📦 *Выберите сделку:*"
+            deal_buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")])
+            kb = InlineKeyboardMarkup(inline_keyboard=deal_buttons)
         photo_path = img_path("АКТИВНЫЕ СДЕЛКИ.jpg")
         if img_exists("АКТИВНЫЕ СДЕЛКИ.jpg"):
             await call.message.edit_media(
                 InputMediaPhoto(media=FSInputFile(photo_path), caption=text, parse_mode="Markdown"),
-                reply_markup=admin_kb()
+                reply_markup=kb
             )
         else:
-            await call.message.edit_text(text, parse_mode="Markdown", reply_markup=admin_kb())
+            await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     elif action == "disputes":
         disputes = db.get_disputes()
         if not disputes:
@@ -4036,7 +4237,11 @@ async def users_select_cb(call: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data.startswith("user_info_"))
 async def user_info_cb(call: CallbackQuery, state: FSMContext):
-    uid = int(call.data.split("_")[2])
+    data_state = await state.get_data()
+    uid = data_state.get('target_user_id')
+    if not uid:
+        uid = int(call.data.split("_")[2])
+    uid = int(uid)
     await state.update_data(target_user_id=uid)
     user = db.get_user_dict(uid)
     
@@ -4057,7 +4262,8 @@ async def user_info_cb(call: CallbackQuery, state: FSMContext):
     total_rub = 0
     balances_lines = []
     available_lines = []
-    commission_rate = 0.0 if is_premium_user else COMMISSION_WITHDRAW
+    commission_rate = db.get_user_commission(uid, "withdraw")
+    withdraw_pct = int(commission_rate * 100)
     
     for code, info in CURRENCIES.items():
         bal = db.get_balance(uid, code)
@@ -4076,14 +4282,15 @@ async def user_info_cb(call: CallbackQuery, state: FSMContext):
     
     balances_text = "\n".join(balances_lines) if balances_lines else "• 0 RUB\n"
     
-    if is_premium_user:
-        available_total_text = f"💰 *Доступно к выводу:* {fmt_num(total_rub)} RUB (комиссия 0% — Premium)"
+    tier_for_display = premium_info.get('tier', 'free')
+    if commission_rate == 0:
+        available_total_text = f"💰 *Доступно к выводу:* {fmt_num(total_rub)} RUB (комиссия 0% — {tier_for_display.upper()})"
     else:
-        commission_amount = quantize_amount(total_rub * COMMISSION_WITHDRAW)
-        available_total_rub = quantize_amount(total_rub * (1 - COMMISSION_WITHDRAW))
+        commission_amount = quantize_amount(total_rub * commission_rate)
+        available_total_rub = quantize_amount(total_rub * (1 - commission_rate))
         available_total_text = (
             f"💰 *Доступно к выводу:* {fmt_num(available_total_rub)} RUB "
-            f"(с учётом комиссии {int(COMMISSION_WITHDRAW*100)}%, удержано {fmt_num(commission_amount)} RUB)"
+            f"(с учётом комиссии {withdraw_pct}%, удержано {fmt_num(commission_amount)} RUB)"
         )
         if available_lines:
             available_total_text += "\n" + "\n".join(available_lines)
@@ -5210,7 +5417,7 @@ async def admin_back_to_user_cb(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     uid = data.get('target_user_id') or data.get('uid') or data.get('user_id')
     if not uid:
-        uid = int(call.data.replace("admin_back_user_", ""))
+        uid = int(call.data.split("_")[-1])
     await state.update_data(target_user_id=uid)
     await user_info_cb(call, state)
 
