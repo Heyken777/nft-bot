@@ -123,21 +123,21 @@
 </div>
 
 <!-- Review Modal -->
-<div id="reviewModal" class="modal-overlay" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;">
-    <div class="card" style="max-width:420px;width:90%;padding:24px;">
-        <h4 id="reviewModalTitle">Оставить отзыв</h4>
-        <div class="star-rating mt-3" style="text-align:center;font-size:32px;cursor:pointer;">
-            <span class="star" data-val="1" style="color:#d1d5db;" onmouseover="hoverStar(1)" onmouseout="resetStars()" onclick="setRating(1)">☆</span>
-            <span class="star" data-val="2" style="color:#d1d5db;" onmouseover="hoverStar(2)" onmouseout="resetStars()" onclick="setRating(2)">☆</span>
-            <span class="star" data-val="3" style="color:#d1d5db;" onmouseover="hoverStar(3)" onmouseout="resetStars()" onclick="setRating(3)">☆</span>
-            <span class="star" data-val="4" style="color:#d1d5db;" onmouseover="hoverStar(4)" onmouseout="resetStars()" onclick="setRating(4)">☆</span>
-            <span class="star" data-val="5" style="color:#d1d5db;" onmouseover="hoverStar(5)" onmouseout="resetStars()" onclick="setRating(5)">☆</span>
+<div id="reviewModal" class="modal-overlay" style="display:none;position:fixed;inset:0;z-index:999;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);opacity:0;transition:opacity 0.25s var(--ease-out-expo);">
+    <div class="card" style="max-width:420px;width:90%;padding:28px;transform:scale(0.92) translateY(12px);transition:transform 0.3s var(--ease-out-expo),opacity 0.25s var(--ease-out-expo);opacity:0;border-radius:var(--radius-lg);">
+        <h4 id="reviewModalTitle" style="font-weight:700;font-size:1.15rem;letter-spacing:-0.01em;color:var(--text-primary);">Оставить отзыв</h4>
+        <div class="star-rating mt-3" style="text-align:center;font-size:34px;cursor:pointer;line-height:1;padding:8px 0;">
+            <span class="star" data-val="1" onmouseover="hoverStar(1)" onmouseout="resetStars()" onclick="setRating(1)" style="display:inline-block;transition:transform 0.15s,color 0.2s;color:var(--border-color);">☆</span>
+            <span class="star" data-val="2" onmouseover="hoverStar(2)" onmouseout="resetStars()" onclick="setRating(2)" style="display:inline-block;transition:transform 0.15s,color 0.2s;color:var(--border-color);">☆</span>
+            <span class="star" data-val="3" onmouseover="hoverStar(3)" onmouseout="resetStars()" onclick="setRating(3)" style="display:inline-block;transition:transform 0.15s,color 0.2s;color:var(--border-color);">☆</span>
+            <span class="star" data-val="4" onmouseover="hoverStar(4)" onmouseout="resetStars()" onclick="setRating(4)" style="display:inline-block;transition:transform 0.15s,color 0.2s;color:var(--border-color);">☆</span>
+            <span class="star" data-val="5" onmouseover="hoverStar(5)" onmouseout="resetStars()" onclick="setRating(5)" style="display:inline-block;transition:transform 0.15s,color 0.2s;color:var(--border-color);">☆</span>
         </div>
-        <textarea id="reviewComment" class="form-control mt-2" rows="3" placeholder="Напишите отзыв..." style="width:100%;"></textarea>
-        <div id="reviewError" style="color:var(--danger);font-size:12px;margin-top:6px;display:none;"></div>
-        <div class="d-flex gap-2 mt-3">
-            <button class="btn-primary" id="reviewSubmitBtn" onclick="submitReview()">Отправить</button>
-            <button class="btn btn-sm" style="background:rgba(255,255,255,0.1);" onclick="closeReviewModal()">Отмена</button>
+        <textarea id="reviewComment" class="form-control mt-2" rows="3" placeholder="Напишите отзыв..." style="width:100%;border-radius:var(--radius-md);resize:vertical;min-height:80px;"></textarea>
+        <div id="reviewError" style="color:var(--danger);font-size:12px;margin-top:8px;display:none;font-weight:500;"></div>
+        <div class="d-flex gap-3 mt-4">
+            <button class="btn btn-primary" id="reviewSubmitBtn" onclick="submitReview()" style="flex:1;border-radius:var(--radius-md);padding:12px 24px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:transform 0.2s var(--ease-out-expo),box-shadow 0.2s var(--ease-out-expo);border:none;">Отправить</button>
+            <button class="btn-cancel" onclick="closeReviewModal()" style="flex:0.5;border-radius:var(--radius-md);padding:12px 20px;font-weight:500;font-size:0.9rem;cursor:pointer;background:var(--bg-secondary);color:var(--text-secondary);border:1px solid var(--border-color);transition:background 0.2s,transform 0.2s var(--ease-out-expo);">Отмена</button>
         </div>
     </div>
 </div>
@@ -157,7 +157,7 @@ function openCreateReviewModal(reviewedId) {
     document.getElementById('reviewError').style.display = 'none';
     document.getElementById('reviewSubmitBtn').textContent = 'Отправить';
     resetStars();
-    document.getElementById('reviewModal').style.display = 'flex';
+    showModal();
 }
 
 function openEditReviewModal(id, rating, comment) {
@@ -168,57 +168,88 @@ function openEditReviewModal(id, rating, comment) {
     document.getElementById('reviewError').style.display = 'none';
     document.getElementById('reviewSubmitBtn').textContent = 'Сохранить';
     var stars = document.querySelectorAll('.star-rating .star');
-    stars.forEach(function(s) {
-        var val = parseInt(s.dataset.val);
-        s.textContent = val <= rating ? '★' : '☆';
-        s.style.color = val <= rating ? '#f59e0b' : '#d1d5db';
+    for (var i = 0; i < stars.length; i++) {
+        var val = parseInt(stars[i].dataset.val);
+        stars[i].textContent = val <= rating ? '★' : '☆';
+        stars[i].style.color = val <= rating ? '#f59e0b' : 'var(--border-color)';
+    }
+    showModal();
+}
+
+function showModal() {
+    var modal = document.getElementById('reviewModal');
+    var card = modal.querySelector('.card');
+    modal.style.display = 'flex';
+    requestAnimationFrame(function() {
+        modal.style.opacity = '1';
+        card.style.transform = 'scale(1) translateY(0)';
+        card.style.opacity = '1';
     });
-    document.getElementById('reviewModal').style.display = 'flex';
 }
 
 function closeReviewModal() {
-    document.getElementById('reviewModal').style.display = 'none';
+    var modal = document.getElementById('reviewModal');
+    var card = modal.querySelector('.card');
+    card.style.transform = 'scale(0.92) translateY(12px)';
+    card.style.opacity = '0';
+    modal.style.opacity = '0';
+    setTimeout(function() { modal.style.display = 'none'; }, 250);
 }
 
 function hoverStar(val) {
     var stars = document.querySelectorAll('.star-rating .star');
-    stars.forEach(function(s) {
-        var v = parseInt(s.dataset.val);
-        s.textContent = v <= val ? '★' : '☆';
-        s.style.color = v <= val ? '#f59e0b' : '#d1d5db';
-    });
+    for (var i = 0; i < stars.length; i++) {
+        var v = parseInt(stars[i].dataset.val);
+        var active = v <= val;
+        stars[i].textContent = active ? '★' : '☆';
+        stars[i].style.color = active ? '#f59e0b' : 'var(--border-color)';
+        stars[i].style.transform = active ? 'scale(1.15)' : 'scale(1)';
+    }
 }
 
 function resetStars() {
     var stars = document.querySelectorAll('.star-rating .star');
-    stars.forEach(function(s) {
-        var val = parseInt(s.dataset.val);
-        s.textContent = val <= currentRating ? '★' : '☆';
-        s.style.color = val <= currentRating ? '#f59e0b' : '#d1d5db';
-    });
+    for (var i = 0; i < stars.length; i++) {
+        var val = parseInt(stars[i].dataset.val);
+        var active = val <= currentRating;
+        stars[i].textContent = active ? '★' : '☆';
+        stars[i].style.color = active ? '#f59e0b' : 'var(--border-color)';
+        stars[i].style.transform = 'scale(1)';
+    }
 }
 
 function setRating(val) {
     currentRating = val;
     var stars = document.querySelectorAll('.star-rating .star');
-    stars.forEach(function(s) {
-        var v = parseInt(s.dataset.val);
-        s.textContent = v <= val ? '★' : '☆';
-        s.style.color = v <= val ? '#f59e0b' : '#d1d5db';
-    });
+    for (var i = 0; i < stars.length; i++) {
+        var v = parseInt(stars[i].dataset.val);
+        var active = v <= val;
+        stars[i].textContent = active ? '★' : '☆';
+        stars[i].style.color = active ? '#f59e0b' : 'var(--border-color)';
+        stars[i].style.transform = active ? 'scale(1.2)' : 'scale(1)';
+    }
 }
 
 function submitReview() {
+    var btn = document.getElementById('reviewSubmitBtn');
+    btn.style.transform = 'scale(0.96)';
+    btn.style.opacity = '0.7';
     var err = document.getElementById('reviewError');
     err.style.display = 'none';
     var comment = document.getElementById('reviewComment').value.trim();
     if (currentRating < 1 || currentRating > 5) {
         err.textContent = 'Выберите рейтинг';
-        err.style.display = 'block'; return;
+        err.style.display = 'block';
+        btn.style.transform = 'scale(1)';
+        btn.style.opacity = '1';
+        return;
     }
     if (!comment) {
         err.textContent = 'Напишите отзыв';
-        err.style.display = 'block'; return;
+        err.style.display = 'block';
+        btn.style.transform = 'scale(1)';
+        btn.style.opacity = '1';
+        return;
     }
     var url, body;
     if (editReviewId) {
@@ -233,8 +264,15 @@ function submitReview() {
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
         body: JSON.stringify(body)
     }).then(function(r) { return r.json(); }).then(function(d) {
+        btn.style.transform = 'scale(1)';
+        btn.style.opacity = '1';
         if (d.success) { showToast(d.message); setTimeout(function() { location.reload(); }, 800); }
         else { err.textContent = d.error; err.style.display = 'block'; }
+    }).catch(function() {
+        btn.style.transform = 'scale(1)';
+        btn.style.opacity = '1';
+        err.textContent = 'Ошибка сети';
+        err.style.display = 'block';
     });
 }
 
@@ -254,6 +292,24 @@ document.getElementById('reviewModal').addEventListener('click', function(e) {
     if (e.target === this) closeReviewModal();
 });
 </script>
+
+<style>
+.star-rating .star:hover {
+    transform: scale(1.2) !important;
+}
+.btn-cancel:hover {
+    background: var(--bg-tertiary) !important;
+    transform: translateY(-1px);
+}
+.btn-primary, #reviewSubmitBtn {
+    background: var(--accent) !important;
+    color: #fff !important;
+}
+.btn-primary:hover, #reviewSubmitBtn:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 20px rgba(204,120,92,0.35) !important;
+}
+</style>
 
 {% else %}
 <div class="card text-center py-5">
