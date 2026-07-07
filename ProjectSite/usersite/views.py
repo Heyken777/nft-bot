@@ -1960,3 +1960,106 @@ def deal_success_view(request):
         'tg_link': tg_link,
         'bot_username': bot_username,
     })
+
+
+# ========== NOTIFICATIONS ==========
+
+def notifications_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    page = int(request.GET.get('page', 1))
+    per_page = 20
+    offset = (page - 1) * per_page
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM usersite_notifications WHERE user_id=?", (user_id,))
+    total = cur.fetchone()[0]
+    cur.execute(
+        "SELECT id, type, title, body, link, is_read, created_at FROM usersite_notifications "
+        "WHERE user_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (user_id, per_page, offset)
+    )
+    notifs = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT COUNT(*) FROM usersite_notifications WHERE user_id=? AND is_read=0", (user_id,))
+    unread_count = cur.fetchone()[0]
+    conn.close()
+    return render(request, 'usersite/notifications.html', {
+        'notifications': notifs,
+        'unread_count': unread_count,
+        'page': page,
+        'total_pages': (total + per_page - 1) // per_page,
+    })
+
+
+def notification_open_view(request, notif_id):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE usersite_notifications SET is_read=1 WHERE id=? AND user_id=?",
+        (notif_id, user_id)
+    )
+    conn.commit()
+    cur.execute("SELECT link FROM usersite_notifications WHERE id=? AND user_id=?", (notif_id, user_id))
+    row = cur.fetchone()
+    conn.close()
+    if row and row[0]:
+        return redirect(row[0])
+    return redirect('/usersite/notifications/')
+
+
+@csrf_exempt
+def api_notifications_unread_count(request):
+    if not check_auth(request):
+        return JsonResponse({'count': 0})
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM usersite_notifications WHERE user_id=? AND is_read=0", (user_id,))
+    count = cur.fetchone()[0]
+    conn.close()
+    return JsonResponse({'count': count})
+
+
+NOTIF_TYPES = ['promo_activated', 'deal_paid', 'review_received', 'deal_completed', 'achievement', 'premium_expiring', 'referral_bonus']
+
+
+@csrf_exempt
+def api_notification_prefs(request):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Не авторизован'}, status=401)
+    user_id = request.session.get('user_id')
+    if request.method == 'GET':
+        conn = get_db()
+        cur = conn.cursor()
+        prefs = {}
+        for nt in NOTIF_TYPES:
+            cur.execute(
+                "SELECT enabled FROM usersite_notification_prefs WHERE user_id=? AND type=?",
+                (user_id, nt)
+            )
+            row = cur.fetchone()
+            prefs[nt] = row[0] if row else 1
+        conn.close()
+        return JsonResponse({'success': True, 'prefs': prefs})
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    updated = data.get('prefs', {})
+    conn = get_db()
+    cur = conn.cursor()
+    for ntype, enabled in updated.items():
+        if ntype not in NOTIF_TYPES:
+            continue
+        cur.execute(
+            "INSERT INTO usersite_notification_prefs (user_id, type, enabled) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id, type) DO UPDATE SET enabled=?",
+            (user_id, ntype, 1 if enabled else 0, 1 if enabled else 0)
+        )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})

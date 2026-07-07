@@ -99,6 +99,86 @@
     </div>
 </div>
 
+<div class="settings-card mt-4" data-reveal>
+    <div class="card">
+        <div class="card-body">
+            <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:4px;"><i class="fi fi-rr-bell"></i> Уведомления</h2>
+            <p class="text-muted" style="font-size:13px;margin-bottom:8px;">Какие уведомления вы хотите получать</p>
+            <hr class="divider-settings">
+            <div id="notifPrefsList" style="display:flex;flex-direction:column;gap:12px;">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Загрузка и сохранение настроек уведомлений
+var NOTIF_LABELS = {
+    'promo_activated': 'Активация промокода',
+    'deal_paid': 'Оплата сделки',
+    'review_received': 'Получен отзыв',
+    'deal_completed': 'Завершение сделки',
+    'achievement': 'Новое достижение',
+    'premium_expiring': 'Истечение Premium',
+    'referral_bonus': 'Реферальный бонус'
+};
+
+function loadNotifPrefs() {
+    fetch('/usersite/api/notifications/prefs/')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.success) return;
+            var list = document.getElementById('notifPrefsList');
+            list.innerHTML = '';
+            for (var type in d.prefs) {
+                var enabled = d.prefs[type];
+                var label = NOTIF_LABELS[type] || type;
+                var div = document.createElement('div');
+                div.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 0;';
+                div.innerHTML = '<span style="font-size:14px;color:var(--text-primary);">' + label + '</span>' +
+                    '<label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;">' +
+                    '<input type="checkbox" class="notif-toggle" data-type="' + type + '" ' + (enabled ? 'checked' : '') +
+                    ' style="opacity:0;width:0;height:0;">' +
+                    '<span class="toggle-slider" style="position:absolute;inset:0;background:' + (enabled ? 'var(--accent)' : 'var(--border-color)') + ';border-radius:12px;transition:0.3s;"></span>' +
+                    '<span class="toggle-knob" style="position:absolute;top:2px;left:' + (enabled ? '22px' : '2px') + ';width:20px;height:20px;background:#fff;border-radius:50%;transition:0.3s;box-shadow:0 1px 3px rgba(0,0,0,0.2);"></span>' +
+                    '</label>';
+                list.appendChild(div);
+            }
+            // Attach change handlers
+            document.querySelectorAll('.notif-toggle').forEach(function(cb) {
+                cb.addEventListener('change', function() {
+                    saveNotifPrefs();
+                });
+            });
+        })
+        .catch(function() {});
+}
+
+function saveNotifPrefs() {
+    var prefs = {};
+    document.querySelectorAll('.notif-toggle').forEach(function(cb) {
+        prefs[cb.dataset.type] = cb.checked ? 1 : 0;
+        // Update slider visuals
+        var slider = cb.parentElement.querySelector('.toggle-slider');
+        var knob = cb.parentElement.querySelector('.toggle-knob');
+        if (cb.checked) {
+            slider.style.background = 'var(--accent)';
+            knob.style.left = '22px';
+        } else {
+            slider.style.background = 'var(--border-color)';
+            knob.style.left = '2px';
+        }
+    });
+    fetch('/usersite/api/notifications/prefs/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+        body: JSON.stringify({prefs: prefs})
+    }).catch(function() {});
+}
+
+loadNotifPrefs();
+</script>
+
 <script>
 function togglePassword() {
     var inp = document.getElementById('fieldPassword');

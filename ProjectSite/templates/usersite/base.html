@@ -733,6 +733,58 @@
         [data-reveal].revealed { opacity: 1; transform: translateY(0); }
         @media (prefers-reduced-motion: reduce) { [data-reveal] { opacity: 1; transform: none; transition: none; } }
 
+        /* Notification bell + dropdown */
+        .notif-bell {
+            position: relative; cursor: pointer; padding: 8px;
+            font-size: 20px; color: var(--text-secondary);
+            transition: color var(--transition);
+        }
+        .notif-bell:hover { color: var(--text-primary); }
+        .notif-badge {
+            position: absolute; top: 0; right: 0;
+            background: var(--accent); color: #fff;
+            font-size: 10px; font-weight: 700; min-width: 16px; height: 16px;
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            line-height: 1; padding: 0 4px;
+        }
+        .notif-dropdown {
+            display: none; position: absolute; top: 100%; right: 60px;
+            width: 340px; max-height: 420px;
+            background: var(--glass-bg); backdrop-filter: blur(24px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            box-shadow: var(--shadow-lg); z-index: 100;
+            overflow: hidden; margin-top: 8px;
+        }
+        .notif-dropdown.open { display: block; }
+        .notif-dropdown__header {
+            padding: 14px 16px; font-weight: 700; font-size: 14px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+        .notif-dropdown__list { max-height: 300px; overflow-y: auto; }
+        .notif-dropdown__item {
+            padding: 12px 16px; display: block;
+            border-bottom: 1px solid var(--border-light);
+            text-decoration: none; color: var(--text-primary);
+            transition: background var(--transition); cursor: pointer;
+        }
+        .notif-dropdown__item:hover { background: var(--bg-tertiary); }
+        .notif-dropdown__item-title { font-weight: 600; font-size: 13px; }
+        .notif-dropdown__item-body { font-size: 12px; color: var(--text-secondary);
+            margin-top: 2px; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; }
+        .notif-dropdown__item-time { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+        .notif-dropdown__item.unread { border-left: 3px solid var(--accent); }
+        .notif-dropdown__empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+        .notif-dropdown__footer {
+            display: block; padding: 12px 16px; text-align: center;
+            font-size: 13px; color: var(--accent); text-decoration: none;
+            border-top: 1px solid var(--border-color);
+            transition: background var(--transition);
+        }
+        .notif-dropdown__footer:hover { background: var(--bg-tertiary); }
+
         /* Dark theme overrides */
         [data-theme="dark"] select, [data-theme="dark"] select.form-control {
             background: #1A1D23; color: #F0F2F5; border-color: #2D3139;
@@ -763,6 +815,17 @@
             </div>
             <div class="glass-nav__actions">
                 {% if request.session.user_id %}
+                <div class="notif-bell" id="notifBell" onclick="toggleNotifDropdown(event)">
+                    <i class="fi fi-rr-bell"></i>
+                    <span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+                </div>
+                <div class="notif-dropdown" id="notifDropdown">
+                    <div class="notif-dropdown__header">Уведомления</div>
+                    <div class="notif-dropdown__list" id="notifDropdownList">
+                        <div class="notif-dropdown__empty">Нет уведомлений</div>
+                    </div>
+                    <a href="/usersite/notifications/" class="notif-dropdown__footer">Все уведомления</a>
+                </div>
                 <a href="/usersite/logout/" class="glass-nav__logout">Выйти</a>
                 {% else %}
                 <a href="/usersite/login/" class="glass-nav__cta">Войти</a>
@@ -978,6 +1041,42 @@
         var ws = null;
         var reconnectTimer = null;
 
+        function refreshNotifBadge() {
+            fetch('/usersite/api/notifications/unread-count/')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    var badge = document.getElementById('notifBadge');
+                    if (d.count > 0) {
+                        badge.textContent = d.count > 99 ? '99+' : d.count;
+                        badge.style.display = 'flex';
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                })
+                .catch(function() {});
+        }
+
+        function prependNotifItem(data) {
+            var list = document.getElementById('notifDropdownList');
+            var empty = list.querySelector('.notif-dropdown__empty');
+            if (empty) empty.remove();
+            var item = document.createElement('a');
+            item.className = 'notif-dropdown__item unread';
+            item.href = data.link || '/usersite/notifications/';
+            item.innerHTML = '<div class="notif-dropdown__item-title">' + (data.title || '') + '</div>' +
+                (data.body ? '<div class="notif-dropdown__item-body">' + data.body + '</div>' : '') +
+                '<div class="notif-dropdown__item-time">только что</div>';
+            list.insertBefore(item, list.firstChild);
+            // trim to 5
+            while (list.children.length > 5) {
+                if (list.lastElementChild && !list.lastElementChild.classList.contains('notif-dropdown__empty'))
+                    list.removeChild(list.lastElementChild);
+                else break;
+            }
+            refreshNotifBadge();
+            if (window.showToast) showToast(data.title || 'Новое уведомление');
+        }
+
         function connectWS() {
             if (ws && ws.readyState === WebSocket.OPEN) return;
             var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -990,7 +1089,7 @@
                     try {
                         var data = JSON.parse(e.data);
                         if (data.type === 'notification') {
-                            if (window.showToast) showToast(data.title || data.message || 'Новое уведомление');
+                            prependNotifItem(data);
                         }
                     } catch(ex) {}
                 };
@@ -1002,10 +1101,24 @@
         }
 
         connectWS();
+        refreshNotifBadge();
         setInterval(function() {
             if (ws && ws.readyState === WebSocket.OPEN) ws.send('ping');
         }, 30000);
+        setInterval(refreshNotifBadge, 30000);
     })();
+
+    function toggleNotifDropdown(e) {
+        e.stopPropagation();
+        var dd = document.getElementById('notifDropdown');
+        dd.classList.toggle('open');
+    }
+    document.addEventListener('click', function(e) {
+        var dd = document.getElementById('notifDropdown');
+        if (dd && dd.classList.contains('open') && !dd.contains(e.target) && !document.getElementById('notifBell').contains(e.target)) {
+            dd.classList.remove('open');
+        }
+    });
     </script>
     {% endif %}
 </body>

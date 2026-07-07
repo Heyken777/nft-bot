@@ -1,0 +1,73 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Уведомления{% endblock %}
+
+{% block extra_css %}
+<style>
+    .notif-page-item {
+        display: flex; align-items: flex-start; gap: 14px;
+        padding: 14px 0; border-bottom: 1px solid var(--border-light);
+        text-decoration: none; color: var(--text-primary);
+        transition: background var(--transition);
+    }
+    .notif-page-item:hover { background: var(--bg-tertiary); margin: 0 -16px; padding: 14px 16px; border-radius: 6px; }
+    .notif-page-item.unread { border-left: 3px solid var(--accent); padding-left: 11px; }
+    .notif-page-item.unread:hover { padding-left: 27px; }
+    .notif-page-icon { font-size: 22px; color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+    .notif-page-body { flex: 1; min-width: 0; }
+    .notif-page-title { font-weight: 600; font-size: 14px; }
+    .notif-page-text { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+    .notif-page-time { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    .pagination-custom { display: flex; justify-content: center; gap: 8px; margin-top: 24px; }
+    .pagination-custom a {
+        padding: 8px 14px; border-radius: var(--radius-sm);
+        border: 1px solid var(--border-color); text-decoration: none;
+        color: var(--text-secondary); font-size: 13px; transition: all var(--transition);
+    }
+    .pagination-custom a:hover { border-color: var(--accent); color: var(--accent); }
+    .pagination-custom a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .pagination-custom a.disabled { opacity: 0.4; pointer-events: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card" data-reveal>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h2 style="font-size:1.2rem;font-weight:600;margin:0;"><i class="fi fi-rr-bell"></i> Уведомления</h2>
+        {% if unread_count > 0 %}
+        <span style="font-size:12px;color:var(--text-muted);">{{ unread_count }} непрочитанных</span>
+        {% endif %}
+    </div>
+
+    {% if notifications %}
+        {% for n in notifications %}
+        <a href="/usersite/notifications/{{ n.id }}/open/" class="notif-page-item{% if not n.is_read %} unread{% endif %}">
+            <div class="notif-page-icon"><i class="fi fi-rr-bell"></i></div>
+            <div class="notif-page-body">
+                <div class="notif-page-title">{{ n.title }}</div>
+                {% if n.body %}<div class="notif-page-text">{{ n.body }}</div>{% endif %}
+                <div class="notif-page-time">{{ n.created_at|date:"d.m H:i" }}</div>
+            </div>
+        </a>
+        {% endfor %}
+
+        {% if total_pages > 1 %}
+        <div class="pagination-custom">
+            {% if page > 1 %}
+            <a href="?page={{ page|add:-1 }}">← Назад</a>
+            {% endif %}
+            <span style="font-size:13px;color:var(--text-muted);align-self:center;">{{ page }}/{{ total_pages }}</span>
+            {% if page < total_pages %}
+            <a href="?page={{ page|add:1 }}">Вперёд →</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    {% else %}
+    <div style="text-align:center;padding:40px 0;color:var(--text-muted);">
+        <i class="fi fi-rr-bell" style="font-size:40px;display:block;margin-bottom:12px;opacity:0.3;"></i>
+        Нет уведомлений
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

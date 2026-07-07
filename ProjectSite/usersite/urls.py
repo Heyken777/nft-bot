@@ -66,6 +66,12 @@ urlpatterns = [
     path('password-reset/<str:token>/', views.password_reset_confirm_view, name='password_reset_confirm'),
     path('api/password-reset-confirm/', views.api_password_reset_confirm, name='api_password_reset_confirm'),
 
+    # Уведомления
+    path('notifications/', views.notifications_view, name='user_notifications'),
+    path('notifications/<int:notif_id>/open/', views.notification_open_view, name='notification_open'),
+    path('api/notifications/unread-count/', views.api_notifications_unread_count, name='api_notifications_unread'),
+    path('api/notifications/prefs/', views.api_notification_prefs, name='api_notification_prefs'),
+
     # P2P обмен валют
     path('exchange/', views.exchange_view, name='exchange'),
     path('api/exchange/create/', views.api_exchange_create_offer, name='api_exchange_create'),

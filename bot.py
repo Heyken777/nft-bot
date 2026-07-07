@@ -154,6 +154,21 @@ async def notify_user(user_id: int, text: str, parse_mode: str = "Markdown", rep
         logger.warning(f"Не удалось отправить push-уведомление пользователю {user_id}: {e}")
 
 
+async def notify_usersite(user_id: int, ntype: str, title: str, body: str = None, link: str = None):
+    """Вставляет уведомление Usersite + пушит через WS."""
+    created = db.notify_usersite(user_id, ntype, title, body, link)
+    if created:
+        asyncio.create_task(ws_notify_user(user_id, {
+            'type': 'notification',
+            'notification_type': ntype,
+            'title': title,
+            'body': body,
+            'link': link,
+            'created_at': datetime.now().isoformat()
+        }))
+    return created
+
+
 def escape_md(text: str) -> str:
     chars = r'[_*[\]()~`>#+\-=|{}.!]'
     return re.sub(f'([{re.escape(chars)}])', r'\\\1', str(text))
@@ -892,6 +907,33 @@ class Database:
             )
         """)
 
+        # Таблица уведомлений для Usersite
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usersite_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT,
+                link TEXT,
+                is_read INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_user_unread ON usersite_notifications(user_id, is_read)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_user_created ON usersite_notifications(user_id, created_at DESC)")
+
+        # Таблица настроек уведомлений (default-включено)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usersite_notification_prefs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                enabled INTEGER DEFAULT 1,
+                UNIQUE(user_id, type)
+            )
+        """)
+
         self.conn.commit()
         logger.info("База данных инициализирована")
 
@@ -1333,6 +1375,23 @@ class Database:
 
     def mark_read(self, uid):
         self.cursor.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (uid,))
+
+    def notify_usersite(self, user_id: int, ntype: str, title: str, body: str = None, link: str = None) -> bool:
+        """Создаёт уведомление для Usersite, если тип не отключён в prefs.
+        Возвращает True, если уведомление создано."""
+        self.cursor.execute(
+            "SELECT enabled FROM usersite_notification_prefs WHERE user_id = ? AND type = ?",
+            (user_id, ntype)
+        )
+        row = self.cursor.fetchone()
+        if row is not None and row[0] == 0:
+            return False
+        self.cursor.execute(
+            "INSERT INTO usersite_notifications (user_id, type, title, body, link) VALUES (?, ?, ?, ?, ?)",
+            (user_id, ntype, title, body, link)
+        )
+        self.conn.commit()
+        return True
         self.conn.commit()
 
     def get_all_users_for_mailing(self):
@@ -2022,7 +2081,7 @@ task_worker = TaskWorker(task_queue)
 
 # ========== ПЛАНИРОВЩИК ЗАДАЧ ==========
 async def check_premium_expiry():
-    """Автоматическая деактивация просроченных Premium-подписок."""
+    """Автоматическая деактивация просроченных Premium-подписок + предупреждение за 3 дня."""
     try:
         db.cursor.execute(
             "UPDATE users SET is_premium = 0, premium_until = NULL "
@@ -2045,6 +2104,20 @@ async def check_premium_expiry():
                 )
             db.conn.commit()
             logger.info(f"Деактивировано Premium: {db.cursor.rowcount} пользователей")
+
+        # Предупреждение за ~3 дня до истечения
+        db.cursor.execute(
+            "SELECT user_id, premium_tier FROM users "
+            "WHERE is_premium = 1 AND premium_until IS NOT NULL "
+            "AND premium_until > datetime('now') "
+            "AND premium_until < datetime('now', '+3 days')"
+        )
+        soon = db.cursor.fetchall()
+        for (uid, tier) in soon:
+            asyncio.create_task(notify_usersite(uid, 'premium_expiring',
+                'Premium истекает',
+                f'Ваш {tier} статус истекает через 3 дня. Продлите заранее!',
+                '/usersite/premium_wizard/'))
     except Exception as e:
         logger.error(f"check_premium_expiry error: {e}")
 
@@ -3804,6 +3877,8 @@ async def review_cb(call: CallbackQuery):
     db.add_review(deal_id, reviewer_id, reviewed_id, rating)
     await call.message.edit_reply_markup(reply_markup=None)
     await call.answer(f"⭐ {rating}/5 — Спасибо за оценку!", show_alert=True)
+    asyncio.create_task(notify_usersite(reviewed_id, 'review_received', 'Получен отзыв',
+        f'⭐ {rating}/5 по сделке #{deal_id}', f'/usersite/reviews/'))
     await call.message.edit_text(
         f"✅ *Спасибо за оценку!* ⭐{rating}/5\n\n"
         f"Вы можете добавить текстовый отзыв на нашем сайте: http://93.115.101",
@@ -3898,6 +3973,8 @@ async def achievements_cb(call: CallbackQuery):
     earned = db.check_and_award_achievements(user_id, stats)
     for ach_id, reward in earned:
         await call.answer(f"🎉 Получено достижение! +{reward} RUB", show_alert=True)
+        asyncio.create_task(notify_usersite(user_id, 'achievement', 'Новое достижение',
+            f'🏆 {ach_id} — +{reward} RUB', '/usersite/dashboard/'))
     
     achievements = db.get_user_achievements(user_id)
     
@@ -6338,6 +6415,8 @@ async def handle_pay_deal(request):
             deal["seller"],
             f"💰 *Сделка #{deal['display_id']} оплачена!*\n\n🎁 {escape_md(deal['item'])}\n💰 {fmt_num(amount)} {currency}\n\nПокупатель внёс средства. Передайте товар."
         ))
+        asyncio.create_task(notify_usersite(deal['seller'], 'deal_paid', 'Сделка оплачена',
+            f"Сделка #{deal['display_id']} — {fmt_num(amount)} {currency}", f'/usersite/dashboard/'))
 
         return JSONResponse(content={'success': True, 'method': 'internal', 'deal_id': did})
     except Exception as e:
@@ -6419,6 +6498,10 @@ async def handle_confirm_receipt(request):
         # WebSocket notifications
         asyncio.create_task(ws_notify_user(seller_id, {'type': 'notification', 'title': 'Сделка завершена', 'message': f'Получено {seller_amount} {currency}'}))
         asyncio.create_task(ws_notify_user(user_id, {'type': 'notification', 'title': 'Сделка завершена', 'message': 'Средства переведены продавцу'}))
+        asyncio.create_task(notify_usersite(seller_id, 'deal_completed', 'Сделка завершена',
+            f'Сделка #{deal["display_id"]}: получено {fmt_num(seller_amount)} {currency}', f'/usersite/dashboard/'))
+        asyncio.create_task(notify_usersite(user_id, 'deal_completed', 'Сделка завершена',
+            f'Сделка #{deal["display_id"]} успешно завершена', f'/usersite/dashboard/'))
 
         if referral_bonus:
             asyncio.create_task(notify_user(
@@ -6426,6 +6509,8 @@ async def handle_confirm_receipt(request):
                 f"👥 *Реферальный бонус*\n\nПо сделке #{deal['display_id']} начислено {referral_bonus['reward']} RUB (10% от сервисной комиссии)."
             ))
             asyncio.create_task(ws_notify_user(referral_bonus['referrer_id'], {'type': 'notification', 'title': 'Реферальный бонус', 'message': f'Начислено {referral_bonus["reward"]} RUB'}))
+            asyncio.create_task(notify_usersite(referral_bonus['referrer_id'], 'referral_bonus', 'Реферальный бонус',
+                f'+{referral_bonus["reward"]} RUB за сделку #{deal["display_id"]}', f'/usersite/dashboard/'))
 
         # Предложение оценки
         asyncio.create_task(send_rating_prompt(seller_id, did, user_id))
@@ -6566,6 +6651,10 @@ async def handle_activate_promo(request):
             db.add_notification(referrer_id, "🎉 Пользователь активировал ваш реферальный код! +50 RUB")
             db.add_notification(user_id, "🎉 Добро пожаловать! +50 RUB за активацию реферального кода")
             db.conn.commit()
+            asyncio.create_task(notify_usersite(user_id, 'promo_activated', 'Промокод активирован',
+                f'Реферальный код активирован! +50 RUB', '/usersite/dashboard/'))
+            asyncio.create_task(notify_usersite(referrer_id, 'promo_activated', 'Реферальный бонус',
+                f'{user_id} активировал ваш код! +50 RUB', '/usersite/dashboard/'))
             return JSONResponse(content={
                 'success': True,
                 'bonus': 50,
@@ -6574,6 +6663,8 @@ async def handle_activate_promo(request):
 
         success, result = db.use_promocode(promo_code, user_id)
         if success:
+            asyncio.create_task(notify_usersite(user_id, 'promo_activated', 'Промокод активирован',
+                f'Промокод {promo_code}: +{result} RUB', '/usersite/dashboard/'))
             return JSONResponse(content={
                 'success': True,
                 'bonus': result,
@@ -6642,6 +6733,33 @@ async def handle_send_admin_login_code(request):
         return JSONResponse(content={'success': True})
     except Exception as e:
         return JSONResponse(content={'success': False, 'error': str(e)}, status_code=400)
+
+
+# ========== Internal Notify (called by Django via HTTP) ==========
+async def handle_internal_notify(request):
+    """Единая точка push-уведомлений Usersite. Вызывается Django-стороной."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'error': 'Invalid JSON'}, status_code=400)
+    user_id = data.get('user_id')
+    ntype = data.get('type', 'general')
+    title = data.get('title', '')
+    body = data.get('body')
+    link = data.get('link')
+    if not user_id or not title:
+        return JSONResponse(content={'error': 'Missing fields'}, status_code=400)
+    created = db.notify_usersite(user_id, ntype, title, body, link)
+    if created:
+        asyncio.create_task(ws_notify_user(user_id, {
+            'type': 'notification',
+            'notification_type': ntype,
+            'title': title,
+            'body': body,
+            'link': link,
+            'created_at': datetime.now().isoformat()
+        }))
+    return JSONResponse(content={'success': created})
 
 
 # ========== WebSocket Connections (real-time notifications) ==========
@@ -6715,6 +6833,7 @@ fastapi_app.add_api_route("/api/mark_sent", handle_mark_sent, methods=["POST"])
 fastapi_app.add_api_route("/api/confirm_receipt", handle_confirm_receipt, methods=["POST"])
 fastapi_app.add_api_route("/api/2fa/request", handle_2fa_request, methods=["POST"])
 fastapi_app.add_api_route("/api/send_admin_login_code", handle_send_admin_login_code, methods=["POST"])
+fastapi_app.add_api_route("/api/internal/notify", handle_internal_notify, methods=["POST"])
 
 # WebSocket endpoint for real-time notifications
 async def ws_notify_user(user_id: int, message: dict):
