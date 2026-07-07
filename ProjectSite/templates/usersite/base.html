@@ -165,7 +165,7 @@
 
         .glass-nav__links { display: flex; align-items: center; gap: 28px; }
         .glass-nav__links a {
-            color: rgba(45,42,38,0.55); font-size: 0.8rem; font-weight: 600;
+            color: rgba(45,42,38,0.75); font-size: 0.8rem; font-weight: 600;
             text-decoration: none; padding: 6px 2px 10px;
             text-transform: uppercase; letter-spacing: 0.06em;
             border-bottom: 2px solid transparent;
@@ -190,15 +190,15 @@
         }
         .glass-nav__cta:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(204,120,92,0.3); }
         .glass-nav__logout {
-            background: rgba(0,0,0,0.04); color: var(--text-secondary);
+            background: rgba(0,0,0,0.06); color: var(--text-primary);
             padding: 7px 20px; border-radius: 999px;
             font-size: 0.85rem; font-weight: 600; text-decoration: none;
             border: 1px solid var(--border-color);
             transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
         }
-        .glass-nav__logout:hover { background: rgba(0,0,0,0.08); transform: translateY(-1px); }
-        [data-theme="dark"] .glass-nav__logout { background: rgba(255,255,255,0.05); color: #CED4DA; border-color: rgba(255,255,255,0.10); }
-        [data-theme="dark"] .glass-nav__logout:hover { background: rgba(255,255,255,0.10); }
+        .glass-nav__logout:hover { background: rgba(0,0,0,0.12); transform: translateY(-1px); }
+        [data-theme="dark"] .glass-nav__logout { background: rgba(255,255,255,0.08); color: #E2E8F0; border-color: rgba(255,255,255,0.12); }
+        [data-theme="dark"] .glass-nav__logout:hover { background: rgba(255,255,255,0.16); }
 
         .glass-nav__burger {
             display: flex; background: none; border: none; cursor: pointer;
@@ -771,7 +771,7 @@
             <a href="/usersite/partnership/my/" class="slide-link" data-page="partnership"><i class="fi fi-rr-handshake"></i> Сотрудничество</a>
             <a href="/usersite/tickets/" class="slide-link" data-page="tickets"><i class="fi fi-rr-headset"></i> Поддержка</a>
             <hr>
-            <a href="/usersite/logout/" class="slide-link"><i class="fi fi-rr-sign-out"></i> Выйти</a>
+            <a href="/usersite/logout/" class="slide-link"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a>
             <div class="slide-panel__theme">
                 <span>Тема</span>
                 <div class="theme-toggle" title="Сменить тему">
