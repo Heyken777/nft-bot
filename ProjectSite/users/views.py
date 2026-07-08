@@ -2215,6 +2215,87 @@ def api_delete_user_avatar(request, telegram_id):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+@require_permission('dashboard')
+def analytics_view(request):
+    log_page_view(request, 'Просмотр Аналитики', 'Администратор открыл страницу аналитики')
+    from currency_api import currency_api
+    rates = currency_api.get_stale_cache("RUB")
+    today = datetime.now().strftime('%Y-%m-%d')
+    week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+    month_ago = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+    ctx = {'active_page': 'analytics', 'admin_name': get_admin_name(request)}
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        # --- GMV (сумма успешных сделок в RUB) ---
+        def calc_gmv(since):
+            cur.execute(
+                "SELECT currency, SUM(amount) FROM deals WHERE status='completed' AND completed >= ? GROUP BY currency",
+                (since,)
+            )
+            total = 0.0
+            for row in cur.fetchall():
+                cur_name, cur_sum = row
+                rate = rates.get(cur_name, 1)
+                total += (cur_sum or 0) * rate
+            return round(total, 2)
+
+        ctx['gmv_today'] = calc_gmv(today)
+        ctx['gmv_week'] = calc_gmv(week_ago)
+        ctx['gmv_month'] = calc_gmv(month_ago)
+
+        # --- Новые пользователи ---
+        cur.execute("SELECT COUNT(*) FROM users WHERE created_at >= ?", (today,))
+        ctx['new_users_today'] = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM users WHERE created_at >= ?", (week_ago,))
+        ctx['new_users_week'] = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM users WHERE created_at >= ?", (month_ago,))
+        ctx['new_users_month'] = cur.fetchone()[0] or 0
+
+        # --- Активные пользователи (есть запись в balance_ledger за период) ---
+        def active_users(since):
+            cur.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM balance_ledger WHERE created_at >= ?",
+                (since,)
+            )
+            return cur.fetchone()[0] or 0
+
+        ctx['active_users_today'] = active_users(today)
+        ctx['active_users_week'] = active_users(week_ago)
+        ctx['active_users_month'] = active_users(month_ago)
+
+        # --- Premium конверсия ---
+        cur.execute("SELECT COUNT(*) FROM users")
+        total_users = cur.fetchone()[0] or 1
+        cur.execute(
+            "SELECT COUNT(*) FROM users WHERE premium_tier IS NOT NULL AND premium_tier != 'free' "
+            "AND (premium_until IS NULL OR premium_until > datetime('now'))"
+        )
+        premium_users = cur.fetchone()[0] or 0
+        ctx['premium_users'] = premium_users
+        ctx['premium_conversion'] = round(premium_users / total_users * 100, 1)
+        ctx['total_users'] = total_users
+
+        # --- Тикеты по статусам ---
+        cur.execute(
+            "SELECT status, COUNT(*) as cnt FROM support_tickets GROUP BY status"
+        )
+        ticket_counts = {'open': 0, 'in_progress': 0, 'closed': 0}
+        for row in cur.fetchall():
+            s = row[0] or 'open'
+            ticket_counts[s] = row[1]
+        ctx['ticket_open'] = ticket_counts['open']
+        ctx['ticket_in_progress'] = ticket_counts['in_progress']
+        ctx['ticket_closed'] = ticket_counts['closed']
+        ctx['ticket_total'] = sum(ticket_counts.values())
+
+    except Exception as e:
+        print(f"[analytics] Error: {e}")
+    finally:
+        conn.close()
+    return render(request, 'analytics.html', ctx)
+
+
 @require_permission('audit')
 def ledger_view(request):
     conn = get_db()

@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Аналитика{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <h1 class="gradient-text"><i class="fi fi-rr-chart-histogram"></i> АНАЛИТИКА</h1>
+    <div><i class="fas fa-user-astronaut me-2"></i> {{ admin_name|default:"Admin" }}</div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-dollar-sign me-1"></i> GMV (RUB)</div>
+            <div class="stat-value">{{ gmv_month|floatformat:0 }} ₽</div>
+            <div class="small text-cyan-300/50 mt-2">день: {{ gmv_today|floatformat:0 }} ₽ · неделя: {{ gmv_week|floatformat:0 }} ₽</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-user-plus me-1"></i> НОВЫЕ</div>
+            <div class="stat-value">{{ new_users_month }}</div>
+            <div class="small text-cyan-300/50 mt-2">день: {{ new_users_today }} · неделя: {{ new_users_week }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-user-check me-1"></i> АКТИВНЫЕ</div>
+            <div class="stat-value">{{ active_users_month }}</div>
+            <div class="small text-cyan-300/50 mt-2">день: {{ active_users_today }} · неделя: {{ active_users_week }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-cyan-300 text-sm mb-2"><i class="fas fa-crown me-1"></i> PREMIUM</div>
+            <div class="stat-value">{{ premium_users }}</div>
+            <div class="small text-cyan-300/50 mt-2">{{ premium_conversion }}% от {{ total_users }} пользователей</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-12">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="text-cyan-300"><i class="fas fa-ticket-alt me-2"></i> ТИКЕТЫ ПОДДЕРЖКИ</div>
+            </div>
+            <div class="table-responsive">
+                <table class="table-custom w-100">
+                    <thead>
+                        <tr>
+                            <th>Статус</th>
+                            <th>Количество</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge bg-success">🟢 Открыт</span></td>
+                            <td>{{ ticket_open }}</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge bg-warning">🟡 В работе</span></td>
+                            <td>{{ ticket_in_progress }}</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge bg-secondary">🔴 Закрыт</span></td>
+                            <td>{{ ticket_closed }}</td>
+                        </tr>
+                        <tr class="table-active">
+                            <td><strong>Всего</strong></td>
+                            <td><strong>{{ ticket_total }}</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-2">
+    <div class="col-md-12">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="text-cyan-300"><i class="fas fa-chart-bar me-2"></i> ДЕТАЛИЗАЦИЯ ПО ПЕРИОДАМ</div>
+            </div>
+            <div class="table-responsive">
+                <table class="table-custom w-100">
+                    <thead>
+                        <tr>
+                            <th>Метрика</th>
+                            <th>Сегодня</th>
+                            <th>Неделя</th>
+                            <th>Месяц</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>GMV (RUB)</td>
+                            <td>{{ gmv_today|floatformat:2 }}</td>
+                            <td>{{ gmv_week|floatformat:2 }}</td>
+                            <td>{{ gmv_month|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td>Новые пользователи</td>
+                            <td>{{ new_users_today }}</td>
+                            <td>{{ new_users_week }}</td>
+                            <td>{{ new_users_month }}</td>
+                        </tr>
+                        <tr>
+                            <td>Активные пользователи</td>
+                            <td>{{ active_users_today }}</td>
+                            <td>{{ active_users_week }}</td>
+                            <td>{{ active_users_month }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
