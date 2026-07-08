@@ -1,5 +1,6 @@
 import json, os, sqlite3, hashlib, hmac, random, re, time, requests
 from datetime import datetime, timedelta
+from decimal import Decimal
 from functools import wraps
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
@@ -2122,25 +2123,25 @@ def api_send_preview(request):
         return JsonResponse({'success': False, 'error': 'Валюта не поддерживается'})
     amount = data.get('amount', 0)
     try:
-        amount = float(amount)
-        if amount < MIN_TRANSFER_AMOUNT or amount != amount:
+        amount = Decimal(str(amount))
+        if amount < Decimal(str(MIN_TRANSFER_AMOUNT)):
             raise ValueError
     except (ValueError, TypeError):
         conn.close()
         return JsonResponse({'success': False, 'error': f'Минимальная сумма: {MIN_TRANSFER_AMOUNT}'})
     cur.execute(f"SELECT balance_{currency} FROM users WHERE user_id=?", (user_id,))
     bal_row = cur.fetchone()
-    balance = bal_row[0] if bal_row and bal_row[0] else 0
+    balance = Decimal(str(bal_row[0])) if bal_row and bal_row[0] else Decimal('0')
     if balance < amount:
         conn.close()
-        return JsonResponse({'success': False, 'error': f'Недостаточно средств. Баланс: {round(balance, 2)} {currency}'})
+        return JsonResponse({'success': False, 'error': f'Недостаточно средств. Баланс: {balance} {currency}'})
     conn.close()
     return JsonResponse({
         'success': True,
         'to_user_id': to_user_id,
         'to_username': to_username,
         'currency': currency,
-        'amount': round(amount, 4 if currency in ('TON', 'USDT') else 2),
+        'amount': float(amount),
     })
 
 
@@ -2166,8 +2167,8 @@ def api_send_confirm(request):
         conn.close()
         return JsonResponse({'success': False, 'error': 'Missing fields'})
     try:
-        amount = float(amount)
-        if amount < MIN_TRANSFER_AMOUNT:
+        amount = Decimal(str(amount))
+        if amount < Decimal(str(MIN_TRANSFER_AMOUNT)):
             raise ValueError
     except (ValueError, TypeError):
         conn.close()
@@ -2184,7 +2185,7 @@ def api_send_confirm(request):
         return JsonResponse({'success': False, 'error': 'Нельзя перевести самому себе'})
     cur.execute(f"SELECT balance_{currency} FROM users WHERE user_id=?", (user_id,))
     bal_row = cur.fetchone()
-    balance = bal_row[0] if bal_row and bal_row[0] else 0
+    balance = Decimal(str(bal_row[0])) if bal_row and bal_row[0] else Decimal('0')
     if balance < amount:
         conn.close()
         return JsonResponse({'success': False, 'error': f'Недостаточно средств. Баланс: {round(balance, 2)} {currency}'})
@@ -2202,7 +2203,7 @@ def api_send_confirm(request):
                     'to_user_id': to_user_id,
                     'to_username': to_username,
                     'currency': currency,
-                    'amount': round(amount, 4 if currency in ('TON', 'USDT') else 2),
+                    'amount': float(amount),
                     'note': note,
                     'from_username': from_username,
                 }

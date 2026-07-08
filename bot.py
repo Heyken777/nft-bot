@@ -934,6 +934,17 @@ class Database:
             )
         """)
 
+        # Таблица лога сверки балансов
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS reconciliation_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                discrepancies INTEGER DEFAULT 0,
+                negative_balances INTEGER DEFAULT 0,
+                details TEXT
+            )
+        """)
+
         self.conn.commit()
         logger.info("База данных инициализирована")
 
@@ -1392,7 +1403,6 @@ class Database:
         )
         self.conn.commit()
         return True
-        self.conn.commit()
 
     def get_all_users_for_mailing(self):
         self.cursor.execute("SELECT user_id FROM users WHERE notifications_enabled = 1 OR notifications_enabled IS NULL")
@@ -2155,11 +2165,81 @@ async def auto_resolve_stale_disputes():
         logger.error(f"auto_resolve_stale_disputes error: {e}")
 
 
+async def reconcile_balances():
+    """Сверка SUM(amount_delta) из balance_ledger с текущими балансами users."""
+    try:
+        CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'STARS']
+        discrepancies = []
+        negative_balances = []
+
+        # Собираем все (user_id, currency) из леджера + все user_id из users
+        db.cursor.execute("SELECT DISTINCT user_id FROM users")
+        all_users = [r[0] for r in db.cursor.fetchall()]
+        # Для каждого пользователя проверяем все валюты
+        for uid in all_users:
+            for cur in CURRENCIES:
+                # Сумма дельт из леджера
+                db.cursor.execute(
+                    "SELECT COALESCE(SUM(amount_delta), 0) FROM balance_ledger WHERE user_id=? AND currency=?",
+                    (uid, cur)
+                )
+                sum_delta = db.cursor.fetchone()[0] or 0
+                # Текущий баланс из users
+                db.cursor.execute(f"SELECT balance_{cur} FROM users WHERE user_id=?", (uid,))
+                row = db.cursor.fetchone()
+                current_balance = row[0] if row and row[0] else 0
+
+                # Округляем как в _ledger_round
+                prec = {'TON': 4, 'USDT': 4, 'STARS': 0}
+                p = prec.get(cur, 2)
+                sum_delta_rounded = round(sum_delta, p)
+                current_rounded = round(current_balance, p)
+
+                if current_rounded < 0:
+                    negative_balances.append((uid, cur, current_rounded))
+
+                if abs(sum_delta_rounded - current_rounded) > 10 ** -(p + 1):
+                    discrepancies.append((uid, cur, sum_delta_rounded, current_rounded, round(current_rounded - sum_delta_rounded, p)))
+
+        details = {'discrepancies': discrepancies, 'negative_balances': negative_balances}
+        details_json = json.dumps(details, ensure_ascii=False, default=str)
+
+        db.cursor.execute(
+            "INSERT INTO reconciliation_log (discrepancies, negative_balances, details) VALUES (?, ?, ?)",
+            (len(discrepancies), len(negative_balances), details_json)
+        )
+        db.conn.commit()
+
+        if negative_balances:
+            msg = "🚨 *Отрицательные балансы:*\n"
+            for uid, cur, bal in negative_balances[:10]:
+                msg += f"• {uid} / {cur}: {bal}\n"
+            if len(negative_balances) > 10:
+                msg += f"...и ещё {len(negative_balances) - 10}\n"
+            asyncio.create_task(bot.send_message(OWNER_TELEGRAM_ID, msg, parse_mode="Markdown"))
+
+        if discrepancies:
+            msg = "⚠️ *Расхождения балансов:*\n"
+            for uid, cur, expected, actual, diff in discrepancies[:10]:
+                msg += f"• `{uid}` {cur}: леджер {expected} ≠ факт {actual} (разница {diff})\n"
+            if len(discrepancies) > 10:
+                msg += f"...и ещё {len(discrepancies) - 10}\n"
+            asyncio.create_task(bot.send_message(OWNER_TELEGRAM_ID, msg, parse_mode="Markdown"))
+
+        if not discrepancies and not negative_balances:
+            logger.info("reconcile_balances: OK, расхождений нет")
+        else:
+            logger.warning(f"reconcile_balances: {len(discrepancies)} расхождений, {len(negative_balances)} отр.балансов")
+    except Exception as e:
+        logger.error(f"reconcile_balances error: {e}", exc_info=True)
+
+
 def setup_scheduler():
     scheduler.add_job(check_premium_expiry, IntervalTrigger(minutes=15), id="premium_expiry", replace_existing=True)
     scheduler.add_job(auto_resolve_stale_disputes, IntervalTrigger(hours=1), id="stale_disputes", replace_existing=True)
     scheduler.add_job(poll_ton_payments, IntervalTrigger(seconds=TON_POLL_INTERVAL_SECONDS), id="ton_poll", replace_existing=True)
     scheduler.add_job(db.expire_verifications, IntervalTrigger(minutes=5), id="expire_2fa", replace_existing=True)
+    scheduler.add_job(reconcile_balances, IntervalTrigger(hours=1), id="reconcile_balances", replace_existing=True)
 
 
 # ========== СОСТОЯНИЯ FSM ==========
