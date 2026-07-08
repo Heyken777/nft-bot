@@ -44,6 +44,41 @@ def log_user_action(user_id, action_type, details='', request=None):
     conn.commit()
     conn.close()
 
+
+def check_new_device_and_notify(user_id, request):
+    ip = _get_client_ip(request)
+    ua = request.META.get('HTTP_USER_AGENT', '')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM known_devices WHERE user_id=? AND ip_address=? AND user_agent=?",
+        (user_id, ip, ua)
+    )
+    known = cur.fetchone()
+    if known:
+        cur.execute(
+            "UPDATE known_devices SET last_seen=CURRENT_TIMESTAMP WHERE user_id=? AND ip_address=? AND user_agent=?",
+            (user_id, ip, ua)
+        )
+        conn.commit()
+        conn.close()
+        return
+    cur.execute(
+        "INSERT INTO known_devices (user_id, ip_address, user_agent) VALUES (?, ?, ?)",
+        (user_id, ip, ua)
+    )
+    conn.commit()
+    conn.close()
+    try:
+        requests.post(
+            f"{BACKEND_URL}/api/internal/notify-new-login",
+            json={'user_id': user_id, 'ip_address': ip, 'user_agent': ua},
+            timeout=5
+        )
+    except Exception:
+        pass
+
+
 def _ensure_profile_reviews_table():
     conn = get_db()
     cur = conn.cursor()
@@ -182,6 +217,7 @@ def telegram_auth_view(request):
             request.session['role'] = 'owner'
             request.session.modified = True
             request.session.save()
+            check_new_device_and_notify(user_id, request)
             return redirect('/usersite/profile/')
 
     if code and code.isdigit() and len(code) == 6:
@@ -205,6 +241,7 @@ def telegram_auth_view(request):
             cur.execute("DELETE FROM auth_codes WHERE code=?", (code,))
             conn.commit()
             conn.close()
+            check_new_device_and_notify(uid, request)
             # Если профиль ещё не заполнен → редирект на страницу регистрации
             profile_complete = user.get('profile_setup_complete', 0)
             if not profile_complete:
@@ -309,6 +346,7 @@ def local_login_api(request):
     request.session.set_expiry(86400 * 7)
     request.session.modified = True
     request.session.save()
+    check_new_device_and_notify(user_id, request)
     return JsonResponse({'success': True})
 
 

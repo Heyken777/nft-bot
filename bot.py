@@ -654,6 +654,22 @@ class Database:
             ON user_audit_log(user_id, created_at DESC)
         """)
 
+        # Таблица известных устройств пользователя (IP + User-Agent)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS known_devices (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     BIGINT NOT NULL,
+                ip_address  TEXT NOT NULL,
+                user_agent  TEXT NOT NULL DEFAULT '',
+                first_seen  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_known_device
+            ON known_devices(user_id, ip_address, user_agent)
+        """)
+
         # Таблица блокировки по IP (брутфорс)
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS login_attempts (
@@ -7064,6 +7080,38 @@ async def handle_internal_notify(request):
     return JSONResponse(content={'success': created})
 
 
+async def handle_internal_notify_new_login(request):
+    """Уведомление о входе с нового устройства (вызывается Django)."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'error': 'Invalid JSON'}, status_code=400)
+    user_id = data.get('user_id')
+    ip_address = data.get('ip_address', '?')
+    user_agent = data.get('user_agent', '')
+    if not user_id:
+        return JSONResponse(content={'error': 'Missing user_id'}, status_code=400)
+
+    from datetime import datetime as _dt
+    now_str = _dt.now().strftime('%d.%m.%Y %H:%M')
+    ua_summary = user_agent[:60] + '...' if len(user_agent) > 60 else (user_agent or 'неизвестно')
+    msg = (
+        f"🔐 *Новое устройство*\n\n"
+        f"Выполнен вход в личный кабинет с нового устройства.\n\n"
+        f"🌐 IP: `{ip_address}`\n"
+        f"📱 Браузер: `{ua_summary}`\n"
+        f"⏰ {now_str} MSK\n\n"
+        f"Если это были не вы — рекомендуем сменить пароль в настройках и "
+        f"обратиться в поддержку."
+    )
+    await notify_user(user_id, msg)
+    asyncio.create_task(notify_usersite(user_id, 'new_device_login',
+        '🔐 Вход с нового устройства',
+        f'Выполнен вход с IP {ip_address}. Если это не вы — смените пароль.',
+        '/usersite/settings/'))
+    return JSONResponse(content={'success': True})
+
+
 # ========== WebSocket Connections (real-time notifications) ==========
 
 ws_connections: dict[int, list] = {}
@@ -7136,6 +7184,7 @@ fastapi_app.add_api_route("/api/confirm_receipt", handle_confirm_receipt, method
 fastapi_app.add_api_route("/api/2fa/request", handle_2fa_request, methods=["POST"])
 fastapi_app.add_api_route("/api/send_admin_login_code", handle_send_admin_login_code, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/notify", handle_internal_notify, methods=["POST"])
+fastapi_app.add_api_route("/api/internal/notify-new-login", handle_internal_notify_new_login, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/2fa-request", handle_internal_2fa_request, methods=["POST"])
 
 # WebSocket endpoint for real-time notifications
