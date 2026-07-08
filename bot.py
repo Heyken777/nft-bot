@@ -519,6 +519,8 @@ class Database:
         self.add_column_if_not_exists("deals", "paid_tx_hash", "TEXT")  # CHANGED: tx hash подтвержденного платежа
         self.add_column_if_not_exists("deals", "paid_at", "TIMESTAMP")  # CHANGED: время подтверждения оплаты
         self.add_column_if_not_exists("deals", "disputed_at", "TIMESTAMP")  # CHANGED: время перевода в спор
+        self.add_column_if_not_exists("deals", "updated_at", "TIMESTAMP")  # время последнего изменения статуса
+        self.add_column_if_not_exists("deals", "escalated_ticket_id", "INTEGER")  # ID тикета при автоэскалации
         
         # Таблица заявок на вывод
         self.cursor.execute("""
@@ -1106,10 +1108,7 @@ class Database:
         return None
 
     def upd_deal_status(self, did, status):
-        if status == "completed":
-            self.cursor.execute("UPDATE deals SET status = ?, completed = CURRENT_TIMESTAMP WHERE id = ?", (status, did))
-        else:
-            self.cursor.execute("UPDATE deals SET status = ? WHERE id = ?", (status, did))
+        self.cursor.execute("UPDATE deals SET status = ?, updated_at = CURRENT_TIMESTAMP, completed = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE completed END WHERE id = ?", (status, status, did))
         self.conn.commit()
 
     def set_buyer(self, did, buyer):
@@ -2234,12 +2233,92 @@ async def reconcile_balances():
         logger.error(f"reconcile_balances error: {e}", exc_info=True)
 
 
+async def check_deal_reminders():
+    """Проверяет сделки в статусе 'item_sent' дольше N часов:
+    - > DEAL_REMINDER_HOURS → напоминание покупателю
+    - > DEAL_ESCALATION_HOURS → автосоздание тикета поддержки
+    """
+    try:
+        remind_h = DEAL_REMINDER_HOURS
+        escalate_h = DEAL_ESCALATION_HOURS
+        db.cursor.execute(
+            "SELECT id, seller, buyer, deal_code, item, amount, currency, created, updated_at, escalated_ticket_id "
+            "FROM deals WHERE status = 'item_sent'"
+        )
+        cols = [desc[0] for desc in db.cursor.description]
+        deals = [dict(zip(cols, r)) for r in db.cursor.fetchall()]
+        for deal in deals:
+            did = deal['id']
+            ts_str = deal.get('updated_at') or deal.get('created')
+            if not ts_str:
+                continue
+            try:
+                deal_ts = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S')
+                age_hours = (datetime.now() - deal_ts).total_seconds() / 3600
+            except (ValueError, TypeError):
+                continue
+            buyer = deal['buyer']
+            seller = deal['seller']
+            code = deal.get('deal_code', f"#{did}")
+            item = deal.get('item', '—')
+            amount = float(deal.get('amount', 0))
+            currency = deal.get('currency', 'RUB')
+
+            # Уровень 2: эскалация (> N2 часов)
+            if age_hours > escalate_h:
+                if deal.get('escalated_ticket_id'):
+                    continue
+                subject = f"Автоэскалация: сделка {code} ожидает подтверждения получения дольше {escalate_h}ч"
+                db.cursor.execute(
+                    "INSERT INTO support_tickets (user_id, subject, category, user_type, order_number, status) "
+                    "VALUES (?, ?, ?, ?, ?, 'open')",
+                    (buyer, subject, 'deal_escalation', 'buyer', str(did))
+                )
+                ticket_id = db.cursor.lastrowid
+                db.cursor.execute(
+                    "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) "
+                    "VALUES (?, 'system', 'Система', ?)",
+                    (ticket_id, f"Сделка {code} ({item}, {amount} {currency}) ожидает подтверждения более {escalate_h}ч. Автоматически создано.")
+                )
+                db.cursor.execute("UPDATE deals SET escalated_ticket_id = ? WHERE id = ?", (ticket_id, did))
+                db.conn.commit()
+                logger.info(f"Создан тикет #{ticket_id} по сделке {code} (автоэскалация)")
+                asyncio.create_task(notify_user(seller,
+                    f"🆘 По вашей сделке {code} создан тикет поддержки.\n"
+                    f"Покупатель не подтвердил получение за {escalate_h}ч.\n"
+                    f"Тикет #{ticket_id} — ожидайте ответа поддержки."))
+                asyncio.create_task(notify_usersite(seller, 'ticket_created', 'Создан тикет по сделке',
+                    f"Сделка {code}: покупатель не подтвердил получение. Тикет #{ticket_id}.",
+                    f'/usersite/tickets/{ticket_id}/'))
+                asyncio.create_task(notify_user(buyer,
+                    f"🆘 По сделке {code} создан тикет поддержки.\n"
+                    f"Пожалуйста, подтвердите получение или ответьте в тикете.\n"
+                    f"Тикет #{ticket_id}"))
+                asyncio.create_task(notify_usersite(buyer, 'ticket_created', 'Создан тикет по вашей сделке',
+                    f"Сделка {code}: создан тикет поддержки.",
+                    f'/usersite/tickets/{ticket_id}/'))
+            elif age_hours > remind_h and not deal.get('escalated_ticket_id'):
+                asyncio.create_task(notify_user(buyer,
+                    f"⏰ *Напоминание о получении*\n\n"
+                    f"Сделка: {code}\n"
+                    f"Товар: {item}\n"
+                    f"Сумма: {amount} {currency}\n\n"
+                    f"Пожалуйста, подтвердите получение товара в боте или на сайте, "
+                    f"иначе через {escalate_h - remind_h}ч будет создан тикет в поддержку."))
+                asyncio.create_task(notify_usersite(buyer, 'deal_reminder', 'Напоминание: подтвердите получение',
+                    f"Сделка {code} ({item}) — не забудьте подтвердить получение.",
+                    f'/usersite/deal/{did}/'))
+    except Exception as e:
+        logger.error(f"check_deal_reminders error: {e}", exc_info=True)
+
+
 def setup_scheduler():
     scheduler.add_job(check_premium_expiry, IntervalTrigger(minutes=15), id="premium_expiry", replace_existing=True)
     scheduler.add_job(auto_resolve_stale_disputes, IntervalTrigger(hours=1), id="stale_disputes", replace_existing=True)
     scheduler.add_job(poll_ton_payments, IntervalTrigger(seconds=TON_POLL_INTERVAL_SECONDS), id="ton_poll", replace_existing=True)
     scheduler.add_job(db.expire_verifications, IntervalTrigger(minutes=5), id="expire_2fa", replace_existing=True)
     scheduler.add_job(reconcile_balances, IntervalTrigger(hours=1), id="reconcile_balances", replace_existing=True)
+    scheduler.add_job(check_deal_reminders, IntervalTrigger(hours=1), id="deal_reminders", replace_existing=True)
 
 
 # ========== СОСТОЯНИЯ FSM ==========
