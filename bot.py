@@ -670,6 +670,25 @@ class Database:
             ON known_devices(user_id, ip_address, user_agent)
         """)
 
+        # Таблица очереди подтверждений CEO для крупных операций
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ceo_approval_queue (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     BIGINT NOT NULL,
+                action_type TEXT NOT NULL,
+                currency    TEXT NOT NULL,
+                amount      REAL NOT NULL,
+                rub_value   REAL NOT NULL,
+                payload_json TEXT NOT NULL,
+                nonce       TEXT,
+                status      TEXT DEFAULT 'pending',
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TIMESTAMP,
+                resolved_by BIGINT,
+                resolution  TEXT
+            )
+        """)
+
         # Таблица блокировки по IP (брутфорс)
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS login_attempts (
@@ -5847,6 +5866,118 @@ async def dispute_decide_cb(call: CallbackQuery):
 
 
 # ========== 2FA ==========
+
+async def _escalate_to_ceo(call, user_id, action, currency, amount, rub_value, payload, nonce):
+    """Вставляет запись в ceo_approval_queue и уведомляет CEO."""
+    db.cursor.execute(
+        "INSERT INTO ceo_approval_queue (user_id, action_type, currency, amount, rub_value, payload_json, nonce) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (user_id, action, currency, float(amount), float(rub_value), json.dumps(payload), nonce)
+    )
+    queue_id = db.cursor.lastrowid
+    db.conn.commit()
+    db.confirm_verification(nonce)
+
+    if action == "withdraw":
+        action_label = "Вывод средств"
+        user_text = f"Ваш запрос на вывод {amount} {currency}"
+        detail_lines = f"👤 Пользователь: `{user_id}`\n💸 Действие: Вывод средств\n💰 Сумма: {amount} {currency}"
+    elif action == "p2p_transfer":
+        to_uid = payload.get('to_user_id', '?')
+        action_label = "P2P перевод"
+        user_text = f"Ваш перевод {amount} {currency}"
+        detail_lines = f"👤 Отправитель: `{user_id}`\n👤 Получатель: `{to_uid}`\n💸 Действие: P2P перевод\n💰 Сумма: {amount} {currency}"
+    else:
+        action_label = "Операция"
+        user_text = f"Операция на {amount} {currency}"
+        detail_lines = f"👤 Пользователь: `{user_id}`\n💰 Сумма: {amount} {currency}"
+
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"ceo_appr_{queue_id}"),
+         InlineKeyboardButton(text="❌ Заблокировать", callback_data=f"ceo_rej_{queue_id}")]
+    ])
+    ceo_msg = (
+        f"🚨 *Крупная операция: {action_label}*\n\n"
+        f"{detail_lines}\n"
+        f"💵 RUB-эквивалент: {rub_value:.2f} RUB\n"
+        f"🆔 Номер: #{queue_id}"
+    )
+    try:
+        await bot.send_message(OWNER_TELEGRAM_ID, ceo_msg, parse_mode="Markdown", reply_markup=markup)
+    except Exception as e:
+        logger.error(f"CEO notification error: {e}")
+
+    await call.message.edit_text(
+        f"⏳ *Операция на проверке*\n\n"
+        f"{user_text} отправлен на проверку.\n"
+        f"Ожидайте решения, мы уведомим вас в ближайшее время.",
+        parse_mode="Markdown"
+    )
+    await notify_user(user_id, f"⏳ {user_text} отправлен на проверку. Ожидайте решения.")
+
+
+async def _execute_ceo_approved(queue_id: int):
+    """Исполняет ранее одобренную CEO операцию."""
+    db.cursor.execute("SELECT * FROM ceo_approval_queue WHERE id=?", (queue_id,))
+    row = db.cursor.fetchone()
+    if not row:
+        return False
+    q = dict(row)
+    if q['status'] != 'approved':
+        return False
+
+    user_id = q['user_id']
+    action = q['action_type']
+    currency = q['currency']
+    amount = Decimal(str(q['amount']))
+    payload = json.loads(q['payload_json'])
+
+    try:
+        if action == "withdraw":
+            db.update_balance(user_id, currency, -float(amount), operation_type='withdrawal', note=f'Вывод одобрен CEO')
+            db.add_audit_log(OWNER_TELEGRAM_ID, "ceo_approve_withdraw", target=f"user_{user_id}", details=f"{amount} {currency}")
+            await notify_user(user_id, f"✅ Вывод {amount} {currency} одобрен и выполнен.\nОжидайте перевода от менеджера.")
+            asyncio.create_task(notify_usersite(user_id, 'withdrawal_approved',
+                '✅ Вывод одобрен',
+                f'Вывод {amount} {currency} одобрен администрацией.',
+                '/usersite/withdraw/'))
+
+        elif action == "p2p_transfer":
+            to_user_id = payload['to_user_id']
+            note = payload.get('note', '')
+            ref_id = f"p2p_{user_id}_{to_user_id}_{int(datetime.now().timestamp())}"
+            db.cursor.execute("SAVEPOINT sp_p2p_ceo")
+            ok1 = db.update_balance(user_id, currency, -amount, operation_type='p2p_transfer_out', reference_id=ref_id, note=note)
+            ok2 = db.update_balance(to_user_id, currency, amount, operation_type='p2p_transfer_in', reference_id=ref_id, note=note)
+            if ok1 and ok2:
+                db.cursor.execute("RELEASE sp_p2p_ceo")
+                db.add_audit_log(OWNER_TELEGRAM_ID, "ceo_approve_p2p", target=f"user_{user_id}->{to_user_id}", details=f"{amount} {currency}")
+                await notify_user(user_id, f"✅ Перевод {amount} {currency} пользователю @{payload.get('to_username', to_user_id)} одобрен и выполнен.")
+                await notify_user(to_user_id, f"💸 *Получен перевод!*\n\n"
+                    f"От @{payload.get('from_username', user_id)}: {amount} {currency}\n"
+                    f"{'📝 ' + note if note else ''}")
+                asyncio.create_task(notify_usersite(to_user_id, 'p2p_transfer', 'Перевод получен',
+                    f'Получено {amount} {currency} от @{payload.get("from_username", user_id)}',
+                    '/usersite/transactions/'))
+            else:
+                db.cursor.execute("ROLLBACK TO sp_p2p_ceo")
+                logger.error(f"CEO approved P2P #{queue_id} failed: insufficient funds")
+                await notify_user(OWNER_TELEGRAM_ID, f"❌ Ошибка исполнения P2P #{queue_id}: недостаточно средств.")
+                return False
+
+        db.cursor.execute(
+            "UPDATE ceo_approval_queue SET status='executed', resolved_at=CURRENT_TIMESTAMP, resolved_by=?, resolution='approved_and_executed' WHERE id=?",
+            (OWNER_TELEGRAM_ID, queue_id)
+        )
+        db.conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"CEO execute #{queue_id} error: {e}")
+        db.cursor.execute("UPDATE ceo_approval_queue SET status='execution_failed', resolution=? WHERE id=?", (str(e), queue_id))
+        db.conn.commit()
+        await notify_user(OWNER_TELEGRAM_ID, f"❌ Ошибка исполнения операции #{queue_id}: {e}")
+        return False
+
+
 @dp.callback_query(lambda c: c.data.startswith("confirm_tx_"))
 async def confirm_transaction_cb(call: CallbackQuery):
     nonce = call.data.replace("confirm_tx_", "")
@@ -5867,6 +5998,15 @@ async def confirm_transaction_cb(call: CallbackQuery):
         if action == "withdraw":
             amount = payload['amount']
             currency = payload['currency']
+
+            # Проверка порога CEO
+            rates = currency_api.get_stale_cache("RUB")
+            rub_rate = Decimal(str(rates.get(currency, 1)))
+            rub_value = Decimal(str(amount)) * rub_rate
+            if rub_value > Decimal(str(CEO_APPROVAL_THRESHOLD_RUB)):
+                await _escalate_to_ceo(call, user_id, action, currency, amount, rub_value, payload, nonce)
+                return
+
             db.update_balance(user_id, currency, -amount, operation_type='withdrawal', note=f'Подтверждение вывода {currency}')
             db.confirm_verification(nonce)
             db.add_audit_log(user_id, "2fa_withdraw", details=f"{amount} {currency}", nonce=nonce)
@@ -5890,6 +6030,15 @@ async def confirm_transaction_cb(call: CallbackQuery):
             currency = payload['currency']
             amount = Decimal(str(payload['amount']))
             note = payload.get('note', '')
+
+            # Проверка порога CEO
+            rates = currency_api.get_stale_cache("RUB")
+            rub_rate = Decimal(str(rates.get(currency, 1)))
+            rub_value = amount * rub_rate
+            if rub_value > Decimal(str(CEO_APPROVAL_THRESHOLD_RUB)):
+                await _escalate_to_ceo(call, user_id, action, currency, amount, rub_value, payload, nonce)
+                return
+
             ref_id = f"p2p_{user_id}_{to_user_id}_{int(datetime.now().timestamp())}"
             db.cursor.execute("SAVEPOINT sp_p2p")
             try:
@@ -5968,6 +6117,61 @@ async def confirm_transaction_cb(call: CallbackQuery):
         await call.answer("❌ Ошибка подтверждения", show_alert=True)
 
     await call.answer()
+
+
+# ========== CEO APPROVAL CALLBACKS ==========
+@dp.callback_query(lambda c: c.data.startswith("ceo_appr_") or c.data.startswith("ceo_rej_"))
+async def ceo_approval_cb(call: CallbackQuery):
+    if call.from_user.id != OWNER_TELEGRAM_ID:
+        await call.answer("⛔ Только CEO может подтверждать операции", show_alert=True)
+        return
+
+    is_approve = call.data.startswith("ceo_appr_")
+    queue_id = int(call.data.replace("ceo_appr_", "").replace("ceo_rej_", ""))
+
+    db.cursor.execute("SELECT * FROM ceo_approval_queue WHERE id=?", (queue_id,))
+    row = db.cursor.fetchone()
+    if not row:
+        await call.answer("❌ Операция не найдена", show_alert=True)
+        return
+    q = dict(row)
+
+    if q['status'] not in ('pending',):
+        await call.answer("⏰ Операция уже обработана", show_alert=True)
+        return
+
+    if is_approve:
+        await call.message.edit_text(f"⏳ Исполнение операции #{queue_id}...")
+        success = await _execute_ceo_approved(queue_id)
+        if success:
+            await call.message.edit_text(
+                f"✅ *Операция #{queue_id} подтверждена и выполнена*",
+                parse_mode="Markdown"
+            )
+            db.add_audit_log(OWNER_TELEGRAM_ID, "ceo_approve", target=f"queue_{queue_id}",
+                details=f"{q['action_type']} {q['amount']} {q['currency']} (RUB: {q['rub_value']})")
+        else:
+            await call.message.edit_text(
+                f"❌ *Операция #{queue_id}: ошибка исполнения*",
+                parse_mode="Markdown"
+            )
+        await call.answer()
+    else:
+        db.cursor.execute(
+            "UPDATE ceo_approval_queue SET status='rejected', resolved_at=CURRENT_TIMESTAMP, resolved_by=?, resolution='rejected_by_ceo' WHERE id=?",
+            (OWNER_TELEGRAM_ID, queue_id)
+        )
+        db.conn.commit()
+        db.add_audit_log(OWNER_TELEGRAM_ID, "ceo_reject", target=f"queue_{queue_id}",
+            details=f"{q['action_type']} {q['amount']} {q['currency']} (RUB: {q['rub_value']})")
+        await call.message.edit_text(
+            f"❌ *Операция #{queue_id} заблокирована*",
+            parse_mode="Markdown"
+        )
+        await notify_user(q['user_id'],
+            f"⏳ Операция {q['amount']} {q['currency']} не может быть выполнена. "
+            f"Пожалуйста, обратитесь в поддержку для уточнения деталей.")
+        await call.answer("✅ Операция заблокирована", show_alert=True)
 
 
 # ========== ЧАТ ПОДДЕРЖКИ: перехват сообщений от пользователя ==========
