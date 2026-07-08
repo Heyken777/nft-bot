@@ -5809,6 +5809,45 @@ async def confirm_transaction_cb(call: CallbackQuery):
                 logger.error(f"p2p_transfer error: {e}")
                 await call.answer("❌ Ошибка перевода", show_alert=True)
                 return
+        elif action == "change_payment_details":
+            card_number = payload.get('card_number', '').replace(' ', '')
+            ton_wallet = (payload.get('ton_wallet') or '').strip()
+            card_currency = payload.get('card_currency', 'RUB')
+            if card_number:
+                if not card_number.isdigit() or len(card_number) not in (16, 19):
+                    await call.answer("❌ Неверный формат карты", show_alert=True)
+                    return
+                db.set_card(user_id, card_number, card_currency)
+            if ton_wallet:
+                if not ton_wallet.startswith('UQ') and not ton_wallet.startswith('EQ'):
+                    await call.answer("❌ Неверный формат TON кошелька", show_alert=True)
+                    return
+                db.set_ton(user_id, ton_wallet)
+            if not card_number and not ton_wallet:
+                await call.answer("❌ Нет данных для изменения", show_alert=True)
+                return
+            db.confirm_verification(nonce)
+            db.add_audit_log(user_id, "change_payment_details",
+                details=f"card={'1' if card_number else '0'} ton={'1' if ton_wallet else '0'}",
+                nonce=nonce)
+            changes = []
+            if card_number:
+                masked = card_number[:4] + '****' + card_number[-4:]
+                changes.append(f"💳 Карта: {masked}")
+            if ton_wallet:
+                masked = ton_wallet[:4] + '...' + ton_wallet[-4:]
+                changes.append(f"💎 TON: {masked}")
+            await call.message.edit_text(
+                f"✅ *Платёжные реквизиты обновлены*\n\n" + "\n".join(changes),
+                parse_mode="Markdown"
+            )
+            await notify_user(user_id,
+                f"✅ Платёжные реквизиты изменены.\n"
+                + ("\n".join(changes)
+            ))
+            asyncio.create_task(notify_usersite(user_id, 'payment_details_changed', 'Реквизиты изменены',
+                'Ваши платёжные реквизиты были успешно обновлены.',
+                '/usersite/profile/'))
         else:
             await call.answer("❌ Неизвестный тип операции", show_alert=True)
             return
@@ -6837,24 +6876,42 @@ async def handle_internal_2fa_request(request):
     user_id = data.get('user_id')
     action = data.get('action')
     payload_data = data.get('payload', {})
-    allowed_actions = ['p2p_transfer']
+    allowed_actions = ['p2p_transfer', 'change_payment_details']
     if not user_id or action not in allowed_actions:
         return JSONResponse(content={'error': 'Invalid action or missing user_id'}, status_code=400)
     nonce = db.create_verification(user_id, action, json.dumps(payload_data))
-    markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔒 Подтвердить перевод", callback_data=f"confirm_tx_{nonce}")]
-    ])
-    try:
-        await bot.send_message(
-            user_id,
+
+    if action == 'p2p_transfer':
+        btn_text = "🔒 Подтвердить перевод"
+        msg = (
             f"🔐 *Требуется подтверждение перевода*\n\n"
             f"Получатель: {payload_data.get('to_username', '?')}\n"
             f"Сумма: {payload_data.get('amount', '?')} {payload_data.get('currency', '?')}\n"
             f"{'Примечание: ' + payload_data['note'] if payload_data.get('note') else ''}\n\n"
-            f"Нажмите кнопку ниже, чтобы подтвердить.",
-            parse_mode="Markdown",
-            reply_markup=markup
+            f"Нажмите кнопку ниже, чтобы подтвердить."
         )
+    elif action == 'change_payment_details':
+        btn_text = "🔒 Подтвердить смену реквизитов"
+        parts = []
+        if payload_data.get('card_number'):
+            parts.append(f"💳 Карта: `{payload_data['card_number']}`")
+        if payload_data.get('ton_wallet'):
+            parts.append(f"💎 TON: `{payload_data['ton_wallet']}`")
+        msg = (
+            f"🔐 *Смена платёжных реквизитов*\n\n"
+            + "\n".join(parts) +
+            f"\n\nЕсли это не вы — проигнорируйте сообщение.\n"
+            f"Нажмите кнопку ниже, чтобы подтвердить."
+        )
+    else:
+        btn_text = "🔒 Подтвердить"
+        msg = f"🔐 *Требуется подтверждение*\n\nНажмите кнопку ниже."
+
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=btn_text, callback_data=f"confirm_tx_{nonce}")]
+    ])
+    try:
+        await bot.send_message(user_id, msg, parse_mode="Markdown", reply_markup=markup)
         return JSONResponse(content={'success': True, 'nonce': nonce})
     except Exception as e:
         return JSONResponse(content={'success': False, 'error': str(e)}, status_code=400)

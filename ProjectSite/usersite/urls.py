@@ -76,6 +76,8 @@ urlpatterns = [
     path('send/', views.send_view, name='send'),
     path('api/send/preview/', views.api_send_preview, name='api_send_preview'),
     path('api/send/confirm/', views.api_send_confirm, name='api_send_confirm'),
+    # Сохранение платёжных реквизитов с 2FA
+    path('api/save-payment-details/', views.api_save_payment_details, name='api_save_payment_details'),
 
     # P2P обмен валют
     path('exchange/', views.exchange_view, name='exchange'),

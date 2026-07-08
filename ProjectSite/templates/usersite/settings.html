@@ -102,6 +102,43 @@
 <div class="settings-card mt-4" data-reveal>
     <div class="card">
         <div class="card-body">
+            <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:4px;"><i class="fi fi-rr-credit-card"></i> Платёжные реквизиты</h2>
+            <p class="text-muted" style="font-size:13px;margin-bottom:8px;">Для вывода средств. Изменение требует подтверждения через Telegram.</p>
+            <hr class="divider-settings">
+
+            <div class="field-group">
+                <label for="fieldCard">Номер карты</label>
+                <input type="text" id="fieldCard" class="form-control" placeholder="16 или 19 цифр" inputmode="numeric" maxlength="19">
+                <span class="field-hint">Карта для вывода RUB/USD/EUR</span>
+            </div>
+
+            <div class="field-group mt-2">
+                <label for="fieldCardCurrency">Валюта карты</label>
+                <select id="fieldCardCurrency" class="form-control">
+                    <option value="RUB">RUB</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="BYN">BYN</option>
+                    <option value="UAH">UAH</option>
+                    <option value="KZT">KZT</option>
+                </select>
+            </div>
+
+            <div class="field-group mt-2">
+                <label for="fieldTon">TON кошелёк</label>
+                <input type="text" id="fieldTon" class="form-control" placeholder="UQ... или EQ..." maxlength="64">
+                <span class="field-hint">Для вывода TON/USDT</span>
+            </div>
+
+            <div id="paymentError" style="color:var(--danger);font-size:13px;display:none;margin-top:8px;"></div>
+            <button class="btn btn-primary btn-save" onclick="savePaymentDetails()" style="margin-top:8px;"><i class="fi fi-rr-lock"></i> Сохранить реквизиты</button>
+        </div>
+    </div>
+</div>
+
+<div class="settings-card mt-4" data-reveal>
+    <div class="card">
+        <div class="card-body">
             <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:4px;"><i class="fi fi-rr-bell"></i> Уведомления</h2>
             <p class="text-muted" style="font-size:13px;margin-bottom:8px;">Какие уведомления вы хотите получать</p>
             <hr class="divider-settings">
@@ -302,6 +339,62 @@ async function saveSettings() {
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fi fi-rr-floppy"></i> Сохранить';
+    }
+}
+
+async function savePaymentDetails() {
+    var card = document.getElementById('fieldCard').value.replace(/\s/g, '');
+    var ton = document.getElementById('fieldTon').value.trim();
+    var currency = document.getElementById('fieldCardCurrency').value;
+    var errEl = document.getElementById('paymentError');
+    errEl.style.display = 'none';
+
+    if (!card && !ton) {
+        errEl.textContent = 'Укажите карту или TON кошелёк';
+        errEl.style.display = 'block';
+        return;
+    }
+    if (card && (!/^\d+$/.test(card) || (card.length !== 16 && card.length !== 19))) {
+        errEl.textContent = 'Неверный формат карты (16 или 19 цифр)';
+        errEl.style.display = 'block';
+        return;
+    }
+    if (ton && !ton.startsWith('UQ') && !ton.startsWith('EQ')) {
+        errEl.textContent = 'TON кошелёк начинается с UQ или EQ';
+        errEl.style.display = 'block';
+        return;
+    }
+
+    var btn = document.querySelector('.settings-card:nth-child(2) .btn-save');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
+
+    try {
+        var res = await fetch('/usersite/api/save-payment-details/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+            body: JSON.stringify({
+                card_number: card,
+                ton_wallet: ton,
+                card_currency: currency
+            })
+        });
+        var d = await res.json();
+        if (d.success) {
+            showToast('<i class="fi fi-rr-check"></i> Подтверждение отправлено в Telegram');
+            btn.innerHTML = '<i class="fi fi-rr-check"></i> Ожидание подтверждения';
+            btn.disabled = true;
+        } else {
+            errEl.textContent = d.error || 'Ошибка';
+            errEl.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fi fi-rr-lock"></i> Сохранить реквизиты';
+        }
+    } catch (e) {
+        errEl.textContent = 'Ошибка соединения: ' + e.message;
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fi fi-rr-lock"></i> Сохранить реквизиты';
     }
 }
 </script>

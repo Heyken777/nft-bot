@@ -2217,3 +2217,46 @@ def api_send_confirm(request):
             return JsonResponse({'success': False, 'error': data.get('error', 'Ошибка отправки подтверждения')})
     except Exception as e:
         return JsonResponse({'success': False, 'error': f'Бот недоступен: {str(e)}'})
+
+
+@csrf_exempt
+def api_save_payment_details(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    card_number = data.get('card_number', '').replace(' ', '')
+    ton_wallet = (data.get('ton_wallet') or '').strip()
+    card_currency = data.get('card_currency', 'RUB')
+    if not card_number and not ton_wallet:
+        return JsonResponse({'success': False, 'error': 'Укажите карту или TON кошелёк'})
+    if card_number and (not card_number.isdigit() or len(card_number) not in (16, 19)):
+        return JsonResponse({'success': False, 'error': 'Неверный формат карты (16 или 19 цифр)'})
+    if ton_wallet and not ton_wallet.startswith('UQ') and not ton_wallet.startswith('EQ'):
+        return JsonResponse({'success': False, 'error': 'Неверный формат TON кошелька (начинается с UQ или EQ)'})
+    try:
+        resp = requests.post(
+            f"{BACKEND_URL}/api/internal/2fa-request",
+            json={
+                'user_id': user_id,
+                'action': 'change_payment_details',
+                'payload': {
+                    'card_number': card_number,
+                    'ton_wallet': ton_wallet,
+                    'card_currency': card_currency,
+                }
+            },
+            timeout=10
+        )
+        d = resp.json()
+        if d.get('success'):
+            return JsonResponse({'success': True, 'message': 'Код подтверждения отправлен в Telegram'})
+        else:
+            return JsonResponse({'success': False, 'error': d.get('error', 'Ошибка отправки подтверждения')})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Бот недоступен: {str(e)}'})
