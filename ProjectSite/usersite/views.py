@@ -24,6 +24,26 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+
+def _get_client_ip(request):
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+
+def log_user_action(user_id, action_type, details='', request=None):
+    ip_address = _get_client_ip(request) if request else '0.0.0.0'
+    user_agent = request.META.get('HTTP_USER_AGENT', '') if request else ''
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO user_audit_log (user_id, action_type, details, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)",
+        (user_id, action_type, details, ip_address, user_agent)
+    )
+    conn.commit()
+    conn.close()
+
 def _ensure_profile_reviews_table():
     conn = get_db()
     cur = conn.cursor()
@@ -248,6 +268,9 @@ def save_profile_api(request):
     )
     conn.commit()
     conn.close()
+    log_user_action(uid, 'password_changed', 'Установлен пароль при регистрации', request)
+    if email:
+        log_user_action(uid, 'profile_updated', f'Указан email: {email}', request)
     return JsonResponse({'success': True})
 
 
@@ -649,6 +672,18 @@ def api_update_profile(request):
         cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE user_id=?", vals)
         conn.commit()
         conn.close()
+
+        changed = []
+        if password:
+            log_user_action(uid, 'password_changed', 'Изменён пароль в настройках', request)
+            changed.append('пароль')
+        profile_parts = []
+        if email:
+            profile_parts.append(f'email: {email}')
+        if name:
+            profile_parts.append(f'username: {name}')
+        if profile_parts:
+            log_user_action(uid, 'profile_updated', ', '.join(profile_parts), request)
 
         if name:
             request.session['username'] = name
@@ -1595,7 +1630,48 @@ def api_upload_avatar(request):
     conn.commit()
     conn.close()
 
+    log_user_action(user_id, 'avatar_changed', 'Загружен новый аватар', request)
     return JsonResponse({'success': True, 'avatar_url': _avatar_url(user_id)})
+
+
+# ===================== SECURITY AUDIT LOG =====================
+
+ACTION_TYPE_LABELS = {
+    'password_changed': 'Изменение пароля',
+    'password_reset': 'Восстановление пароля',
+    '2fa_enabled': 'Включение 2FA',
+    '2fa_disabled': 'Отключение 2FA',
+    'withdrawal_details_changed': 'Изменение реквизитов вывода',
+    'profile_updated': 'Обновление профиля',
+    'avatar_changed': 'Смена аватара',
+}
+
+
+def security_log_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    page = int(request.GET.get('page', 1))
+    per_page = 30
+    offset = (page - 1) * per_page
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM user_audit_log WHERE user_id=?", (user_id,))
+    total = cur.fetchone()[0]
+    cur.execute(
+        "SELECT id, action_type, details, ip_address, user_agent, created_at "
+        "FROM user_audit_log WHERE user_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (user_id, per_page, offset)
+    )
+    logs = [dict(r) for r in cur.fetchall()]
+    for log in logs:
+        log['action_label'] = ACTION_TYPE_LABELS.get(log['action_type'], log['action_type'])
+    conn.close()
+    return render(request, 'usersite/security_log.html', {
+        'logs': logs,
+        'page': page,
+        'total_pages': (total + per_page - 1) // per_page,
+    })
 
 
 # ===================== EMAIL RECOVERY =====================
@@ -1709,6 +1785,7 @@ def api_password_reset_confirm(request):
     cur.execute("UPDATE password_reset_tokens SET used=1 WHERE token=?", (token,))
     conn.commit()
     conn.close()
+    log_user_action(user_id, 'password_reset', f'Восстановление пароля через email: {email}', request)
     return JsonResponse({'success': True, 'message': 'Пароль успешно изменён'})
 
 
@@ -2239,6 +2316,15 @@ def api_save_payment_details(request):
         return JsonResponse({'success': False, 'error': 'Неверный формат карты (16 или 19 цифр)'})
     if ton_wallet and not ton_wallet.startswith('UQ') and not ton_wallet.startswith('EQ'):
         return JsonResponse({'success': False, 'error': 'Неверный формат TON кошелька (начинается с UQ или EQ)'})
+    details_parts = []
+    if card_number:
+        masked = card_number[:4] + '****' + card_number[-4:]
+        details_parts.append(f'карта: {masked} ({card_currency})')
+    if ton_wallet:
+        masked = ton_wallet[:4] + '...' + ton_wallet[-4:]
+        details_parts.append(f'TON: {masked}')
+    log_user_action(user_id, 'withdrawal_details_changed', 'Запрошено изменение: ' + ', '.join(details_parts), request)
+
     try:
         resp = requests.post(
             f"{BACKEND_URL}/api/internal/2fa-request",

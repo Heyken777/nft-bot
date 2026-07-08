@@ -1,0 +1,84 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Журнал безопасности{% endblock %}
+
+{% block extra_css %}
+<style>
+    .log-page-item {
+        display: flex; align-items: flex-start; gap: 14px;
+        padding: 14px 0; border-bottom: 1px solid var(--border-light);
+        text-decoration: none; color: var(--text-primary);
+    }
+    .log-page-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+    .log-page-icon.password_changed { color: #f59e0b; }
+    .log-page-icon.password_reset { color: #f59e0b; }
+    .log-page-icon.withdrawal_details_changed { color: #ef4444; }
+    .log-page-icon.profile_updated { color: #3b82f6; }
+    .log-page-icon.avatar_changed { color: #8b5cf6; }
+    .log-page-icon.tfa_enabled { color: #22c55e; }
+    .log-page-icon.tfa_disabled { color: #ef4444; }
+    .log-page-body { flex: 1; min-width: 0; }
+    .log-page-action { font-weight: 600; font-size: 14px; }
+    .log-page-details { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+    .log-page-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    .pagination-custom { display: flex; justify-content: center; gap: 8px; margin-top: 24px; }
+    .pagination-custom a {
+        padding: 8px 14px; border-radius: var(--radius-sm);
+        border: 1px solid var(--border-color); text-decoration: none;
+        color: var(--text-secondary); font-size: 13px; transition: all var(--transition);
+    }
+    .pagination-custom a:hover { border-color: var(--accent); color: var(--accent); }
+    .pagination-custom a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .pagination-custom a.disabled { opacity: 0.4; pointer-events: none; }
+
+    .security-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .log-empty { text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card" data-reveal>
+    <div class="security-header">
+        <h2 style="font-size:1.2rem;font-weight:600;margin:0;"><i class="fi fi-rr-shield"></i> Журнал безопасности</h2>
+    </div>
+
+    {% if logs %}
+        {% for log in logs %}
+        <div class="log-page-item">
+            <div class="log-page-icon {{ log.action_type }}">
+                {% if log.action_type == 'password_changed' %}<i class="fi fi-rr-key"></i>
+                {% elif log.action_type == 'password_reset' %}<i class="fi fi-rr-key"></i>
+                {% elif log.action_type == 'withdrawal_details_changed' %}<i class="fi fi-rr-credit-card"></i>
+                {% elif log.action_type == 'profile_updated' %}<i class="fi fi-rr-user"></i>
+                {% elif log.action_type == 'avatar_changed' %}<i class="fi fi-rr-picture"></i>
+                {% elif log.action_type == '2fa_enabled' %}<i class="fi fi-rr-shield-check"></i>
+                {% elif log.action_type == '2fa_disabled' %}<i class="fi fi-rr-shield-exclamation"></i>
+                {% else %}<i class="fi fi-rr-info"></i>{% endif %}
+            </div>
+            <div class="log-page-body">
+                <div class="log-page-action">{{ log.action_label }}</div>
+                {% if log.details %}<div class="log-page-details">{{ log.details }}</div>{% endif %}
+                <div class="log-page-meta">
+                    {{ log.created_at }} · IP: {{ log.ip_address }}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if total_pages > 1 %}
+        <div class="pagination-custom">
+            {% if page > 1 %}
+            <a href="?page={{ page|add:'-1' }}">← Назад</a>
+            {% endif %}
+            <a class="active">{{ page }} / {{ total_pages }}</a>
+            {% if page < total_pages %}
+            <a href="?page={{ page|add:'1' }}">Вперед →</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    {% else %}
+        <div class="log-empty">Записи журнала безопасности отсутствуют</div>
+    {% endif %}
+</div>
+{% endblock %}

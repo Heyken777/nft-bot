@@ -72,6 +72,9 @@ urlpatterns = [
     path('api/notifications/unread-count/', views.api_notifications_unread_count, name='api_notifications_unread'),
     path('api/notifications/prefs/', views.api_notification_prefs, name='api_notification_prefs'),
 
+    # Журнал безопасности
+    path('settings/security/', views.security_log_view, name='security_log'),
+
     # P2P перевод между пользователями
     path('send/', views.send_view, name='send'),
     path('api/send/preview/', views.api_send_preview, name='api_send_preview'),

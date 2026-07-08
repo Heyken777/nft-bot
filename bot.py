@@ -637,6 +637,23 @@ class Database:
             )
         """)
 
+        # Таблица аудит-лога действий пользователя (не админа)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_audit_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     BIGINT NOT NULL,
+                action_type TEXT NOT NULL,
+                details     TEXT DEFAULT '',
+                ip_address  TEXT DEFAULT '',
+                user_agent  TEXT DEFAULT '',
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_audit_user
+            ON user_audit_log(user_id, created_at DESC)
+        """)
+
         # Таблица блокировки по IP (брутфорс)
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS login_attempts (
