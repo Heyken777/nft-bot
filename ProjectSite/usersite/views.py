@@ -8,6 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
+from django_ratelimit.decorators import ratelimit
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, '..', 'novixgift.db')
@@ -197,6 +198,7 @@ def user_login_view(request):
     })
 
 
+@ratelimit(key='ip', rate='10/m', block=True)
 def telegram_auth_view(request):
     token = request.GET.get('token')
     code = request.GET.get('code')

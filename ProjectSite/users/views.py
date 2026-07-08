@@ -8,6 +8,7 @@ from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth import authenticate, login as auth_login
+from django_ratelimit.decorators import ratelimit
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..'))
 from crypto import encrypt_value, decrypt_value
@@ -1693,6 +1694,7 @@ def api_login(request):
 
 
 @csrf_exempt
+@ratelimit(key='ip', rate='10/m', method='POST', block=True)
 def api_verify_login_code(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)

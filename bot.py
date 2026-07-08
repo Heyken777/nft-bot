@@ -6287,6 +6287,7 @@ async def handle_api(request):
         'ton_escrow_enabled': bool(TON_ESCROW_ADDRESS and TON_API_KEY)
     })
 
+@limiter.limit("10/minute")
 async def handle_create_deal(request):
     try:
         # Проверяем авторизацию
@@ -6462,6 +6463,7 @@ async def handle_activate_ref_code(request):
         logger.error(f"activate_ref_code error: {e}")
         return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
+@limiter.limit("5/minute")
 async def handle_buy_premium(request):
     try:
         auth_user = await get_authenticated_webapp_user(request)
@@ -6749,6 +6751,7 @@ async def handle_admin_disputes(request):
     return JSONResponse(content={'disputes': result})
 
 
+@limiter.limit("10/minute")
 async def handle_admin_resolve_dispute(request):
     admin = await get_admin_or_deny(request)
     if not admin:
@@ -6823,6 +6826,7 @@ async def handle_admin_resolve_dispute(request):
 
 # ========== API: ОПЛАТА/ПОДТВЕРЖДЕНИЕ СДЕЛОК (Mini App) ==========
 
+@limiter.limit("10/minute")
 async def handle_pay_deal(request):
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
@@ -6926,6 +6930,7 @@ async def handle_mark_sent(request):
         return JSONResponse(content={'success': False, 'error': str(e)}, status_code=500)
 
 
+@limiter.limit("10/minute")
 async def handle_confirm_receipt(request):
     auth_user = await get_authenticated_webapp_user(request)
     if not auth_user:
@@ -7148,6 +7153,7 @@ async def handle_activate_promo(request):
 
 
 # ========== 2FA ENDPOINT ==========
+@limiter.limit("5/minute")
 async def handle_2fa_request(request):
     """Создаёт 2FA-запрос на подтверждение операции."""
     auth_user = await get_authenticated_webapp_user(request)
@@ -7234,6 +7240,7 @@ async def handle_internal_2fa_request(request):
 
 
 # ========== Admin Login 2FA Code Sender ==========
+@limiter.limit("5/minute")
 async def handle_send_admin_login_code(request):
     """Отправляет 6-значный код подтверждения входа в админ-панель."""
     try:
