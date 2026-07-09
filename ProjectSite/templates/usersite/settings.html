@@ -222,10 +222,10 @@ function togglePassword() {
     var eye = document.getElementById('eyeToggle');
     if (inp.type === 'password') {
         inp.type = 'text';
-        eye.textContent = '<i class="fi fi-rr-eye-crossed"></i>';
+        eye.innerHTML = '<i class="fi fi-rr-eye-crossed"></i>';
     } else {
         inp.type = 'password';
-        eye.textContent = '<i class="fi fi-rs-eye"></i>';
+        eye.innerHTML = '<i class="fi fi-rs-eye"></i>';
     }
 }
 
@@ -243,7 +243,7 @@ function checkStrength(pass) {
     var set = function(id, ok) {
         var el = document.getElementById(id);
         el.className = 'check-item' + (ok ? ' done' : '');
-        el.querySelector('.icon').textContent = ok ? '<i class="fi fi-rr-check"></i>' : '○';
+        el.querySelector('.icon').innerHTML = ok ? '<i class="fi fi-rr-check"></i>' : '○';
     };
     set('checkLength', len);
     set('checkLower', lower);

@@ -2681,7 +2681,10 @@ def api_save_payment_details(request):
     if ton_wallet:
         masked = ton_wallet[:4] + '...' + ton_wallet[-4:]
         details_parts.append(f'TON: {masked}')
-    log_user_action(user_id, 'withdrawal_details_changed', 'Запрошено изменение: ' + ', '.join(details_parts), request)
+    try:
+        log_user_action(user_id, 'withdrawal_details_changed', 'Запрошено изменение: ' + ', '.join(details_parts), request)
+    except Exception:
+        pass
 
     try:
         resp = requests.post(
