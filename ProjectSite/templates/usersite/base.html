@@ -867,12 +867,15 @@
         </nav>
     </aside>
 
+    {% block body_main %}
     <main class="main">
         <div class="container">
             {% block content %}{% endblock %}
         </div>
     </main>
+    {% endblock %}
 
+    {% block body_footer %}
     <footer class="footer">
         <div class="container">
             <div class="footer__copy">© 2026 Heyken Industry x Novix. Все права защищены.</div>
@@ -885,6 +888,7 @@
             </a>
         </div>
     </footer>
+    {% endblock %}
 
     <script>
         (function () {
