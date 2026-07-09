@@ -1,0 +1,102 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Оплата сделки{% endblock %}
+{% block extra_css %}
+<style>
+.pay-card { max-width:520px; margin:0 auto; }
+.pay-details { margin-top:20px; }
+.pay-row { display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-light); font-size:14px; }
+.pay-row:last-child { border-bottom:none; }
+.pay-row .label { color:var(--text-muted); }
+.pay-row .value { font-weight:600; color:var(--text-primary); }
+.pay-row.total { border-top:2px solid var(--border-color); margin-top:4px; padding-top:16px; }
+.pay-row.total .value { color:var(--accent); font-size:18px; }
+.commission-note { font-size:12px; color:var(--text-muted); text-align:center; margin-top:16px; padding:12px; background:var(--bg-secondary); border-radius:var(--radius-sm); }
+.rate-lock { font-size:12px; color:var(--text-muted); text-align:center; margin-top:8px; }
+.rate-lock strong { color:var(--text-primary); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/profile/">Профиль</a>
+    <span class="separator">/</span>
+    <a href="{% url 'deal_detail' deal.id %}">Сделка #{{ deal.deal_code|default:deal.id }}</a>
+    <span class="separator">/</span>
+    <span class="current">Оплата</span>
+</div>
+
+<div class="row g-4 justify-content-center">
+    <div class="col-lg-6 pay-card" data-reveal>
+        <div class="card">
+            <h3><i class="fi fi-rr-credit-card"></i> Оплата сделки</h3>
+            <p class="text-muted small mb-4">{{ deal.item }}</p>
+
+            <div class="pay-details">
+                <div class="pay-row">
+                    <span class="label">Продавец</span>
+                    <span class="value">{{ deal.seller }}</span>
+                </div>
+                <div class="pay-row">
+                    <span class="label">Сумма сделки</span>
+                    <span class="value">{{ deal.amount }} {{ deal.currency }}</span>
+                </div>
+                <div class="pay-row">
+                    <span class="label">Комиссия сервиса ({{ commission_rate }}%)</span>
+                    <span class="value">— {{ commission_amount }} {{ deal.currency }}</span>
+                </div>
+                <div class="pay-row total">
+                    <span class="label">Продавец получит</span>
+                    <span class="value">{{ seller_gets }} {{ deal.currency }}</span>
+                </div>
+            </div>
+
+            {% if locked_rate %}
+            <div class="rate-lock">
+                <i class="fi fi-rr-lock"></i> Курс зафиксирован: <strong>1 {{ deal.currency }} = {{ locked_rate }} RUB</strong>
+                {% if rate_expires_at %} (до {{ rate_expires_at }}){% endif %}
+            </div>
+            {% endif %}
+
+            <div class="commission-note">
+                <i class="fi fi-rr-info"></i>
+                {% if commission_rate == 0 %}
+                    Продавец имеет VIP-статус — комиссия не взимается.
+                {% else %}
+                    Комиссия {{ commission_rate }}% удерживается с продавца при завершении сделки.
+                {% endif %}
+            </div>
+
+            <div class="mt-4 d-flex flex-column gap-2">
+                <button onclick="confirmPayment({{ deal.id }})" class="btn btn-primary w-100 py-3" id="btnPay">
+                    <i class="fi fi-rr-check"></i> Подтвердить оплату
+                </button>
+                <a href="{% url 'deal_detail' deal.id %}" class="btn btn-outline w-100"><i class="fi fi-rr-arrow-left"></i> Назад</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var csrf = '{{ csrf_token }}';
+function confirmPayment(dealId) {
+    var btn = document.getElementById('btnPay');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Обработка...';
+    fetch('/usersite/api/deal/' + dealId + '/pay/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.success) {
+            showToast('✅ Оплата прошла успешно!', 'success');
+            setTimeout(function() { window.location.href = '/usersite/deal/' + dealId + '/'; }, 1000);
+        } else {
+            showToast('❌ ' + (d.error || 'Ошибка оплаты'), 'error');
+            btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-check"></i> Подтвердить оплату';
+        }
+    }).catch(function() {
+        showToast('❌ Ошибка соединения', 'error');
+        btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-check"></i> Подтвердить оплату';
+    });
+}
+</script>
+{% endblock %}

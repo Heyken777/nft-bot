@@ -1,0 +1,128 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Сделка #{{ deal.deal_code|default:deal.id }}{% endblock %}
+{% block extra_css %}
+<style>
+.stepper { display:flex; align-items:flex-start; justify-content:space-between; margin:32px 0; position:relative; }
+.stepper::before { content:''; position:absolute; top:18px; left:calc(16.66% + 12px); right:calc(16.66% + 12px); height:2px; background:var(--border-color); z-index:0; }
+.stepper .step { display:flex; flex-direction:column; align-items:center; position:relative; z-index:1; flex:1; text-align:center; }
+.stepper .step .circle { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; background:var(--bg-secondary); border:2px solid var(--border-color); color:var(--text-muted); transition:all .3s ease; }
+.stepper .step.active .circle { background:var(--accent); border-color:var(--accent); color:#fff; }
+.stepper .step.done .circle { background:var(--success); border-color:var(--success); color:#fff; }
+.stepper .step.cancelled .circle { background:var(--danger); border-color:var(--danger); color:#fff; }
+.stepper .step .label { font-size:11px; margin-top:8px; color:var(--text-muted); font-weight:500; }
+.stepper .step.active .label { color:var(--accent); font-weight:600; }
+.stepper .step.done .label { color:var(--success); }
+.deal-info { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.deal-info .info-item { padding:12px; background:var(--bg-secondary); border-radius:var(--radius-sm); }
+.deal-info .info-item .info-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; }
+.deal-info .info-item .info-value { font-size:15px; font-weight:600; margin-top:4px; color:var(--text-primary); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/profile/">Профиль</a>
+    <span class="separator">/</span>
+    <span class="current">Сделка #{{ deal.deal_code|default:deal.id }}</span>
+</div>
+
+<div class="row g-4 justify-content-center">
+    <div class="col-lg-6" data-reveal>
+        <div class="card">
+            <h3><i class="fi fi-rr-receipt"></i> Сделка #{{ deal.deal_code|default:deal.id }}</h3>
+            <p class="text-muted small mb-4">{{ deal.item }}</p>
+
+            {% with s=deal.status %}
+            <div class="stepper">
+                <div class="step {% if s == 'awaiting' %}active{% elif s == 'paid' or s == 'item_sent' or s == 'completed' %}done{% endif %}">
+                    <div class="circle">1</div>
+                    <div class="label">Ожидание<br>оплаты</div>
+                </div>
+                <div class="step {% if s == 'paid' or s == 'item_sent' or s == 'completed' %}done{% endif %} {% if s == 'paid' %}active{% endif %}">
+                    <div class="circle">2</div>
+                    <div class="label">Оплачено</div>
+                </div>
+                <div class="step {% if s == 'item_sent' or s == 'completed' %}done{% endif %} {% if s == 'item_sent' %}active{% endif %}">
+                    <div class="circle">3</div>
+                    <div class="label">Товар<br>передан</div>
+                </div>
+                <div class="step {% if s == 'completed' %}done{% elif s == 'cancelled' %}cancelled{% endif %}">
+                    <div class="circle">{% if s == 'completed' %}<i class="fi fi-rr-check" style="font-size:16px;"></i>{% elif s == 'cancelled' %}<i class="fi fi-rr-cross" style="font-size:16px;"></i>{% else %}4{% endif %}</div>
+                    <div class="label">{% if s == 'completed' %}Завершено{% elif s == 'cancelled' %}Отменено{% else %}Завершение{% endif %}</div>
+                </div>
+            </div>
+            {% endwith %}
+
+            <div class="deal-info">
+                <div class="info-item">
+                    <div class="info-label">Продавец</div>
+                    <div class="info-value">{{ deal.seller }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Покупатель</div>
+                    <div class="info-value">{{ deal.buyer|default:'—' }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Сумма</div>
+                    <div class="info-value">{{ deal.amount }} {{ deal.currency }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Статус</div>
+                    <div class="info-value">
+                        {% if deal.status == 'awaiting' %}⏳ Ожидание оплаты
+                        {% elif deal.status == 'paid' %}💰 Оплачено
+                        {% elif deal.status == 'item_sent' %}📦 Товар передан
+                        {% elif deal.status == 'completed' %}✅ Завершено
+                        {% elif deal.status == 'cancelled' %}❌ Отменено
+                        {% elif deal.status == 'disputed' %}⚠️ Диспут
+                        {% else %}{{ deal.status }}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            {% if available_actions %}
+            <div class="mt-4 d-flex flex-column gap-2">
+                {% if 'pay' in available_actions %}
+                <a href="{% url 'deal_pay' deal.id %}" class="btn btn-primary w-100 py-3"><i class="fi fi-rr-credit-card"></i> Оплатить сделку</a>
+                {% endif %}
+                {% if 'mark_sent' in available_actions %}
+                <button onclick="doAction('mark-sent', {{ deal.id }})" class="btn btn-primary w-100 py-3" id="btnMarkSent"><i class="fi fi-rr-box"></i> Я передал товар</button>
+                {% endif %}
+                {% if 'confirm_receipt' in available_actions %}
+                <button onclick="doAction('confirm-receipt', {{ deal.id }})" class="btn btn-primary w-100 py-3" id="btnConfirm"><i class="fi fi-rr-check"></i> Подтвердить получение</button>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="mt-3">
+                <a href="/usersite/profile/" class="btn btn-outline w-100"><i class="fi fi-rr-arrow-left"></i> Назад</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var csrf = '{{ csrf_token }}';
+function doAction(action, dealId) {
+    var btn = document.getElementById('btn' + action.charAt(0).toUpperCase() + action.slice(1).replace(/-([a-z])/g, function(g) { return g[1].toUpperCase(); }));
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
+    fetch('/usersite/api/deal/' + dealId + '/' + action + '/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.success) {
+            showToast('✅ Действие выполнено', 'success');
+            setTimeout(function() { location.reload(); }, 1000);
+        } else {
+            showToast('❌ ' + (d.error || 'Ошибка'), 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText || 'Повторить'; }
+        }
+    }).catch(function() {
+        showToast('❌ Ошибка соединения', 'error');
+        if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText || 'Повторить'; }
+    });
+}
+</script>
+{% endblock %}

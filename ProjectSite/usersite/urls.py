@@ -52,6 +52,15 @@ urlpatterns = [
     path('deal/create/', views.create_deal_view, name='create_deal'),
     path('deal/success/', views.deal_success_view, name='deal_success'),
 
+    # Детали сделки + оплата (Usersite)
+    path('deal/<int:deal_id>/', views.deal_detail_view, name='deal_detail'),
+    path('deal/<int:deal_id>/pay/', views.deal_pay_view, name='deal_pay'),
+
+    # API действий со сделкой (server-to-server к bot.py)
+    path('api/deal/<int:deal_id>/pay/', views.api_deal_pay, name='api_deal_pay'),
+    path('api/deal/<int:deal_id>/mark-sent/', views.api_deal_mark_sent, name='api_deal_mark_sent'),
+    path('api/deal/<int:deal_id>/confirm-receipt/', views.api_deal_confirm_receipt, name='api_deal_confirm_receipt'),
+
     # Отзывы
     path('reviews/', views.reviews_view, name='user_reviews'),
     path('api/reviews/update/', views.update_review_api, name='update_review'),

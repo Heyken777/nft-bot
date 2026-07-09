@@ -2080,6 +2080,155 @@ def deal_success_view(request):
     })
 
 
+# ========== DEAL DETAIL + PAYMENT PAGES (Usersite) ==========
+
+def _call_bot_internal(endpoint: str, user_id: int, extra: dict = None) -> dict:
+    """Server-to-server вызов к bot.py. user_id всегда из сессии, не из тела запроса."""
+    body = {'user_id': user_id}
+    if extra:
+        body.update(extra)
+    try:
+        r = requests.post(
+            f"{BACKEND_URL}{endpoint}",
+            json=body,
+            headers={"X-Internal-Secret": INTERNAL_API_SECRET},
+            timeout=10
+        )
+        return r.json()
+    except Exception as e:
+        return {'success': False, 'error': f'Bot unavailable: {e}'}
+
+
+@safe_db
+def deal_detail_view(request, deal_id):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM deals WHERE id=? AND (buyer=? OR seller=?)", (deal_id, user_id, user_id))
+    deal = cur.fetchone()
+    conn.close()
+
+    if not deal:
+        return redirect('/usersite/profile/')
+
+    deal_dict = dict(deal)
+    is_buyer = deal_dict['buyer'] == user_id
+    is_seller = deal_dict['seller'] == user_id
+    status = deal_dict['status']
+
+    available_actions = []
+    if is_buyer and status == 'awaiting':
+        available_actions.append('pay')
+    if is_seller and status == 'paid':
+        available_actions.append('mark_sent')
+    if is_buyer and status == 'item_sent':
+        available_actions.append('confirm_receipt')
+
+    return render(request, 'usersite/deal_detail.html', {
+        'deal': deal_dict,
+        'is_buyer': is_buyer,
+        'is_seller': is_seller,
+        'available_actions': available_actions,
+        'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot'),
+    })
+
+
+@safe_db
+def deal_pay_view(request, deal_id):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM deals WHERE id=? AND buyer=?", (deal_id, user_id))
+    deal = cur.fetchone()
+
+    if not deal:
+        conn.close()
+        return redirect('/usersite/profile/')
+
+    deal_dict = dict(deal)
+    if deal_dict['status'] not in ('awaiting',):
+        conn.close()
+        return redirect(f'/usersite/deal/{deal_id}/')
+
+    # Commission breakdown
+    seller_tier = 'free'
+    cur.execute("SELECT premium_tier FROM users WHERE user_id=?", (deal_dict['seller'],))
+    row = cur.fetchone()
+    if row and row[0]:
+        seller_tier = row[0]
+    tier_commissions = {'free': 0.04, 'premium': 0.02, 'platinum': 0.01, 'vip': 0.0}
+    commission_rate = tier_commissions.get(seller_tier, 0.04)
+    price = float(deal_dict['amount'])
+    commission_amount = round(price * commission_rate, 2)
+    seller_gets = price - commission_amount
+
+    # Rate lock
+    locked_rate = deal_dict.get('locked_rate')
+    rate_expires_at = deal_dict.get('rate_expires_at')
+    if locked_rate is None:
+        try:
+            import sys as _sys
+            _sys.path.insert(0, os.path.join(BASE_DIR, '..'))
+            from currency_api import currency_api as _ca
+            rates = _ca.get_stale_cache("RUB")
+            locked_rate = rates.get('RUB', 1.0)
+            import datetime as _dt
+            expires = (_dt.datetime.now() + _dt.timedelta(hours=24)).isoformat()
+            cur.execute(
+                "UPDATE deals SET locked_rate=?, rate_expires_at=? WHERE id=?",
+                (locked_rate, expires, deal_id)
+            )
+            conn.commit()
+            rate_expires_at = expires
+        except Exception:
+            locked_rate = 1.0
+
+    conn.close()
+
+    return render(request, 'usersite/deal_pay.html', {
+        'deal': deal_dict,
+        'commission_rate': int(commission_rate * 100),
+        'commission_amount': commission_amount,
+        'seller_gets': seller_gets,
+        'locked_rate': locked_rate,
+        'rate_expires_at': rate_expires_at,
+        'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot'),
+    })
+
+
+@require_http_methods(["POST"])
+def api_deal_pay(request, deal_id):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
+    user_id = request.session.get('user_id')
+    result = _call_bot_internal('/api/pay_deal', user_id, {'deal_id': deal_id})
+    return JsonResponse(result)
+
+
+@require_http_methods(["POST"])
+def api_deal_mark_sent(request, deal_id):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
+    user_id = request.session.get('user_id')
+    result = _call_bot_internal('/api/mark_sent', user_id, {'deal_id': deal_id})
+    return JsonResponse(result)
+
+
+@require_http_methods(["POST"])
+def api_deal_confirm_receipt(request, deal_id):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
+    user_id = request.session.get('user_id')
+    result = _call_bot_internal('/api/confirm_receipt', user_id, {'deal_id': deal_id})
+    return JsonResponse(result)
+
+
 # ========== NOTIFICATIONS ==========
 
 def notifications_view(request):
@@ -2186,6 +2335,7 @@ def api_notification_prefs(request):
 # ========== P2P TRANSFER ==========
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:9207")
+INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "")
 MIN_TRANSFER_AMOUNT = 1
 
 

@@ -145,6 +145,17 @@ async def get_authenticated_webapp_user(request) -> Optional[Dict]:
     return verify_telegram_webapp_init_data(init_data)
 
 
+async def _check_internal_auth(request) -> bool:
+    """Проверяет, что запрос пришёл от Django (server-to-server, localhost)."""
+    secret = request.headers.get("X-Internal-Secret", "")
+    if not secret or secret != INTERNAL_API_SECRET:
+        return False
+    client_host = request.client.host if request.client else None
+    if client_host not in ('127.0.0.1', '::1'):
+        return False
+    return True
+
+
 async def notify_user(user_id: int, text: str, parse_mode: str = "Markdown", reply_markup=None):
     """CHANGED: единая функция push-уведомлений в Telegram + запись в локальные notifications."""
     db.add_notification(user_id, text)
@@ -1159,9 +1170,24 @@ class Database:
             return deal
         return None
 
-    def upd_deal_status(self, did, status):
-        self.cursor.execute("UPDATE deals SET status = ?, updated_at = CURRENT_TIMESTAMP, completed = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE completed END WHERE id = ?", (status, status, did))
+    def upd_deal_status(self, did, status, expected_prev: list = None) -> bool:
+        if expected_prev:
+            placeholders = ','.join('?' for _ in expected_prev)
+            self.cursor.execute(
+                f"UPDATE deals SET status = ?, updated_at = CURRENT_TIMESTAMP, "
+                f"completed = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE completed END "
+                f"WHERE id = ? AND status IN ({placeholders})",
+                (status, status, did, *expected_prev)
+            )
+        else:
+            self.cursor.execute(
+                "UPDATE deals SET status = ?, updated_at = CURRENT_TIMESTAMP, "
+                "completed = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE completed END "
+                "WHERE id = ?",
+                (status, status, did)
+            )
         self.conn.commit()
+        return self.cursor.rowcount > 0
 
     def set_buyer(self, did, buyer):
         self.cursor.execute("UPDATE deals SET buyer = ? WHERE id = ?", (buyer, did))
@@ -6828,15 +6854,16 @@ async def handle_admin_resolve_dispute(request):
 
 @limiter.limit("10/minute")
 async def handle_pay_deal(request):
-    auth_user = await get_authenticated_webapp_user(request)
-    if not auth_user:
-        return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
-
     try:
         data = await request.json()
         user_id = int(data.get('user_id', 0))
-        if auth_user.get('id') != user_id:
-            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
+
+        if not await _check_internal_auth(request):
+            auth_user = await get_authenticated_webapp_user(request)
+            if not auth_user:
+                return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
+            if auth_user.get('id') != user_id:
+                return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         did = int(data.get('deal_id', 0))
         if not did:
@@ -6844,8 +6871,8 @@ async def handle_pay_deal(request):
 
         async with deal_lock:
             deal = db.get_deal(did)
-            if not deal or deal.get("status") not in ("awaiting", "payment_pending"):
-                return JSONResponse(content={'success': False, 'error': 'Deal not available for payment'})
+            if not deal:
+                return JSONResponse(content={'success': False, 'error': 'Deal not found'})
 
             if deal["seller"] == user_id:
                 return JSONResponse(content={'success': False, 'error': 'Cannot pay own deal'})
@@ -6878,13 +6905,17 @@ async def handle_pay_deal(request):
                     'deal_id': did
                 })
 
+            # Atomic: claim the deal before deducting balance
+            if not db.upd_deal_status(did, "paid", expected_prev=["awaiting", "payment_pending"]):
+                return JSONResponse(content={'success': False, 'error': 'Deal not available for payment'})
+
             if not db.update_balance(user_id, currency, -amount, operation_type='deal_hold', reference_id=str(did)):
+                db.upd_deal_status(did, "awaiting")
                 balance = db.get_balance(user_id, currency)
                 return JSONResponse(content={'success': False, 'error': f'Insufficient funds. Balance: {balance} {currency}'})
 
             if not deal.get("buyer"):
                 db.set_buyer(did, user_id)
-            db.upd_deal_status(did, "paid")
 
         asyncio.create_task(notify_user(
             deal["seller"],
@@ -6900,25 +6931,27 @@ async def handle_pay_deal(request):
 
 
 async def handle_mark_sent(request):
-    auth_user = await get_authenticated_webapp_user(request)
-    if not auth_user:
-        return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
-
     try:
         data = await request.json()
         user_id = int(data.get('user_id', 0))
-        if auth_user.get('id') != user_id:
-            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
+
+        if not await _check_internal_auth(request):
+            auth_user = await get_authenticated_webapp_user(request)
+            if not auth_user:
+                return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
+            if auth_user.get('id') != user_id:
+                return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         did = int(data.get('deal_id', 0))
         async with deal_lock:
             deal = db.get_deal(did)
-            if not deal or deal.get("status") != "paid":
-                return JSONResponse(content={'success': False, 'error': 'Deal not paid'})
+            if not deal:
+                return JSONResponse(content={'success': False, 'error': 'Deal not found'})
             if deal["seller"] != user_id:
                 return JSONResponse(content={'success': False, 'error': 'Not the seller'})
 
-            db.upd_deal_status(did, "item_sent")
+            if not db.upd_deal_status(did, "item_sent", expected_prev=["paid"]):
+                return JSONResponse(content={'success': False, 'error': 'Deal not paid'})
 
         asyncio.create_task(notify_user(
             deal["buyer"],
@@ -6932,21 +6965,22 @@ async def handle_mark_sent(request):
 
 @limiter.limit("10/minute")
 async def handle_confirm_receipt(request):
-    auth_user = await get_authenticated_webapp_user(request)
-    if not auth_user:
-        return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
-
     try:
         data = await request.json()
         user_id = int(data.get('user_id', 0))
-        if auth_user.get('id') != user_id:
-            return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
+
+        if not await _check_internal_auth(request):
+            auth_user = await get_authenticated_webapp_user(request)
+            if not auth_user:
+                return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
+            if auth_user.get('id') != user_id:
+                return JSONResponse(content={'success': False, 'error': 'User mismatch'}, status_code=403)
 
         did = int(data.get('deal_id', 0))
         async with deal_lock:
             deal = db.get_deal(did)
-            if not deal or deal.get("status") != "item_sent":
-                return JSONResponse(content={'success': False, 'error': 'Item not sent yet'})
+            if not deal:
+                return JSONResponse(content={'success': False, 'error': 'Deal not found'})
             if deal["buyer"] != user_id:
                 return JSONResponse(content={'success': False, 'error': 'Not the buyer'})
 
@@ -6957,8 +6991,11 @@ async def handle_confirm_receipt(request):
             commission_amount = quantize_amount(amount * commission)
             seller_amount = quantize_amount(amount - commission_amount)
 
+            # Atomic: complete deal before releasing funds
+            if not db.upd_deal_status(did, "completed", expected_prev=["item_sent"]):
+                return JSONResponse(content={'success': False, 'error': 'Item not sent yet'})
+
             db.update_balance(seller_id, currency, seller_amount, operation_type='deal_release', reference_id=str(did))
-            db.upd_deal_status(did, "completed")
             referral_bonus = db.credit_referral_commission(seller_id, did, currency, commission_amount)
 
         premium_text = " (без комиссии)" if commission == 0 else ""
