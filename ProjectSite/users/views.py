@@ -80,6 +80,9 @@ def _initiate_admin_2fa(user_id, username):
 
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=40)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout=40000;")
     conn.row_factory = sqlite3.Row
     return conn
 

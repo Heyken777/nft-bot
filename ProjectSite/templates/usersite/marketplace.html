@@ -1,0 +1,170 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Витрина сделок{% endblock %}
+{% block extra_css %}
+<style>
+.filter-bar { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; align-items:flex-end; }
+.filter-bar .filter-group { display:flex; flex-direction:column; gap:4px; }
+.filter-bar .filter-group label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.3px; }
+.filter-bar .filter-group input,
+.filter-bar .filter-group select { padding:6px 10px; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-primary); color:var(--text-primary); font-size:13px; min-width:100px; }
+.filter-bar .filter-group select { min-width:80px; }
+.deal-card { padding:16px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:var(--radius-md); transition:all .2s ease; }
+.deal-card:hover { border-color:var(--accent); box-shadow:0 2px 12px rgba(37,99,235,0.08); }
+.deal-card .card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.deal-card .deal-title { font-size:15px; font-weight:600; color:var(--text-primary); }
+.deal-card .deal-price { font-size:18px; font-weight:700; color:var(--accent); white-space:nowrap; }
+.deal-card .deal-meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; font-size:12px; color:var(--text-muted); }
+.deal-card .deal-meta span { display:inline-flex; align-items:center; gap:4px; }
+.deal-card .deal-seller { margin-top:10px; padding-top:10px; border-top:1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center; font-size:13px; }
+.deal-card .deal-seller .seller-name { font-weight:500; color:var(--text-primary); }
+.deal-card .deal-seller .seller-rating { color:var(--warning, #f59e0b); }
+.deal-card .deal-seller .seller-rating .stars { color:var(--warning, #f59e0b); }
+.deal-card .claim-btn { margin-top:12px; width:100%; }
+.pagination { display:flex; justify-content:center; gap:6px; margin-top:24px; flex-wrap:wrap; }
+.pagination a, .pagination span { padding:8px 14px; border-radius:var(--radius-sm); font-size:13px; border:1px solid var(--border-color); color:var(--text-primary); text-decoration:none; transition:all .15s ease; }
+.pagination a:hover { border-color:var(--accent); color:var(--accent); }
+.pagination .active { background:var(--accent); border-color:var(--accent); color:#fff; }
+.pagination .disabled { opacity:.4; pointer-events:none; }
+.empty-state { text-align:center; padding:48px 20px; }
+.empty-state .icon { font-size:48px; margin-bottom:12px; opacity:.3; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/profile/">Профиль</a>
+    <span class="separator">/</span>
+    <span class="current">Витрина сделок</span>
+</div>
+
+<h3 style="margin-bottom:4px;"><i class="fi fi-rr-shop"></i> Витрина сделок</h3>
+<p class="text-muted small mb-4">Открытые сделки, на которые можно откликнуться</p>
+
+<form method="get" class="filter-bar">
+    <div class="filter-group">
+        <label>Валюта</label>
+        <select name="currency">
+            <option value="">Все</option>
+            {% for c in currencies %}
+            <option value="{{ c }}" {% if filters.currency == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>Сумма от</label>
+        <input type="number" name="min_amount" placeholder="0" min="0" value="{{ filters.min_amount }}">
+    </div>
+    <div class="filter-group">
+        <label>Сумма до</label>
+        <input type="number" name="max_amount" placeholder="999999" min="0" value="{{ filters.max_amount }}">
+    </div>
+    <div class="filter-group">
+        <label>Рейтинг от</label>
+        <select name="min_rating">
+            <option value="">Любой</option>
+            <option value="4.5" {% if filters.min_rating == '4.5' %}selected{% endif %}>★ 4.5+</option>
+            <option value="4.0" {% if filters.min_rating == '4.0' %}selected{% endif %}>★ 4.0+</option>
+            <option value="3.0" {% if filters.min_rating == '3.0' %}selected{% endif %}>★ 3.0+</option>
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary" style="padding:6px 16px;font-size:13px;height:fit-content;"><i class="fi fi-rr-filter"></i> Применить</button>
+    {% if filters.currency or filters.min_amount or filters.max_amount or filters.min_rating %}
+    <a href="{% url 'marketplace' %}" class="btn btn-outline" style="padding:6px 16px;font-size:13px;height:fit-content;">Сбросить</a>
+    {% endif %}
+</form>
+
+{% if deals %}
+<div class="row g-3">
+    {% for deal in deals %}
+    <div class="col-lg-6" data-reveal>
+        <div class="deal-card">
+            <div class="card-top">
+                <div class="deal-title">{{ deal.item }}</div>
+                <div class="deal-price">{{ deal.amount|floatformat:-2 }} {{ deal.symbol }}</div>
+            </div>
+            <div class="deal-meta">
+                <span><i class="fi fi-rr-time-fast"></i> {{ deal.created|slice:":10" }}</span>
+                <span><i class="fi fi-rr-circle"></i> {{ deal.currency }}</span>
+                <span><i class="fi fi-rr-tag"></i> #{{ deal.deal_code|default:deal.id }}</span>
+            </div>
+            <div class="deal-seller">
+                <span class="seller-name"><i class="fi fi-rr-user"></i> {{ deal.seller_name }}</span>
+                <span class="seller-rating">
+                    <span class="stars">{% if deal.seller_rating >= 4.5 %}★★★★★{% elif deal.seller_rating >= 3.5 %}★★★★{% elif deal.seller_rating >= 2.5 %}★★★{% elif deal.seller_rating >= 1.5 %}★★{% else %}★{% endif %}</span>
+                    {{ deal.seller_rating|floatformat:1 }} ({{ deal.seller_reviews_count }})
+                </span>
+            </div>
+            <button class="btn btn-primary claim-btn" onclick="claimDeal({{ deal.id }}, this)" id="claimBtn{{ deal.id }}">
+                <i class="fi fi-rr-hand"></i> Откликнуться
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="?{% if qs %}{{ qs }}&{% endif %}page={{ page|add:'-1' }}"><i class="fi fi-rr-angle-left"></i></a>
+    {% else %}
+    <span class="disabled"><i class="fi fi-rr-angle-left"></i></span>
+    {% endif %}
+
+    {% for p in page_range %}
+    {% if p == '...' %}
+    <span class="disabled">…</span>
+    {% elif p == page %}
+    <span class="active">{{ p }}</span>
+    {% else %}
+    <a href="?{% if qs %}{{ qs }}&{% endif %}page={{ p }}">{{ p }}</a>
+    {% endif %}
+    {% endfor %}
+
+    {% if page < total_pages %}
+    <a href="?{% if qs %}{{ qs }}&{% endif %}page={{ page|add:'1' }}"><i class="fi fi-rr-angle-right"></i></a>
+    {% else %}
+    <span class="disabled"><i class="fi fi-rr-angle-right"></i></span>
+    {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+    <div class="icon"><i class="fi fi-rr-box-open"></i></div>
+    <h4>Нет открытых сделок</h4>
+    <p class="text-muted small">Пока никто не опубликовал сделки на витрине.</p>
+    <a href="{% url 'create_deal' %}" class="btn btn-primary mt-3"><i class="fi fi-rr-plus"></i> Создать сделку</a>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block extra_js %}
+<script>
+var csrf = '{{ csrf_token }}';
+function claimDeal(dealId, btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Откликаемся...';
+    fetch('/usersite/api/deal/' + dealId + '/claim/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.success) {
+            btn.innerHTML = '<i class="fi fi-rr-check"></i> Успешно!';
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-success');
+            setTimeout(function() {
+                window.location.href = d.redirect || '/usersite/deal/' + dealId + '/';
+            }, 800);
+        } else {
+            showToast('❌ ' + (d.error || 'Ошибка'), 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fi fi-rr-hand"></i> Откликнуться';
+        }
+    }).catch(function() {
+        showToast('❌ Ошибка соединения', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fi fi-rr-hand"></i> Откликнуться';
+    });
+}
+</script>
+{% endblock %}

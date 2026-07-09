@@ -22,6 +22,9 @@ from id_generator import generate_deal_code
 
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=40)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout=40000;")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -2006,6 +2009,7 @@ def create_deal_view(request):
         item_name = (request.POST.get('item_name') or '').strip()
         price_str = (request.POST.get('price') or '').strip()
         currency = (request.POST.get('currency') or 'RUB').strip().upper()
+        is_public = request.POST.get('is_public') == '1'
 
         allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
         if currency not in allowed:
@@ -2031,6 +2035,7 @@ def create_deal_view(request):
                 'price': price_str,
                 'currency': currency,
                 'currencies': allowed,
+                'is_public': is_public,
                 'bot_username': bot_username,
             })
 
@@ -2047,13 +2052,17 @@ def create_deal_view(request):
             tier_commissions = {'free': 0.04, 'premium': 0.02, 'platinum': 0.01, 'vip': 0.0}
             commission = tier_commissions.get(tier, 0.04)
 
+        initial_status = 'open' if is_public else 'awaiting'
         cur.execute("""
-            INSERT INTO deals (seller, item, amount, commission, currency, status, deal_code)
-            VALUES (?, ?, ?, ?, ?, 'awaiting', ?)
-        """, (user_id, item_name, price, commission, currency, deal_code))
+            INSERT INTO deals (seller, item, amount, commission, currency, status, deal_code, is_public)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, item_name, price, commission, currency, initial_status, deal_code, 1 if is_public else 0))
         conn.commit()
         deal_id = cur.lastrowid
         conn.close()
+
+        if is_public:
+            return redirect('/usersite/marketplace/')
 
         return redirect(f'/usersite/deal/success/?code={deal_code}&id={deal_id}')
 
@@ -2227,6 +2236,165 @@ def api_deal_confirm_receipt(request, deal_id):
     user_id = request.session.get('user_id')
     result = _call_bot_internal('/api/confirm_receipt', user_id, {'deal_id': deal_id})
     return JsonResponse(result)
+
+
+# ========== MARKETPLACE (витрина открытых сделок) ==========
+
+CURRENCY_SYMBOLS_MAP = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': "so'm", 'TON': 'TON', 'USDT': 'USDT', 'STARS': '★'}
+
+def _build_marketplace_query(params: dict) -> tuple:
+    where = "d.status='open' AND d.is_public=1"
+    bind = []
+    if params.get('currency') and params['currency'] in CURRENCIES:
+        where += " AND d.currency=?"
+        bind.append(params['currency'])
+    if params.get('min_amount'):
+        try:
+            where += " AND d.amount>=?"
+            bind.append(float(params['min_amount']))
+        except (ValueError, TypeError):
+            pass
+    if params.get('max_amount'):
+        try:
+            where += " AND d.amount<=?"
+            bind.append(float(params['max_amount']))
+        except (ValueError, TypeError):
+            pass
+    min_rating = None
+    if params.get('min_rating'):
+        try:
+            min_rating = float(params['min_rating'])
+        except (ValueError, TypeError):
+            pass
+    return where, bind, min_rating
+
+
+@safe_db
+def marketplace_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+
+    page = request.GET.get('page', 1)
+    try:
+        page = int(page)
+        if page < 1:
+            page = 1
+    except (ValueError, TypeError):
+        page = 1
+    per_page = 20
+
+    where, bind, min_rating = _build_marketplace_query(request.GET)
+
+    count_sql = f"SELECT COUNT(*) FROM deals d WHERE {where}"
+    deals_sql = (
+        f"SELECT d.*, u.username, "
+        f"(SELECT COALESCE(AVG(rating), 0) FROM reviews WHERE reviewed_id=d.seller) as seller_rating, "
+        f"(SELECT COUNT(*) FROM reviews WHERE reviewed_id=d.seller) as seller_reviews_count "
+        f"FROM deals d LEFT JOIN users u ON u.user_id=d.seller "
+        f"WHERE {where} ORDER BY d.created DESC"
+    )
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(count_sql, bind)
+    total = cur.fetchone()[0] or 0
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    if page > total_pages:
+        page = total_pages
+
+    offset = (page - 1) * per_page
+    cur.execute(f"{deals_sql} LIMIT ? OFFSET ?", bind + [per_page, offset])
+    deals = []
+    for row in cur.fetchall():
+        d = dict(row)
+        if min_rating is not None and d['seller_rating'] < min_rating:
+            continue
+        d['seller_name'] = d.get('username') or f"ID{d['seller']}"
+        d['symbol'] = CURRENCY_SYMBOLS_MAP.get(d['currency'], d['currency'])
+        deals.append(d)
+
+    conn.close()
+
+    # Re-count after rating filter
+    if min_rating is not None and deals:
+        actual_total = total
+        actual_pages = total_pages
+    else:
+        actual_total = total
+        actual_pages = total_pages
+
+    query_params = request.GET.copy()
+    if 'page' in query_params:
+        del query_params['page']
+    qs = query_params.urlencode()
+
+    # Build page range for pagination display
+    page_range = []
+    if actual_pages <= 7:
+        page_range = list(range(1, actual_pages + 1))
+    else:
+        page_range = [1]
+        if page > 3:
+            page_range.append('...')
+        start = max(2, page - 1)
+        end = min(actual_pages - 1, page + 1)
+        for p in range(start, end + 1):
+            page_range.append(p)
+        if page < actual_pages - 2:
+            page_range.append('...')
+        page_range.append(actual_pages)
+
+    return render(request, 'usersite/marketplace.html', {
+        'deals': deals,
+        'page': page,
+        'total_pages': actual_pages,
+        'total': actual_total,
+        'page_range': page_range,
+        'qs': qs,
+        'currencies': CURRENCIES,
+        'symbols': CURRENCY_SYMBOLS_MAP,
+        'filters': {
+            'currency': request.GET.get('currency', ''),
+            'min_amount': request.GET.get('min_amount', ''),
+            'max_amount': request.GET.get('max_amount', ''),
+            'min_rating': request.GET.get('min_rating', ''),
+        },
+        'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot'),
+    })
+
+
+def api_claim_deal(request, deal_id):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status_code=405)
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
+    user_id = request.session.get('user_id')
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Atomic: захват сделки — только если статус 'open' (никто ещё не откликнулся)
+    cur.execute(
+        "UPDATE deals SET status='awaiting', buyer=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='open'",
+        (user_id, deal_id)
+    )
+    conn.commit()
+    rowcount = cur.rowcount
+    conn.close()
+
+    if rowcount == 0:
+        return JsonResponse({
+            'success': False,
+            'error': 'Сделка уже занята другим покупателем',
+        })
+
+    return JsonResponse({
+        'success': True,
+        'redirect': f'/usersite/deal/{deal_id}/',
+    })
 
 
 # ========== NOTIFICATIONS ==========

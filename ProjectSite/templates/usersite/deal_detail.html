@@ -34,9 +34,9 @@
 
             {% with s=deal.status %}
             <div class="stepper">
-                <div class="step {% if s == 'awaiting' %}active{% elif s == 'paid' or s == 'item_sent' or s == 'completed' %}done{% endif %}">
+                <div class="step {% if s == 'open' or s == 'awaiting' %}active{% elif s == 'paid' or s == 'item_sent' or s == 'completed' %}done{% endif %}">
                     <div class="circle">1</div>
-                    <div class="label">Ожидание<br>оплаты</div>
+                    <div class="label">{% if s == 'open' %}На витрине{% else %}Ожидание<br>оплаты{% endif %}</div>
                 </div>
                 <div class="step {% if s == 'paid' or s == 'item_sent' or s == 'completed' %}done{% endif %} {% if s == 'paid' %}active{% endif %}">
                     <div class="circle">2</div>
@@ -69,7 +69,8 @@
                 <div class="info-item">
                     <div class="info-label">Статус</div>
                     <div class="info-value">
-                        {% if deal.status == 'awaiting' %}⏳ Ожидание оплаты
+                        {% if deal.status == 'open' %}🌐 На витрине
+                        {% elif deal.status == 'awaiting' %}⏳ Ожидание оплаты
                         {% elif deal.status == 'paid' %}💰 Оплачено
                         {% elif deal.status == 'item_sent' %}📦 Товар передан
                         {% elif deal.status == 'completed' %}✅ Завершено
