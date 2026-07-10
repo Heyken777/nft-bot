@@ -57,6 +57,26 @@
         </div>
         {% endif %}
 
+        {% if seller_stats.completed_deals > 0 %}
+        <div class="card mb-4" data-reveal>
+            <h4><i class="fi fi-rr-stats"></i> Статистика продаж</h4>
+            <div class="deal-info" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
+                <div class="info-item" style="padding:12px;background:var(--bg-secondary);border-radius:var(--radius-sm);text-align:center;">
+                    <div class="info-label" style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Завершено</div>
+                    <div class="info-value" style="font-size:20px;font-weight:700;margin-top:4px;color:var(--text-primary);">{{ seller_stats.completed_deals }}</div>
+                </div>
+                <div class="info-item" style="padding:12px;background:var(--bg-secondary);border-radius:var(--radius-sm);text-align:center;">
+                    <div class="info-label" style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Объём (RUB)</div>
+                    <div class="info-value" style="font-size:20px;font-weight:700;margin-top:4px;color:var(--text-primary);">{{ seller_stats.total_volume_rub|floatformat:0 }} ₽</div>
+                </div>
+                <div class="info-item" style="padding:12px;background:var(--bg-secondary);border-radius:var(--radius-sm);text-align:center;">
+                    <div class="info-label" style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Среднее время</div>
+                    <div class="info-value" style="font-size:20px;font-weight:700;margin-top:4px;color:var(--text-primary);">{{ seller_stats.avg_confirm_hours|floatformat:1 }} ч</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="card mb-4" data-reveal>
             <h4><i class="fi fi-rr-clipboard"></i> Последние сделки</h4>
             {% if deals %}

@@ -759,6 +759,32 @@ def api_update_profile(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+def _get_seller_stats(seller_id: int) -> dict:
+    """Возвращает статистику продавца: число сделок, объём, среднее время подтверждения."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total_vol, "
+        "AVG((julianday(COALESCE(completed, created)) - julianday(created)) * 24) AS avg_hours "
+        "FROM deals WHERE seller=? AND status='completed'",
+        (seller_id,)
+    )
+    row = cur.fetchone()
+    cnt = row[0] or 0
+    total_vol_rub = 0
+    if cnt:
+        cur.execute("SELECT amount, currency FROM deals WHERE seller=? AND status='completed'", (seller_id,))
+        for r in cur.fetchall():
+            total_vol_rub += r[0] * EXCHANGE_RATES.get(r[1], 1)
+    avg_hours = row[2] or 0
+    conn.close()
+    return {
+        'completed_deals': cnt,
+        'total_volume_rub': round(total_vol_rub, 2),
+        'avg_confirm_hours': round(avg_hours, 1),
+    }
+
+
 def public_profile_view(request, username):
     _ensure_avatar_column()
     _ensure_profile_reviews_table()
@@ -845,6 +871,7 @@ def public_profile_view(request, username):
                     cur.execute("SELECT * FROM profile_reviews WHERE id=?", (row[0],))
                     my_profile_review = dict(cur.fetchone()) if cur.fetchone() else None
 
+            seller_stats = _get_seller_stats(u['user_id'])
             avatar_url = _avatar_url(u.get('user_id')) if u.get('avatar') else None
             conn.close()
             return render(request, 'usersite/profile_public.html', {
@@ -856,6 +883,7 @@ def public_profile_view(request, username):
                 'profile_reviews': profile_reviews,
                 'has_reviewed': has_reviewed,
                 'my_profile_review': my_profile_review,
+                'seller_stats': seller_stats,
             })
         conn.close()
     except Exception as e:
