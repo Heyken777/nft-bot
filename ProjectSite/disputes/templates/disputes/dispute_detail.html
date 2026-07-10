@@ -83,6 +83,32 @@
     {% if dispute %}
     <div class="detail-main">
         <div class="chats-column">
+            <!-- Чат сделки (переписка buyer/seller внутри сделки) -->
+            <div class="chat-card">
+                <div class="chat-header">
+                    <h3>💬 Чат сделки #{{ deal.id|default:"—" }}</h3>
+                    <span class="small" style="color:#8892b0;">{{ deal_messages|length }} сообщ.</span>
+                </div>
+                <div class="chat-messages" id="dealChat" style="height:200px;">
+                    {% for m in deal_messages %}
+                    <div class="msg {% if m.sender_id == deal.seller %}msg-seller{% else %}msg-buyer{% endif %}">
+                        <div class="msg-sender">{{ m.username|default:m.sender_id }}</div>
+                        <div class="msg-text">{{ m.message|default:"" }}</div>
+                        {% if m.attachment_path %}
+                        <div class="msg-text" style="margin-top:4px;">
+                            <a href="/usersite/deal-attachment/{{ deal.id }}/{{ m.attachment_path }}/" target="_blank" style="color:#00a3ff;">
+                                <i class="fas fa-paperclip"></i> Вложение
+                            </a>
+                        </div>
+                        {% endif %}
+                        <div class="msg-time">{{ m.created_at|date:"d.m H:i"|default:"" }}</div>
+                    </div>
+                    {% empty %}
+                    <div class="empty-chat">Нет сообщений в чате сделки</div>
+                    {% endfor %}
+                </div>
+            </div>
+
             <!-- Чат продавца -->
             <div class="chat-card">
                 <div class="chat-header">
@@ -275,6 +301,7 @@
     }
     scrollChat('sellerChat');
     scrollChat('buyerChat');
+    scrollChat('dealChat');
 
     function getCSRF() {
         var m = document.cookie.match(/csrftoken=([^;]+)/);

@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block title %}Инциденты | Heyken Admin{% endblock %}
+{% block content %}
+<style>
+.inc-table{width:100%;border-collapse:collapse;font-size:13px}
+.inc-table th{text-align:left;padding:10px 12px;color:#8892b0;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(255,255,255,0.06)}
+.inc-table td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.04);vertical-align:middle}
+.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.badge-outage{background:rgba(239,68,68,0.2);color:#ef4444}
+.badge-degraded{background:rgba(234,179,8,0.2);color:#eab308}
+.badge-operational{background:rgba(34,197,94,0.2);color:#22c55e}
+.badge-resolved{background:rgba(100,116,139,0.2);color:#94a3b8}
+.btn-close{background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);padding:6px 14px;border-radius:10px;cursor:pointer;font-size:12px}
+.btn-close:hover{background:rgba(239,68,68,0.25)}
+.form-card{background:rgba(10,20,40,0.75);backdrop-filter:blur(20px);border:1px solid rgba(255,100,0,0.2);border-radius:20px;padding:24px;margin-bottom:24px}
+.form-card h3{margin-bottom:16px;font-size:16px}
+.form-card input,.form-card select,.form-card textarea{width:100%;background:rgba(0,10,20,0.6);border:1px solid rgba(255,100,0,0.3);border-radius:12px;padding:10px 14px;color:#fff;margin-bottom:12px;font-size:13px}
+.form-card textarea{min-height:80px;resize:vertical}
+.form-card button{padding:10px 24px;border-radius:12px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:linear-gradient(135deg,#ff6600,#ff0066);color:#fff}
+</style>
+
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:24px">
+    <h1>⚠️ Управление инцидентами</h1>
+    <a href="/status/" target="_blank" style="color:#00a3ff;font-size:13px;">Публичная страница ↪</a>
+</div>
+
+<div class="form-card">
+    <h3>➕ Создать инцидент</h3>
+    <form method="POST">
+        {% csrf_token %}
+        <input type="text" name="title" placeholder="Заголовок инцидента" required>
+        <select name="status">
+            <option value="outage">🔴 Проблема (outage)</option>
+            <option value="degraded">🟡 Перебои (degraded)</option>
+            <option value="operational">🟢 Плановые работы (operational)</option>
+        </select>
+        <textarea name="description" placeholder="Описание (необязательно)"></textarea>
+        <button type="submit">Создать</button>
+    </form>
+</div>
+
+<table class="inc-table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Заголовок</th>
+            <th>Статус</th>
+            <th>Начало</th>
+            <th>Окончание</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for inc in incidents %}
+        <tr>
+            <td>#{{ inc.id }}</td>
+            <td>{{ inc.title }}</td>
+            <td>
+                {% if inc.resolved_at %}
+                <span class="badge badge-resolved">✅ Решено</span>
+                {% elif inc.status == 'outage' %}
+                <span class="badge badge-outage">🔴 Проблема</span>
+                {% elif inc.status == 'degraded' %}
+                <span class="badge badge-degraded">🟡 Перебои</span>
+                {% else %}
+                <span class="badge badge-operational">🟢 Работает</span>
+                {% endif %}
+            </td>
+            <td>{{ inc.started_at|date:"d.m H:i" }}</td>
+            <td>{{ inc.resolved_at|date:"d.m H:i"|default:"—" }}</td>
+            <td>
+                {% if not inc.resolved_at %}
+                <button class="btn-close" onclick="closeIncident({{ inc.id }})">✕ Закрыть</button>
+                {% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" style="text-align:center;padding:32px;color:#8892b0;">Нет инцидентов</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script>
+function getCSRF(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?m[1]:''}
+async function closeIncident(id){
+    if(!confirm('Закрыть этот инцидент?'))return;
+    var r=await fetch('/api/incidents/'+id+'/close/',{method:'POST',headers:{'X-CSRFToken':getCSRF()}});
+    var d=await r.json();
+    if(d.success){location.reload()}
+    else{showToast('Ошибка: '+(d.error||'неизвестная'),'error')}
+}
+</script>
+{% endblock %}

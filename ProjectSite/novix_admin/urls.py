@@ -9,6 +9,7 @@ from users import views
 from tickets import views as tickets_views
 from disputes import views as disputes_views
 from news import views as news_views
+from usersite import views as usersite_views
 
 
 handler404 = 'novix_admin.views.custom_404'
@@ -111,6 +112,11 @@ urlpatterns = [
     # Ledger
     path('analytics/', views.analytics_view, name='analytics'),
     path('ledger/', views.ledger_view, name='ledger'),
+
+    # Статус сервиса (публичный)
+    path('status/', usersite_views.status_view, name='status'),
+    path('incidents/', usersite_views.incidents_admin_view, name='incidents_admin'),
+    path('api/incidents/<int:incident_id>/close/', usersite_views.api_close_incident, name='api_close_incident'),
 
     # Пользовательский сайт
     path('usersite/', include('usersite.urls')),

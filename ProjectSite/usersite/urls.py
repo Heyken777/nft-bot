@@ -98,6 +98,11 @@ urlpatterns = [
     # API объёмного тарифа
     path('api/volume-tier/', views.api_user_fee_rate, name='api_volume_tier'),
 
+    # Deal chat (сообщения и вложения)
+    path('api/deal/<int:deal_id>/send-message/', views.api_deal_send_message, name='api_deal_send_message'),
+    path('api/deal/<int:deal_id>/messages/', views.api_deal_messages, name='api_deal_messages'),
+    path('deal-attachment/<int:deal_id>/<str:filename>/', views.deal_attachment_serve, name='deal_attachment_serve'),
+
     # P2P обмен валют
     path('exchange/', views.exchange_view, name='exchange'),
     path('api/exchange/create/', views.api_exchange_create_offer, name='api_exchange_create'),

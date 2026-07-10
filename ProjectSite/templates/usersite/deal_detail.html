@@ -17,6 +17,13 @@
 .deal-info .info-item { padding:12px; background:var(--bg-secondary); border-radius:var(--radius-sm); }
 .deal-info .info-item .info-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; }
 .deal-info .info-item .info-value { font-size:15px; font-weight:600; margin-top:4px; color:var(--text-primary); }
+
+.chat-box { max-height:400px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:12px; background:var(--bg-secondary); border-radius:var(--radius-sm); margin-bottom:12px; }
+.chat-msg { max-width:85%; padding:10px 14px; border-radius:var(--radius-sm); font-size:14px; line-height:1.4; word-break:break-word; }
+.chat-msg.mine { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
+.chat-msg.theirs { align-self:flex-start; background:var(--bg-primary); color:var(--text-primary); border-bottom-left-radius:4px; border:1px solid var(--border-color); }
+.chat-msg .meta { font-size:11px; opacity:.7; margin-top:4px; }
+.chat-msg .attachment-link { display:inline-flex; align-items:center; gap:4px; margin-top:6px; font-size:13px; color:inherit; opacity:.9; text-decoration:underline; }
 </style>
 {% endblock %}
 {% block content %}
@@ -101,6 +108,36 @@
             </div>
         </div>
     </div>
+
+    <div class="col-lg-6" data-reveal>
+        <div class="card">
+            <h4><i class="fi fi-rr-comment"></i> Чат сделки</h4>
+            <div class="chat-box" id="chatBox">
+                {% for msg in messages %}
+                <div class="chat-msg {% if msg.sender_id == user_id %}mine{% else %}theirs{% endif %}">
+                    <div>{{ msg.message }}</div>
+                    {% if msg.attachment_path %}
+                    <a href="{% url 'deal_attachment_serve' deal.id msg.attachment_path %}" class="attachment-link" target="_blank"><i class="fi fi-rr-file"></i> Вложение</a>
+                    {% endif %}
+                    <div class="meta">{{ msg.created_at }}</div>
+                </div>
+                {% empty %}
+                <div class="text-muted text-center py-3" id="chatEmpty">Нет сообщений</div>
+                {% endfor %}
+            </div>
+            <form id="chatForm" enctype="multipart/form-data" onsubmit="return sendChatMessage(event)" style="display:flex;flex-direction:column;gap:8px;">
+                {% csrf_token %}
+                <div style="display:flex;gap:8px;">
+                    <input type="text" name="message" placeholder="Напишите сообщение..." style="flex:1;padding:10px 12px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-size:14px;">
+                    <label class="btn btn-outline" style="cursor:pointer;margin:0;padding:10px 14px;white-space:nowrap;">
+                        <i class="fi fi-rr-paperclip"></i>
+                        <input type="file" name="attachment" accept="image/*,.pdf,.doc,.docx,.txt,.zip" style="display:none;" onchange="this.form.querySelector('input[name=message]').placeholder=this.files[0]?this.files[0].name:'Напишите сообщение...';">
+                    </label>
+                    <button type="submit" class="btn btn-primary" style="padding:10px 18px;white-space:nowrap;"><i class="fi fi-rr-paper-plane"></i></button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 {% endblock %}
 {% block extra_js %}
@@ -125,5 +162,67 @@ function doAction(action, dealId) {
         if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText || 'Повторить'; }
     });
 }
+
+var chatBox = document.getElementById('chatBox');
+function sendChatMessage(e) {
+    e.preventDefault();
+    var form = document.getElementById('chatForm');
+    var fd = new FormData(form);
+    var btn = form.querySelector('button[type=submit]');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    fetch('/usersite/api/deal/{{ deal.id }}/send-message/', {
+        method: 'POST',
+        body: fd,
+        headers: {'X-CSRFToken': csrf},
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-paper-plane"></i>';
+        if (d.success) {
+            form.querySelector('input[name=message]').value = '';
+            document.getElementById('chatEmpty') && document.getElementById('chatEmpty').remove();
+            form.querySelector('input[name=attachment]').value = '';
+            form.querySelector('input[name=message]').placeholder = 'Напишите сообщение...';
+            refreshChat();
+        } else {
+            showToast('❌ ' + (d.error || 'Ошибка'), 'error');
+        }
+    }).catch(function() {
+        btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-paper-plane"></i>';
+        showToast('❌ Ошибка соединения', 'error');
+    });
+    return false;
+}
+
+function refreshChat() {
+    fetch('/usersite/api/deal/{{ deal.id }}/messages/', {
+        headers: {'X-CSRFToken': csrf},
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (!d.success) return;
+        chatBox.innerHTML = '';
+        d.messages.forEach(function(m) {
+            var div = document.createElement('div');
+            div.className = 'chat-msg ' + (m.sender_id == {{ user_id }} ? 'mine' : 'theirs');
+            var text = document.createElement('div');
+            text.textContent = m.message || '';
+            div.appendChild(text);
+            if (m.attachment_path) {
+                var a = document.createElement('a');
+                a.href = '/usersite/deal-attachment/{{ deal.id }}/' + m.attachment_path + '/';
+                a.className = 'attachment-link';
+                a.target = '_blank';
+                a.innerHTML = '<i class="fi fi-rr-file"></i> Вложение';
+                div.appendChild(a);
+            }
+            var meta = document.createElement('div');
+            meta.className = 'meta';
+            meta.textContent = m.created_at;
+            div.appendChild(meta);
+            chatBox.appendChild(div);
+        });
+        chatBox.scrollTop = chatBox.scrollHeight;
+    });
+}
+
+var chatAutoRefresh = setInterval(refreshChat, 10000);
+chatBox.scrollTop = chatBox.scrollHeight;
 </script>
 {% endblock %}

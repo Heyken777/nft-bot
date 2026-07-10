@@ -533,6 +533,18 @@ class Database:
         self.add_column_if_not_exists("deals", "updated_at", "TIMESTAMP")  # время последнего изменения статуса
         self.add_column_if_not_exists("deals", "escalated_ticket_id", "INTEGER")  # ID тикета при автоэскалации
         
+        # Таблица сообщений по сделкам
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS deal_messages (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                deal_id         INTEGER NOT NULL,
+                sender_id       INTEGER NOT NULL,
+                message         TEXT,
+                attachment_path TEXT,
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
         # Таблица заявок на вывод
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS withdrawal_requests (
@@ -1132,6 +1144,21 @@ class Database:
         tier = self.get_premium_tier(user_id)
         withdraw_rates = {'free': 0.10, 'premium': 0.05, 'platinum': 0.03, 'vip': 0.0}
         return withdraw_rates.get(tier, 0.10)
+
+    def add_deal_message(self, deal_id: int, sender_id: int, message: str = None, attachment_path: str = None) -> int:
+        self.cursor.execute(
+            "INSERT INTO deal_messages (deal_id, sender_id, message, attachment_path) VALUES (?, ?, ?, ?)",
+            (deal_id, sender_id, message, attachment_path)
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def get_deal_messages(self, deal_id: int) -> list:
+        self.cursor.execute(
+            "SELECT id, deal_id, sender_id, message, attachment_path, created_at FROM deal_messages WHERE deal_id=? ORDER BY created_at ASC",
+            (deal_id,)
+        )
+        return [dict(row) for row in self.cursor.fetchall()]
 
     def create_deal(self, seller, item, amount, commission, currency="RUB", payment_method="internal", payment_comment=None, payment_address=None, payment_amount=None):
         allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
@@ -7374,6 +7401,19 @@ async def handle_internal_user_fee_rate(request):
     return JSONResponse(content={'success': True, **info})
 
 
+async def handle_internal_deal_messages(request):
+    """Возвращает сообщения по сделке (вызывается Django)."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'success': False, 'error': 'Invalid JSON'}, status_code=400)
+    deal_id = data.get('deal_id')
+    if not deal_id:
+        return JSONResponse(content={'success': False, 'error': 'Missing deal_id'}, status_code=400)
+    msgs = db.get_deal_messages(deal_id)
+    return JSONResponse(content={'success': True, 'messages': msgs})
+
+
 # ========== WebSocket Connections (real-time notifications) ==========
 
 ws_connections: dict[int, list] = {}
@@ -7449,6 +7489,7 @@ fastapi_app.add_api_route("/api/internal/notify", handle_internal_notify, method
 fastapi_app.add_api_route("/api/internal/notify-new-login", handle_internal_notify_new_login, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/2fa-request", handle_internal_2fa_request, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/user-fee-rate", handle_internal_user_fee_rate, methods=["POST"])
+fastapi_app.add_api_route("/api/internal/deal-messages", handle_internal_deal_messages, methods=["POST"])
 
 # WebSocket endpoint for real-time notifications
 async def ws_notify_user(user_id: int, message: dict):

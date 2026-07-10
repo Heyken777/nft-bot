@@ -411,6 +411,25 @@ def request_code_api(request):
 CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'STARS']
 
 AVATAR_DIR = os.path.join(settings.MEDIA_ROOT, 'avatars')
+DEAL_ATTACHMENTS_DIR = os.path.join(settings.MEDIA_ROOT, 'deal_attachments')
+os.makedirs(DEAL_ATTACHMENTS_DIR, exist_ok=True)
+
+def _ensure_incidents_table():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS incidents (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            title       TEXT NOT NULL,
+            status      TEXT NOT NULL DEFAULT 'outage'
+                        CHECK(status IN ('operational','degraded','outage')),
+            description TEXT,
+            started_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            resolved_at TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
 
 def _ensure_avatar_column():
     conn = get_db()
@@ -2122,9 +2141,9 @@ def deal_detail_view(request, deal_id):
     cur = conn.cursor()
     cur.execute("SELECT * FROM deals WHERE id=? AND (buyer=? OR seller=?)", (deal_id, user_id, user_id))
     deal = cur.fetchone()
-    conn.close()
 
     if not deal:
+        conn.close()
         return redirect('/usersite/profile/')
 
     deal_dict = dict(deal)
@@ -2140,11 +2159,17 @@ def deal_detail_view(request, deal_id):
     if is_buyer and status == 'item_sent':
         available_actions.append('confirm_receipt')
 
+    cur.execute("SELECT * FROM deal_messages WHERE deal_id=? ORDER BY created_at ASC", (deal_id,))
+    messages = [dict(r) for r in cur.fetchall()]
+    conn.close()
+
     return render(request, 'usersite/deal_detail.html', {
         'deal': deal_dict,
         'is_buyer': is_buyer,
         'is_seller': is_seller,
         'available_actions': available_actions,
+        'messages': messages,
+        'user_id': user_id,
         'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot'),
     })
 
@@ -2246,6 +2271,76 @@ def api_user_fee_rate(request):
     user_id = request.session.get('user_id')
     info = _get_vol_tier_info(user_id)
     return JsonResponse({'success': True, **info})
+
+
+# ========== DEAL CHAT (сообщения и вложения) ==========
+
+@require_http_methods(["POST"])
+def api_deal_send_message(request, deal_id):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM deals WHERE id=? AND (buyer=? OR seller=?)", (deal_id, user_id, user_id))
+    deal = cur.fetchone()
+    if not deal:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Сделка не найдена'}, status_code=404)
+    text = request.POST.get('message', '').strip()
+    f = request.FILES.get('attachment')
+    attachment_path = None
+    if f:
+        ext = os.path.splitext(f.name)[1]
+        safe_name = f"{deal_id}_{int(time.time())}_{random.randint(1000,9999)}{ext}"
+        dest = os.path.join(DEAL_ATTACHMENTS_DIR, safe_name)
+        with open(dest, 'wb') as out:
+            for chunk in f.chunks():
+                out.write(chunk)
+        attachment_path = safe_name
+    cur.execute(
+        "INSERT INTO deal_messages (deal_id, sender_id, message, attachment_path) VALUES (?, ?, ?, ?)",
+        (deal_id, user_id, text or None, attachment_path)
+    )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+@require_http_methods(["GET"])
+def api_deal_messages(request, deal_id):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM deals WHERE id=? AND (buyer=? OR seller=?)", (deal_id, user_id, user_id))
+    if not cur.fetchone():
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Сделка не найдена'}, status_code=404)
+    cur.execute("SELECT * FROM deal_messages WHERE deal_id=? ORDER BY created_at ASC", (deal_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return JsonResponse({'success': True, 'messages': rows})
+
+
+@require_http_methods(["GET"])
+def deal_attachment_serve(request, deal_id, filename):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM deals WHERE id=? AND (buyer=? OR seller=?)", (deal_id, user_id, user_id))
+    if not cur.fetchone():
+        conn.close()
+        return redirect('/usersite/profile/')
+    conn.close()
+    filepath = os.path.join(DEAL_ATTACHMENTS_DIR, filename)
+    if not os.path.isfile(filepath):
+        return JsonResponse({'error': 'Файл не найден'}, status_code=404)
+    from django.http import FileResponse
+    return FileResponse(open(filepath, 'rb'), filename=filename)
 
 
 # ========== MARKETPLACE (витрина открытых сделок) ==========
@@ -2505,6 +2600,80 @@ def api_notification_prefs(request):
             "ON CONFLICT(user_id, type) DO UPDATE SET enabled=?",
             (user_id, ntype, 1 if enabled else 0, 1 if enabled else 0)
         )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+# ========== SERVICE STATUS (public /status/) ==========
+
+def _is_admin_user(request) -> bool:
+    role = request.session.get('admin_role')
+    return role in ('CEO', 'Admin')
+
+
+def status_view(request):
+    """Публичная страница статуса сервиса (без авторизации)."""
+    _ensure_incidents_table()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM incidents WHERE resolved_at IS NULL ORDER BY "
+        "CASE status WHEN 'outage' THEN 0 WHEN 'degraded' THEN 1 WHEN 'operational' THEN 2 END ASC, "
+        "started_at DESC LIMIT 1"
+    )
+    current = cur.fetchone()
+    if current:
+        current = dict(current)
+    cur.execute("SELECT * FROM incidents ORDER BY started_at DESC LIMIT 50")
+    incidents = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return render(request, 'status.html', {
+        'current': current,
+        'incidents': incidents,
+    })
+
+
+@require_http_methods(["GET", "POST"])
+def incidents_admin_view(request):
+    """Админка — управление инцидентами (CEO/Admin)."""
+    if not _is_admin_user(request):
+        return redirect('/login/')
+    _ensure_incidents_table()
+    conn = get_db()
+    cur = conn.cursor()
+    if request.method == "POST":
+        title = request.POST.get('title', '').strip()
+        status = request.POST.get('status', 'outage')
+        description = request.POST.get('description', '').strip()
+        if title:
+            cur.execute(
+                "INSERT INTO incidents (title, status, description) VALUES (?, ?, ?)",
+                (title, status, description)
+            )
+            conn.commit()
+            return redirect('/incidents/')
+    cur.execute("SELECT * FROM incidents ORDER BY started_at DESC")
+    incidents = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return render(request, 'incidents_admin.html', {
+        'incidents': incidents,
+        'active_page': 'incidents',
+        'admin_name': request.session.get('username', 'Admin'),
+    })
+
+
+@require_http_methods(["POST"])
+def api_close_incident(request, incident_id):
+    if not _is_admin_user(request):
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+    _ensure_incidents_table()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE incidents SET resolved_at=CURRENT_TIMESTAMP WHERE id=? AND resolved_at IS NULL",
+        (incident_id,)
+    )
     conn.commit()
     conn.close()
     return JsonResponse({'success': True})

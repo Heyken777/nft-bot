@@ -248,6 +248,11 @@ def dispute_detail_view(request, dispute_id):
         seller_id = dispute.get('seller')
         buyer_id = dispute.get('buyer')
 
+        deal_messages = []
+        if deal_id:
+            cur.execute("SELECT dm.*, u.username FROM deal_messages dm LEFT JOIN users u ON dm.sender_id=u.user_id WHERE dm.deal_id=? ORDER BY dm.created_at ASC", (deal_id,))
+            deal_messages = [dict(r) for r in cur.fetchall()]
+
         if seller_id:
             cur.execute("SELECT * FROM users WHERE user_id=?", (seller_id,))
             srow = cur.fetchone()
@@ -300,6 +305,7 @@ def dispute_detail_view(request, dispute_id):
         'buyer_info': buyer_info,
         'seller_messages': seller_messages,
         'buyer_messages': buyer_messages,
+        'deal_messages': deal_messages,
     })
 
 

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Статус сервиса — Heyken</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0b1120;--card:rgba(15,25,50,0.8);--border:rgba(255,255,255,0.06);--text:#e2e8f0;--muted:#64748b;--radius:16px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:40px 16px}
+.container{max-width:720px;width:100%}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:32px;margin-bottom:24px}
+.status-indicator{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.status-dot{width:20px;height:20px;border-radius:50%;flex-shrink:0}
+.status-dot.ok{background:#22c55e;box-shadow:0 0 20px rgba(34,197,94,0.4)}
+.status-dot.degraded{background:#eab308;box-shadow:0 0 20px rgba(234,179,8,0.4)}
+.status-dot.outage{background:#ef4444;box-shadow:0 0 20px rgba(239,68,68,0.4)}
+.status-title{font-size:24px;font-weight:700}
+.status-sub{color:var(--muted);font-size:14px;margin-top:4px}
+.incident-item{padding:16px 0;border-bottom:1px solid var(--border)}
+.incident-item:last-child{border-bottom:none}
+.incident-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.incident-title{font-weight:600;font-size:15px}
+.incident-date{color:var(--muted);font-size:12px;white-space:nowrap}
+.incident-status{font-size:12px;padding:2px 10px;border-radius:20px;font-weight:500}
+.incident-status.resolved{background:rgba(34,197,94,0.15);color:#22c55e}
+.incident-status.degraded{background:rgba(234,179,8,0.15);color:#eab308}
+.incident-status.outage{background:rgba(239,68,68,0.15);color:#ef4444}
+.incident-status.operational{background:rgba(34,197,94,0.15);color:#22c55e}
+.incident-desc{color:var(--muted);font-size:13px;margin-top:6px;line-height:1.5}
+h2{font-size:18px;font-weight:600;margin-bottom:16px}
+.empty{text-align:center;padding:32px;color:var(--muted);font-size:14px}
+.footer{margin-top:24px;text-align:center;color:var(--muted);font-size:12px}
+.footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        {% if current %}
+        <div class="status-indicator">
+            <div class="status-dot
+                {% if current.status == 'outage' %}outage
+                {% elif current.status == 'degraded' %}degraded
+                {% else %}ok{% endif %}"></div>
+            <div>
+                <div class="status-title">
+                    {% if current.status == 'outage' %}🔴 Ведутся технические работы
+                    {% elif current.status == 'degraded' %}🟡 Наблюдаются перебои
+                    {% else %}🟢 Сервис работает нормально{% endif %}
+                </div>
+                <div class="status-sub">{{ current.title }}{% if current.started_at %} · {{ current.started_at|date:"d.m H:i" }}{% endif %}</div>
+            </div>
+        </div>
+        {% if current.description %}
+        <p style="margin-top:16px;color:var(--muted);font-size:14px;line-height:1.6">{{ current.description }}</p>
+        {% endif %}
+        {% else %}
+        <div class="status-indicator">
+            <div class="status-dot ok"></div>
+            <div>
+                <div class="status-title">✅ Все системы работают нормально</div>
+                <div class="status-sub">На данный момент нет активных инцидентов</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <h2>📋 История инцидентов</h2>
+    {% if incidents %}
+    {% for inc in incidents %}
+    <div class="card incident-item">
+        <div class="incident-header">
+            <div>
+                <div class="incident-title">{{ inc.title }}</div>
+                <div class="incident-date">{{ inc.started_at|date:"d.m.Y H:i" }}{% if inc.resolved_at %} — {{ inc.resolved_at|date:"d.m.Y H:i" }}{% endif %}</div>
+            </div>
+            <span class="incident-status
+                {% if inc.resolved_at %}resolved
+                {% elif inc.status == 'outage' %}outage
+                {% elif inc.status == 'degraded' %}degraded
+                {% else %}operational{% endif %}">
+                {% if inc.resolved_at %}✅ Решено
+                {% elif inc.status == 'outage' %}🔴 Проблема
+                {% elif inc.status == 'degraded' %}🟡 Перебои
+                {% else %}🟢 Работает{% endif %}
+            </span>
+        </div>
+        {% if inc.description %}
+        <div class="incident-desc">{{ inc.description }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="card empty">История инцидентов пуста</div>
+    {% endif %}
+
+    <div class="footer">
+        <a href="/usersite/">Heyken</a> · Статус сервиса
+    </div>
+</div>
+</body>
+</html>
