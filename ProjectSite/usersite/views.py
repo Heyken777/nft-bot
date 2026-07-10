@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(BASE_DIR, '..'))
 from users.crypto_utils import decrypt_value, is_encryption_enabled as _enc_enabled
 from users.views import OWNER_TELEGRAM_ID
 from id_generator import generate_deal_code
+from fee_calculator import get_user_fee_rate as _get_fee_rate, get_user_volume_tier_info as _get_vol_tier_info
 
 
 def get_db():
@@ -642,6 +643,8 @@ def profile_view(request):
 
     avatar_url = _avatar_url(user_id) if user and user.get('avatar') else None
 
+    volume_tier_info = _get_vol_tier_info(user_id)
+
     return render(request, 'usersite/profile.html', {
         'user': dict(user) if user else None,
         'deals': deals, 'referrals': referrals, 'reviews': reviews,
@@ -663,6 +666,7 @@ def profile_view(request):
         'referral_level2_count': referral_level2_count,
         'referral_commission_count': referral_commission_count,
         'referral_total_all': referral_total_commission + referral_deposit_total + referral_earnings_rub,
+        'volume_tier_info': volume_tier_info,
     })
 
 
@@ -2165,15 +2169,9 @@ def deal_pay_view(request, deal_id):
         conn.close()
         return redirect(f'/usersite/deal/{deal_id}/')
 
-    # Commission breakdown
-    seller_tier = 'free'
-    cur.execute("SELECT premium_tier FROM users WHERE user_id=?", (deal_dict['seller'],))
-    row = cur.fetchone()
-    if row and row[0]:
-        seller_tier = row[0]
-    tier_commissions = {'free': 0.04, 'premium': 0.02, 'platinum': 0.01, 'vip': 0.0}
-    commission_rate = tier_commissions.get(seller_tier, 0.04)
+    # Commission breakdown — volume-based fee
     price = float(deal_dict['amount'])
+    commission_rate = float(_get_fee_rate(deal_dict['seller']))
     commission_amount = round(price * commission_rate, 2)
     seller_gets = price - commission_amount
 
@@ -2200,6 +2198,8 @@ def deal_pay_view(request, deal_id):
 
     conn.close()
 
+    volume_info = _get_vol_tier_info(deal_dict['seller'])
+
     return render(request, 'usersite/deal_pay.html', {
         'deal': deal_dict,
         'commission_rate': int(commission_rate * 100),
@@ -2208,6 +2208,7 @@ def deal_pay_view(request, deal_id):
         'locked_rate': locked_rate,
         'rate_expires_at': rate_expires_at,
         'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot'),
+        'volume_tier_info': volume_info,
     })
 
 
@@ -2236,6 +2237,15 @@ def api_deal_confirm_receipt(request, deal_id):
     user_id = request.session.get('user_id')
     result = _call_bot_internal('/api/confirm_receipt', user_id, {'deal_id': deal_id})
     return JsonResponse(result)
+
+
+@require_http_methods(["GET"])
+def api_user_fee_rate(request):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
+    user_id = request.session.get('user_id')
+    info = _get_vol_tier_info(user_id)
+    return JsonResponse({'success': True, **info})
 
 
 # ========== MARKETPLACE (витрина открытых сделок) ==========

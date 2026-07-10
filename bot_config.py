@@ -36,9 +36,17 @@ DEAL_ESCALATION_HOURS = int(os.getenv("DEAL_ESCALATION_HOURS", "72"))
 
 CEO_APPROVAL_THRESHOLD_RUB = int(os.getenv("CEO_APPROVAL_THRESHOLD_RUB", "10000"))
 
+VOLUME_FEE_TIERS = [
+    (0, 0.04),
+    (10_000, 0.03),
+    (50_000, 0.02),
+    (200_000, 0.01),
+    (1_000_000, 0.005),
+]
+
 INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "")
 
 IMAGES_PATH = "images"
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
 
-print("✅ Конфигурация загружена из .env")
+print("[OK] Конфигурация загружена из .env")

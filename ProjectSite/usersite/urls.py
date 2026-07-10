@@ -95,6 +95,9 @@ urlpatterns = [
     # Сохранение платёжных реквизитов с 2FA
     path('api/save-payment-details/', views.api_save_payment_details, name='api_save_payment_details'),
 
+    # API объёмного тарифа
+    path('api/volume-tier/', views.api_user_fee_rate, name='api_volume_tier'),
+
     # P2P обмен валют
     path('exchange/', views.exchange_view, name='exchange'),
     path('api/exchange/create/', views.api_exchange_create_offer, name='api_exchange_create'),

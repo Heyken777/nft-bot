@@ -1126,10 +1126,10 @@ class Database:
         return d
 
     def get_user_commission(self, user_id: int, action: str = "deal") -> float:
-        tier = self.get_premium_tier(user_id)
         if action == "deal":
-            return self.get_tier_commission(tier)
-        # Withdraw commission по tier
+            from fee_calculator import get_user_fee_rate
+            return float(get_user_fee_rate(user_id))
+        tier = self.get_premium_tier(user_id)
         withdraw_rates = {'free': 0.10, 'premium': 0.05, 'platinum': 0.03, 'vip': 0.0}
         return withdraw_rates.get(tier, 0.10)
 
@@ -7360,6 +7360,20 @@ async def handle_internal_notify_new_login(request):
     return JSONResponse(content={'success': True})
 
 
+async def handle_internal_user_fee_rate(request):
+    """Возвращает комиссию и объёмную информацию пользователя (вызывается Django)."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'success': False, 'error': 'Invalid JSON'}, status_code=400)
+    user_id = data.get('user_id')
+    if not user_id:
+        return JSONResponse(content={'success': False, 'error': 'Missing user_id'}, status_code=400)
+    from fee_calculator import get_user_volume_tier_info
+    info = get_user_volume_tier_info(user_id)
+    return JSONResponse(content={'success': True, **info})
+
+
 # ========== WebSocket Connections (real-time notifications) ==========
 
 ws_connections: dict[int, list] = {}
@@ -7434,6 +7448,7 @@ fastapi_app.add_api_route("/api/send_admin_login_code", handle_send_admin_login_
 fastapi_app.add_api_route("/api/internal/notify", handle_internal_notify, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/notify-new-login", handle_internal_notify_new_login, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/2fa-request", handle_internal_2fa_request, methods=["POST"])
+fastapi_app.add_api_route("/api/internal/user-fee-rate", handle_internal_user_fee_rate, methods=["POST"])
 
 # WebSocket endpoint for real-time notifications
 async def ws_notify_user(user_id: int, message: dict):

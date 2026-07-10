@@ -60,9 +60,12 @@
             <div class="commission-note">
                 <i class="fi fi-rr-info"></i>
                 {% if commission_rate == 0 %}
-                    Продавец имеет VIP-статус — комиссия не взимается.
+                    Комиссия не взимается.
                 {% else %}
                     Комиссия {{ commission_rate }}% удерживается с продавца при завершении сделки.
+                    {% if volume_tier_info.gmv_rub < volume_tier_info.next_threshold|default:0 %}
+                        Объём продавца {{ volume_tier_info.gmv_rub|floatformat:0 }} ₽ / {{ volume_tier_info.next_threshold }} ₽ для снижения до {{ volume_tier_info.next_rate_pct }}%.
+                    {% endif %}
                 {% endif %}
             </div>
 

@@ -147,6 +147,36 @@
                 <i class="fas fa-info-circle"></i> Тариф FREE (4% комиссия). Повысьте в боте.
             </div>
             {% endif %}
+            <hr class="divider">
+            <h5 style="font-size:14px;font-weight:600;margin-bottom:8px;"><i class="fi fi-rr-stats"></i> Объёмный тариф</h5>
+            <div class="info-row">
+                <span class="info-label">Комиссия по объёму</span>
+                <span class="info-value">{{ volume_tier_info.current_rate_pct }}%</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Объём за 30 дней</span>
+                <span class="info-value">{{ volume_tier_info.gmv_rub|floatformat:0 }} ₽</span>
+            </div>
+            {% if volume_tier_info.next_threshold %}
+            <div class="info-row">
+                <span class="info-label">До уровня {{ volume_tier_info.next_rate_pct }}%</span>
+                <span class="info-value">{{ volume_tier_info.next_threshold|floatformat:0 }} ₽</span>
+            </div>
+            <div style="margin-top:10px;">
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:4px;">
+                    <span>Прогресс</span>
+                    <span>{{ volume_tier_info.progress_pct }}%</span>
+                </div>
+                <div style="height:6px;background:var(--border-color);border-radius:3px;overflow:hidden;">
+                    <div style="height:100%;width:{{ volume_tier_info.progress_pct }}%;background:var(--accent);border-radius:3px;transition:width 0.6s var(--ease-out-expo);"></div>
+                </div>
+            </div>
+            {% else %}
+            <div class="info-row">
+                <span class="info-label">Ставка</span>
+                <span class="info-value" style="color:var(--success);">Минимальная</span>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Последние сделки -->
