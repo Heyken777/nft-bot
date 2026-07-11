@@ -51,8 +51,10 @@ def log_user_action(user_id, action_type, details='', request=None):
 
 
 def check_new_device_and_notify(user_id, request):
+    _ensure_known_devices_table()
     ip = _get_client_ip(request)
     ua = request.META.get('HTTP_USER_AGENT', '')
+    session_key = request.session.session_key or ''
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -62,15 +64,15 @@ def check_new_device_and_notify(user_id, request):
     known = cur.fetchone()
     if known:
         cur.execute(
-            "UPDATE known_devices SET last_seen=CURRENT_TIMESTAMP WHERE user_id=? AND ip_address=? AND user_agent=?",
-            (user_id, ip, ua)
+            "UPDATE known_devices SET last_seen=CURRENT_TIMESTAMP, session_key=? WHERE user_id=? AND ip_address=? AND user_agent=?",
+            (session_key, user_id, ip, ua)
         )
         conn.commit()
         conn.close()
         return
     cur.execute(
-        "INSERT INTO known_devices (user_id, ip_address, user_agent) VALUES (?, ?, ?)",
-        (user_id, ip, ua)
+        "INSERT INTO known_devices (user_id, ip_address, user_agent, session_key) VALUES (?, ?, ?, ?)",
+        (user_id, ip, ua, session_key)
     )
     conn.commit()
     conn.close()
@@ -413,6 +415,27 @@ CURRENCIES = ['RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'S
 AVATAR_DIR = os.path.join(settings.MEDIA_ROOT, 'avatars')
 DEAL_ATTACHMENTS_DIR = os.path.join(settings.MEDIA_ROOT, 'deal_attachments')
 os.makedirs(DEAL_ATTACHMENTS_DIR, exist_ok=True)
+
+def _ensure_known_devices_table():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS known_devices (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     BIGINT NOT NULL,
+            ip_address  TEXT NOT NULL,
+            user_agent  TEXT NOT NULL DEFAULT '',
+            session_key TEXT,
+            first_seen  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_seen   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    try:
+        cur.execute("SELECT session_key FROM known_devices LIMIT 1")
+    except sqlite3.OperationalError:
+        cur.execute("ALTER TABLE known_devices ADD COLUMN session_key TEXT")
+    conn.commit()
+    conn.close()
 
 def _ensure_incidents_table():
     conn = get_db()
@@ -2630,6 +2653,74 @@ def api_notification_prefs(request):
         )
     conn.commit()
     conn.close()
+    return JsonResponse({'success': True})
+
+
+# ========== SESSIONS / DEVICES MANAGEMENT ==========
+
+def sessions_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    _ensure_known_devices_table()
+    user_id = request.session.get('user_id')
+    session_key = request.session.session_key or ''
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM known_devices WHERE user_id=? ORDER BY last_seen DESC",
+        (user_id,)
+    )
+    devices = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return render(request, 'usersite/sessions.html', {
+        'devices': devices,
+        'current_session_key': session_key,
+    })
+
+
+@require_http_methods(["POST"])
+def api_end_session(request, device_id):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
+    _ensure_known_devices_table()
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM known_devices WHERE id=? AND user_id=?",
+        (device_id, user_id)
+    )
+    device = cur.fetchone()
+    if not device:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Устройство не найдено'}, status=404)
+    d = dict(device)
+    target_session = d.get('session_key') or None
+    conn.close()
+    if target_session:
+        from django.contrib.sessions.models import Session
+        Session.objects.filter(session_key=target_session).delete()
+    return JsonResponse({'success': True})
+
+
+@require_http_methods(["POST"])
+def api_end_all_sessions(request):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
+    _ensure_known_devices_table()
+    user_id = request.session.get('user_id')
+    current_key = request.session.session_key or ''
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT session_key FROM known_devices WHERE user_id=? AND session_key IS NOT NULL AND session_key != ?",
+        (user_id, current_key)
+    )
+    keys = [r[0] for r in cur.fetchall() if r[0]]
+    conn.close()
+    from django.contrib.sessions.models import Session
+    for k in keys:
+        Session.objects.filter(session_key=k).delete()
     return JsonResponse({'success': True})
 
 

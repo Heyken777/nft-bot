@@ -1753,6 +1753,7 @@ def api_verify_login_code(request):
             request.session['role'] = 'owner'
         request.session.modified = True
         request.session.save()
+        from usersite.views import check_new_device_and_notify; check_new_device_and_notify(uid, request)
 
         cur.execute("UPDATE pending_verifications SET status = 'confirmed' WHERE nonce = ?", (token,))
         conn.commit()

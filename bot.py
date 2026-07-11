@@ -692,7 +692,8 @@ class Database:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_known_device
             ON known_devices(user_id, ip_address, user_agent)
         """)
-
+        self.add_column_if_not_exists("known_devices", "session_key", "TEXT")
+        
         # Таблица очереди подтверждений CEO для крупных операций
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS ceo_approval_queue (

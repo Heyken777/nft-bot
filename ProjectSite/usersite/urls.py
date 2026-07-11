@@ -88,6 +88,11 @@ urlpatterns = [
     # Журнал безопасности
     path('settings/security/', views.security_log_view, name='security_log'),
 
+    # Активные сессии / устройства
+    path('settings/sessions/', views.sessions_view, name='sessions'),
+    path('api/sessions/<int:device_id>/end/', views.api_end_session, name='api_end_session'),
+    path('api/sessions/end-all/', views.api_end_all_sessions, name='api_end_all_sessions'),
+
     # P2P перевод между пользователями
     path('send/', views.send_view, name='send'),
     path('api/send/preview/', views.api_send_preview, name='api_send_preview'),
