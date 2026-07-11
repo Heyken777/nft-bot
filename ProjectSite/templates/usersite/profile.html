@@ -46,6 +46,13 @@
             </a>
         </div>
 
+        {% if user.is_verified_partner %}
+        <div style="display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px 18px;background:var(--glass-bg);backdrop-filter:blur(12px);border-radius:14px;border:1px solid var(--border-color);">
+            <img src="/media/HEYKEN ICON.png" alt="Heyken" style="height:1.6em;width:1.6em;object-fit:contain;flex-shrink:0;">
+            <span style="color:var(--text-muted);font-size:13px;line-height:1.4;">Пользователь верифицирован организацией «Heyken»</span>
+        </div>
+        {% endif %}
+
         <!-- Кошельки -->
         <div class="card mt-4" data-reveal>
             <h4><i class="fas fa-wallet"></i> Кошельки</h4>
@@ -124,29 +131,29 @@
 
         <!-- Подписка (Premium) -->
         <div class="card hologram-card" data-reveal>
-            <h4 style="color:#fff;"><i class="fas fa-crown"></i> Подписка</h4>
+            <h4 style="color:#1a1a2e;"><i class="fas fa-crown" style="color:#1a1a2e;"></i> Подписка</h4>
             {% if tier_active %}
             <div class="mt-3">
-                <div class="info-row">
-                    <span class="info-label" style="color:rgba(255,255,255,0.7);">Уровень</span>
-                    <span class="info-value" style="color:#fff;font-weight:600;"><span class="tier-badge-lg">{{ tier_badge }}</span></span>
+                <div class="info-row" style="border-bottom-color:rgba(26,26,46,0.12);">
+                    <span class="info-label" style="color:rgba(26,26,46,0.6);">Уровень</span>
+                    <span class="info-value" style="color:#1a1a2e;font-weight:600;"><span class="tier-badge-lg">{{ tier_badge }}</span></span>
                 </div>
-                <div class="info-row" style="border-bottom-color:rgba(255,255,255,0.15);">
-                    <span class="info-label" style="color:rgba(255,255,255,0.7);">Комиссия сделок</span>
-                    <span class="info-value" style="color:#fff;font-weight:600;">{{ tier_commission }}%</span>
+                <div class="info-row" style="border-bottom-color:rgba(26,26,46,0.12);">
+                    <span class="info-label" style="color:rgba(26,26,46,0.6);">Комиссия сделок</span>
+                    <span class="info-value" style="color:#1a1a2e;font-weight:600;">{{ tier_commission }}%</span>
                 </div>
-                <div class="info-row" style="border-bottom-color:rgba(255,255,255,0.15);">
-                    <span class="info-label" style="color:rgba(255,255,255,0.7);">Действует до</span>
-                    <span class="info-value" style="color:#fff;font-weight:600;">{{ premium_until_dt|date:"d.m.Y"|default:"—" }}</span>
+                <div class="info-row" style="border-bottom-color:rgba(26,26,46,0.12);">
+                    <span class="info-label" style="color:rgba(26,26,46,0.6);">Действует до</span>
+                    <span class="info-value" style="color:#1a1a2e;font-weight:600;">{{ premium_until_dt|date:"d.m.Y"|default:"—" }}</span>
                 </div>
-                <div class="info-row" style="border-bottom-color:rgba(255,255,255,0.15);">
-                    <span class="info-label" style="color:rgba(255,255,255,0.7);">Осталось дней</span>
-                    <span class="info-value" style="color:#fff;font-weight:600;">{{ days_left }}</span>
+                <div class="info-row" style="border-bottom-color:rgba(26,26,46,0.12);">
+                    <span class="info-label" style="color:rgba(26,26,46,0.6);">Осталось дней</span>
+                    <span class="info-value" style="color:#1a1a2e;font-weight:600;">{{ days_left }}</span>
                 </div>
             </div>
             {% else %}
-            <div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:12px;margin-top:8px;">
-                <span style="color:rgba(255,255,255,0.6);font-size:14px;"><i class="fas fa-info-circle"></i> Тариф FREE (4% комиссия). Повысьте в боте.</span>
+            <div style="background:rgba(26,26,46,0.06);border-radius:10px;padding:12px;margin-top:8px;">
+                <span style="color:rgba(26,26,46,0.6);font-size:14px;"><i class="fas fa-info-circle"></i> Тариф FREE (4% комиссия). Повысьте в боте.</span>
             </div>
             {% endif %}
         </div>
@@ -359,10 +366,10 @@ function uploadAvatar(input) {
 .info-value .fi, .info-value i { display:inline-flex; align-items:center; justify-content:center; vertical-align:-2px; width:1.1em; height:1.1em; }
 .profile-username { font-size:1.2rem; font-weight:700; }
 .hologram-card { background:linear-gradient(135deg,#C3B8F5,#9BE8E0,#F5C6E8); border:none; color:#1a1a2e; }
-.hologram-card h4 { color:#1a1a2e; }
-.hologram-card .info-label { color:rgba(26,26,46,0.6); }
-.hologram-card .info-value { color:#1a1a2e; font-weight:600; }
-.hologram-card .info-row { border-bottom-color:rgba(26,26,46,0.12); }
+.hologram-card h4 { color:#1a1a2e !important; }
+.hologram-card .info-label { color:rgba(26,26,46,0.6) !important; }
+.hologram-card .info-value { color:#1a1a2e !important; font-weight:600; }
+.hologram-card .info-row { border-bottom-color:rgba(26,26,46,0.12) !important; }
 .tier-badge-lg { font-size:1.1rem; font-weight:700; display:block; margin-bottom:4px; }
 </style>
 {% endblock %}
