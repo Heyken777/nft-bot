@@ -118,6 +118,8 @@ urlpatterns = [
 
     # Верификация Heyken
     path('verification/', views.verification_list_view, name='verification_list'),
+    path('api/verification/<int:app_id>/approve/', views.api_approve_application, name='api_approve_application'),
+    path('api/verification/<int:app_id>/reject/', views.api_reject_application, name='api_reject_application'),
 
     # Статус сервиса (публичный)
     path('status/', usersite_views.status_view, name='status'),

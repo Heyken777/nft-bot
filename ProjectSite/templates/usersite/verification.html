@@ -10,10 +10,16 @@
 
 <div class="card" data-reveal>
     <div class="d-flex align-items-center gap-3 mb-4">
-        <img src="/media/HEYKEN ICON.png" alt="Heyken" style="width:48px;height:48px;border-radius:50%;">
+        <img src="/media/HEYKEN ICON.png" alt="Heyken" style="width:48px;height:48px;object-fit:contain;">
         <h3 class="mb-0">Heyken Verified Partner</h3>
     </div>
-    <p class="text-cyan-300/70">Программа верификации для надёжных партнёров платформы Heyken. Знак отличия, подтверждающий высокий уровень доверия.</p>
+    <p style="color:var(--text-muted);">Программа верификации для надёжных партнёров платформы Heyken. Знак отличия, подтверждающий высокий уровень доверия.</p>
+
+    {% if is_verified %}
+    <div style="background:rgba(46,213,115,0.1);border:1px solid rgba(46,213,115,0.2);border-radius:12px;padding:16px;margin-top:16px;">
+        <i class="fas fa-check-circle" style="color:var(--success);"></i> Вы верифицированы{% if verified_reason %}: {{ verified_reason }}{% endif %}
+    </div>
+    {% endif %}
 </div>
 
 <div class="row g-4 mt-2">
@@ -21,10 +27,10 @@
         <div class="card h-100">
             <h4><i class="fas fa-check-circle" style="color:var(--success);"></i> Преимущества</h4>
             <ul class="mt-3" style="list-style:none;padding:0;">
-                <li class="mb-2">✅ Повышенное доверие со стороны продавцов и покупателей</li>
-                <li class="mb-2">✅ Приоритетная поддержка</li>
-                <li class="mb-2">✅ Значок верификации в профиле</li>
-                <li class="mb-2">✅ Упоминание в сделках как проверенного партнёра</li>
+                <li style="color:var(--text-muted);margin-bottom:10px;">✅ Повышенное доверие со стороны продавцов и покупателей</li>
+                <li style="color:var(--text-muted);margin-bottom:10px;">✅ Приоритетная поддержка</li>
+                <li style="color:var(--text-muted);margin-bottom:10px;">✅ Значок верификации в профиле</li>
+                <li style="color:var(--text-muted);margin-bottom:10px;">✅ Упоминание в сделках как проверенного партнёра</li>
             </ul>
         </div>
     </div>
@@ -32,48 +38,63 @@
         <div class="card h-100">
             <h4><i class="fas fa-clipboard-list" style="color:var(--warning);"></i> Требования</h4>
             <ul class="mt-3" style="list-style:none;padding:0;">
-                <li class="mb-2">🔹 Не менее 5 успешных сделок</li>
-                <li class="mb-2">🔹 Положительный рейтинг (не ниже 4.5)</li>
-                <li class="mb-2">🔹 Отсутствие открытых споров</li>
-                <li class="mb-2">🔹 Решение принимается CEO в индивидуальном порядке</li>
+                <li style="color:var(--text-muted);margin-bottom:10px;">🔹 Положительная репутация на платформе</li>
+                <li style="color:var(--text-muted);margin-bottom:10px;">🔹 Отсутствие нарушений правил</li>
+                <li style="color:var(--text-muted);margin-bottom:10px;">🔹 Решение принимается CEO в индивидуальном порядке</li>
             </ul>
+            <a href="/usersite/verification/terms/" class="btn btn-outline btn-sm mt-2"><i class="fas fa-file-alt"></i> Подробнее об условиях</a>
         </div>
     </div>
 </div>
 
-<div class="card mt-4" data-reveal id="applySection">
-    <h4><i class="fas fa-paper-plane" style="color:var(--accent);"></i> Подать заявку</h4>
-    {% if is_verified %}
-    <div class="alert alert-success mt-3" style="background:rgba(22,163,74,0.1);border:1px solid rgba(22,163,74,0.2);border-radius:12px;padding:16px;">
-        <i class="fas fa-check-circle" style="color:var(--success);"></i> Вы верифицированы{% if verified_reason %}: {{ verified_reason }}{% endif %}
+<div class="row g-4 mt-2">
+    <div class="col-md-6" data-reveal>
+        <div class="card h-100 text-center">
+            <h4><i class="fas fa-paper-plane" style="color:var(--accent);"></i> Подать заявку</h4>
+            <p style="color:var(--text-muted);font-size:14px;">Выберите категорию и опишите, почему вы достойны статуса верифицированного партнёра.</p>
+            {% if is_verified %}
+            <button class="btn btn-outline mt-2" disabled><i class="fas fa-check"></i> Вы уже верифицированы</button>
+            {% else %}
+            <a href="/usersite/verification/apply/" class="btn btn-primary mt-2"><i class="fas fa-paper-plane"></i> Подать заявку</a>
+            {% endif %}
+        </div>
     </div>
-    {% else %}
-    <p class="text-cyan-300/70 mt-2">Опишите, почему вы хотите получить статус верифицированного партнёра. CEO рассмотрит вашу заявку в течение 24 часов.</p>
-    <div class="mt-3">
-        <textarea id="verifMessage" class="form-control" rows="4" placeholder="Расскажите о себе, вашем опыте и причинах запроса верификации..."></textarea>
-        <button class="btn btn-primary mt-3" onclick="submitVerifRequest()">
-            <i class="fas fa-paper-plane"></i> Отправить заявку
-        </button>
-        <div id="verifStatus" class="mt-2"></div>
+    <div class="col-md-6" data-reveal>
+        <div class="card h-100 text-center">
+            <h4><i class="fas fa-shopping-cart" style="color:#d4af37;"></i> Купить верификацию</h4>
+            <p style="color:var(--text-muted);font-size:14px;">Приобретите статус Verified Partner на 1 год за <strong>$5,000 USDT</strong>.</p>
+            {% if is_verified %}
+            <button class="btn btn-outline mt-2" disabled><i class="fas fa-check"></i> Уже верифицировано</button>
+            {% else %}
+            <button class="btn btn-primary mt-2" onclick="purchaseVerification()"><i class="fas fa-shopping-cart"></i> Купить за $5,000</button>
+            <div id="purchaseStatus" class="mt-2" style="font-size:13px;"></div>
+            {% endif %}
+        </div>
     </div>
-    {% endif %}
 </div>
 
+{% if my_applications_count %}
+<div class="card mt-4" data-reveal>
+    <div class="d-flex justify-content-between align-items-center">
+        <h4><i class="fas fa-list"></i> Мои заявки</h4>
+        <a href="/usersite/verification/my/" class="btn btn-outline btn-sm">Все заявки ({{ my_applications_count }})</a>
+    </div>
+</div>
+{% endif %}
+
 <script>
-async function submitVerifRequest() {
-    const msg = document.getElementById('verifMessage').value.trim();
-    if (!msg) { document.getElementById('verifStatus').innerHTML = '<span style="color:var(--danger);">Заполните описание</span>'; return; }
-    const btn = document.querySelector('#applySection button');
-    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
-    const form = new FormData();
-    form.append('message', msg);
-    const r = await fetch('/usersite/api/verification/apply/', {method:'POST', body:form, headers:{'X-CSRFToken': getCSRFToken()}}).then(res => res.json());
-    btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i> Отправить заявку';
+async function purchaseVerification() {
+    if (!confirm('Списать $5,000 USDT для покупки верификации на 1 год?')) return;
+    const btn = document.querySelector('#purchaseSection button') || event.target;
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Обработка...';
+    const r = await fetch('/usersite/api/verification/purchase/', {method:'POST', headers:{'X-CSRFToken': getCSRFToken()}}).then(res => res.json());
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-shopping-cart"></i> Купить за $5,000';
+    const status = document.getElementById('purchaseStatus');
     if (r.success) {
-        document.getElementById('verifStatus').innerHTML = '<span style="color:var(--success);">✅ Заявка отправлена! CEO рассмотрит её в ближайшее время.</span>';
-        document.getElementById('verifMessage').value = '';
+        status.innerHTML = '<span style="color:var(--success);">✅ Верификация куплена! Страница обновится...</span>';
+        setTimeout(() => location.reload(), 2000);
     } else {
-        document.getElementById('verifStatus').innerHTML = '<span style="color:var(--danger);">❌ ' + (r.error || 'Ошибка') + '</span>';
+        status.innerHTML = '<span style="color:var(--danger);">❌ ' + (r.error || 'Ошибка') + '</span>';
     }
 }
 function getCSRFToken() {

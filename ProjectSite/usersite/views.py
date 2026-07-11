@@ -489,6 +489,26 @@ def _ensure_verification_columns():
             CREATE INDEX IF NOT EXISTS idx_verification_history_user
             ON verification_history(user_id, created_at DESC)
         """)
+    try:
+        cur.execute("SELECT id FROM verification_applications LIMIT 1")
+    except sqlite3.OperationalError:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS verification_applications (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                category    TEXT NOT NULL,
+                description TEXT NOT NULL,
+                status      TEXT NOT NULL DEFAULT 'pending',
+                admin_reason TEXT,
+                admin_id    INTEGER,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_verif_apps_user
+            ON verification_applications(user_id, created_at DESC)
+        """)
     conn.commit()
     conn.close()
 
@@ -2106,19 +2126,80 @@ def verification_view(request):
                 ctx['is_verified'] = row[0]
                 ctx['verified_reason'] = row[1]
                 ctx['verified_at_dt'] = row[2]
+            cur.execute("SELECT COUNT(*) FROM verification_applications WHERE user_id=?", (user_id,))
+            ctx['my_applications_count'] = cur.fetchone()[0] or 0
         finally:
             conn.close()
     return render(request, 'usersite/verification.html', ctx)
 
 
+VERIFICATION_CATEGORIES = [
+    ('community', 'Вклад в сообщество', 'Активное участие в жизни платформы, помощь другим пользователям'),
+    ('partner', 'Партнёрская деятельность', 'Привлечение новых пользователей, развитие бренда'),
+    ('expertise', 'Экспертиза и опыт', 'Подтверждённый опыт в сделках, уникальные навыки'),
+    ('purchase', 'Покупка ($5,000/год)', 'Оплатить верификацию на 1 год — $5000'),
+]
+
+
+def verification_terms_view(request):
+    return render(request, 'usersite/verification_terms.html')
+
+
+def verification_apply_view(request):
+    _ensure_verification_columns()
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        user_id = request.session.get('user_id')
+        cur.execute("SELECT is_verified_partner FROM users WHERE user_id=?", (user_id,))
+        row = cur.fetchone()
+        already = row and row[0]
+    finally:
+        conn.close()
+    return render(request, 'usersite/verification_apply.html', {
+        'categories': VERIFICATION_CATEGORIES,
+        'already_verified': already,
+    })
+
+
+def verification_requests_view(request):
+    _ensure_verification_columns()
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        user_id = request.session.get('user_id')
+        cur.execute(
+            "SELECT id, category, description, status, admin_reason, created_at, updated_at "
+            "FROM verification_applications WHERE user_id=? ORDER BY created_at DESC",
+            (user_id,)
+        )
+        applications = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    return render(request, 'usersite/verification_requests.html', {
+        'applications': applications,
+    })
+
+
 @csrf_exempt
+@require_http_methods(["POST"])
 def verification_apply_api(request):
     if not check_auth(request):
         return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
     user_id = request.session.get('user_id')
-    message = request.POST.get('message', '')
-    if not message:
+    category = request.POST.get('category', '')
+    description = request.POST.get('description', '')
+
+    valid_cats = [c[0] for c in VERIFICATION_CATEGORIES]
+    if category not in valid_cats:
+        return JsonResponse({'success': False, 'error': 'Некорректная категория'})
+    if not description:
         return JsonResponse({'success': False, 'error': 'Опишите причину заявки'})
+
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -2126,23 +2207,50 @@ def verification_apply_api(request):
         row = cur.fetchone()
         if row and row[0]:
             return JsonResponse({'success': False, 'error': 'Вы уже верифицированы'})
-        cur.execute("SELECT username FROM users WHERE user_id=?", (user_id,))
-        row = cur.fetchone()
-        username = row[0] if row else str(user_id)
         cur.execute(
-            "INSERT INTO support_tickets (user_id, subject, category, user_type) VALUES (?,?,?,?)",
-            (user_id, 'Heyken Verification Request', 'verification', 'buyer')
+            "INSERT INTO verification_applications (user_id, category, description) VALUES (?,?,?)",
+            (user_id, category, description)
         )
-        ticket_id = cur.lastrowid
-        cur.execute(
-            "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'user',?,?)",
-            (ticket_id, username, f"Заявка на верификацию Heyken\n\n{message}")
-        )
-        cur.execute("UPDATE support_tickets SET assigned_to=? WHERE id=?", (str(OWNER_TELEGRAM_ID), ticket_id))
         conn.commit()
     finally:
         conn.close()
-    return JsonResponse({'success': True, 'ticket_id': ticket_id})
+    return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def verification_purchase_api(request):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT is_verified_partner FROM users WHERE user_id=?", (user_id,))
+        row = cur.fetchone()
+        if row and row[0]:
+            return JsonResponse({'success': False, 'error': 'Вы уже верифицированы'})
+        balance = 0
+        cur.execute("SELECT balance_USDT FROM users WHERE user_id=?", (user_id,))
+        r = cur.fetchone()
+        if r:
+            balance = float(r[0] or 0)
+        if balance < 5000:
+            return JsonResponse({'success': False, 'error': f'Недостаточно USDT. Нужно 5000 USDT, у вас {balance:.2f} USDT'})
+        cur.execute("UPDATE users SET balance_USDT = balance_USDT - 5000 WHERE user_id=?", (user_id,))
+        cur.execute(
+            "UPDATE users SET is_verified_partner = 1, verified_at = CURRENT_TIMESTAMP, "
+            "verified_by = NULL, verified_reason = 'Purchased ($5000/year)' WHERE user_id=?",
+            (user_id,)
+        )
+        cur.execute(
+            "INSERT INTO verification_history (user_id, action, reason, admin_id) VALUES (?, 'granted', 'Purchased ($5000/year)', 0)",
+            (user_id,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return JsonResponse({'success': True})
 
 
 def terms_view(request):

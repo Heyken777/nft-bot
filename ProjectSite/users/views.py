@@ -2418,23 +2418,83 @@ def verification_list_view(request):
                 u['admin_name'] = '—'
             verified.append(u)
 
-        pending = []
+        applications = []
         cur.execute(
-            "SELECT st.id, st.user_id, st.created_at, u.username FROM support_tickets st "
-            "LEFT JOIN users u ON st.user_id = u.user_id "
-            "WHERE st.subject = 'Heyken Verification Request' AND st.status != 'closed' "
-            "ORDER BY st.created_at DESC"
+            "SELECT va.*, u.username FROM verification_applications va "
+            "LEFT JOIN users u ON va.user_id = u.user_id "
+            "ORDER BY va.created_at DESC"
         )
-        pending = [dict(r) for r in cur.fetchall()]
+        applications = [dict(r) for r in cur.fetchall()]
 
         total = cur.execute("SELECT COUNT(*) FROM users WHERE is_verified_partner=1").fetchone()[0] or 0
     except Exception as e:
         print(f"[verification_list] Error: {e}")
-        verified = []; pending = []; total = 0
+        verified = []; applications = []; total = 0
     finally:
         conn.close()
     return render(request, 'verification_list.html', {
-        'verified': verified, 'pending': pending, 'total': total,
+        'verified': verified, 'applications': applications, 'total': total,
         'active_page': 'verification',
         'admin_name': get_admin_name(request),
     })
+
+
+@require_http_methods(["POST"])
+@require_permission('users_edit')
+def api_approve_application(request, app_id):
+    if get_user_role(request) != 'CEO':
+        return JsonResponse({'error': 'Только CEO может одобрять заявки'}, status=403)
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM verification_applications WHERE id=? AND status='pending'", (app_id,))
+        row = cur.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Заявка не найдена или уже обработана'}, status=404)
+        user_id = row[0]
+        cur.execute(
+            "UPDATE users SET is_verified_partner=1, verified_at=CURRENT_TIMESTAMP, "
+            "verified_by=?, verified_reason='Approved by CEO' WHERE user_id=?",
+            (request.session.get('telegram_id'), user_id)
+        )
+        cur.execute(
+            "UPDATE verification_applications SET status='approved', admin_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (request.session.get('telegram_id'), app_id)
+        )
+        cur.execute(
+            "INSERT INTO verification_history (user_id, action, reason, admin_id) "
+            "VALUES (?, 'granted', 'Application approved', ?)",
+            (user_id, request.session.get('telegram_id'))
+        )
+        conn.commit()
+        log_admin_action(request, 'approve_verification', str(app_id), f'Одобрена заявка #{app_id} пользователя {user_id}')
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+    finally:
+        conn.close()
+    return JsonResponse({'success': True})
+
+
+@require_http_methods(["POST"])
+@require_permission('users_edit')
+def api_reject_application(request, app_id):
+    reason = request.POST.get('reason', '').strip()
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM verification_applications WHERE id=? AND status='pending'", (app_id,))
+        row = cur.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Заявка не найдена или уже обработана'}, status=404)
+        cur.execute(
+            "UPDATE verification_applications SET status='rejected', admin_reason=?, "
+            "admin_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (reason, request.session.get('telegram_id'), app_id)
+        )
+        conn.commit()
+        log_admin_action(request, 'reject_verification', str(app_id), f'Отклонена заявка #{app_id}: {reason}')
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+    finally:
+        conn.close()
+    return JsonResponse({'success': True})
