@@ -76,7 +76,7 @@
 
 <script>
 async function deletePartnership(id) {
-    if(confirm('Удалить заявку?')) {
+    showConfirmModal('Удалить заявку?', async function() {
         const res = await fetch(`/news/partnership/${id}/delete/`, {method: 'POST'});
         const data = await res.json();
         if(data.success) {
@@ -85,7 +85,7 @@ async function deletePartnership(id) {
         } else {
             showToast('Ошибка', 'error');
         }
-    }
+    });
 }
 </script>
 

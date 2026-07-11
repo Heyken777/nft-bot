@@ -40,7 +40,7 @@
                     <td>
                         {% if r.breakdown and r.breakdown.items %}
                         <span class="breakdown-cell" style="cursor:help;font-size:12px;border-bottom:1px dashed rgba(0,255,255,0.3);"
-                              onclick="alert('{% for cur, info in r.breakdown.items %}{{ info.amount|floatformat:2 }} {{ cur }} = {{ info.rub_value|floatformat:2 }} ₽\n{% endfor %}')">
+                              onclick="showToast('{% for cur, info in r.breakdown.items %}{{ info.amount|floatformat:2 }} {{ cur }} = {{ info.rub_value|floatformat:2 }} ₽\n{% endfor %}', 'info')">
                             <i class="fi fi-rr-receipt"></i> {% for cur, info in r.breakdown.items %}{{ info.amount|floatformat:2 }} {{ cur }}{% if not forloop.last %}, {% endif %}{% endfor %}
                         </span>
                         {% else %}
@@ -93,14 +93,16 @@
 
 <script>
 async function approve(id) {
-    if(!confirm('Подтвердить выплату?')) return;
-    await fetch(`/api/withdrawals/${id}/approve/`, {method:'POST'});
-    location.reload();
+    showConfirmModal('Подтвердить выплату?', async function() {
+        await fetch(`/api/withdrawals/${id}/approve/`, {method:'POST'});
+        location.reload();
+    });
 }
 async function reject(id) {
-    if(!confirm('Отклонить заявку?')) return;
-    await fetch(`/api/withdrawals/${id}/reject/`, {method:'POST'});
-    location.reload();
+    showConfirmModal('Отклонить заявку?', async function() {
+        await fetch(`/api/withdrawals/${id}/reject/`, {method:'POST'});
+        location.reload();
+    });
 }
 </script>
 {% endblock %}

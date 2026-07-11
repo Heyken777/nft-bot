@@ -433,7 +433,7 @@ function getCookie(name) {
     
     // Закрытие тикета
     async function closeTicket(id) {
-        if (!confirm('Закрыть тикет?')) return;
+    showConfirmModal('Закрыть тикет?', async function() {
         
         const res = await fetch('/api/tickets/{{ ticket.id }}/close/', { method: 'POST' });
         if (res.ok) {
@@ -442,6 +442,7 @@ function getCookie(name) {
         } else {
             showToast('Ошибка', 'error');
         }
+    });
     }
     
     function showToast(msg, type = 'success') {

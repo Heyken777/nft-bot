@@ -59,7 +59,7 @@
 
 <script>
 async function deleteNews(id) {
-    if(confirm('Удалить новость?')) {
+    showConfirmModal('Удалить новость?', async function() {
         const res = await fetch(`/news/${id}/delete/`, {method: 'POST'});
         const data = await res.json();
         if(data.success) {
@@ -68,7 +68,7 @@ async function deleteNews(id) {
         } else {
             showToast('Ошибка', 'error');
         }
-    }
+    });
 }
 </script>
 {% endblock %}

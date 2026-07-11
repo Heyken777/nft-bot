@@ -86,11 +86,11 @@
     }
     
     async function cancelSubscription(id) {
-        if(confirm('Отменить подписку?')) {
-            await fetch(`/api/subscriptions/${id}/cancel/`, {method: 'POST'});
-            showToast('Подписка отменена');
-            setTimeout(() => location.reload(), 1000);
-        }
+    showConfirmModal('Отменить подписку?', async function() {
+        await fetch(`/api/subscriptions/${id}/cancel/`, {method: 'POST'});
+        showToast('Подписка отменена');
+        setTimeout(() => location.reload(), 1000);
+    });
     }
 </script>
 {% endblock %}

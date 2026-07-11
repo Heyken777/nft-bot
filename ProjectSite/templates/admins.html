@@ -186,33 +186,35 @@ async function createAdmin() {
 }
 
 async function resetAdminPassword(username) {
-    if (!confirm(`Сбросить пароль для ${username}?`)) return;
-    try {
-        const res = await fetch(`/api/admins/${username}/reset-password/`, {method: 'POST'});
-        const data = await res.json();
-        if (data.success) {
-            showToast(`Новый пароль для ${username}: ${data.new_password}`, 'success');
-        } else {
-            showToast('Ошибка сброса', 'error');
+    showConfirmModal(`Сбросить пароль для ${username}?`, async function() {
+        try {
+            const res = await fetch(`/api/admins/${username}/reset-password/`, {method: 'POST'});
+            const data = await res.json();
+            if (data.success) {
+                showToast(`Новый пароль для ${username}: ${data.new_password}`, 'success');
+            } else {
+                showToast('Ошибка сброса', 'error');
+            }
+        } catch (e) {
+            showToast('Ошибка соединения', 'error');
         }
-    } catch (e) {
-        showToast('Ошибка соединения', 'error');
-    }
+    });
 }
 
 async function deleteAdmin(username) {
-    if (!confirm(`Удалить администратора ${username}?`)) return;
-    try {
-        const res = await fetch(`/api/admins/${username}/delete/`, {method: 'DELETE'});
-        if (res.ok) {
-            showToast('Администратор удалён');
-            location.reload();
-        } else {
-            showToast('Ошибка удаления', 'error');
+    showConfirmModal(`Удалить администратора ${username}?`, async function() {
+        try {
+            const res = await fetch(`/api/admins/${username}/delete/`, {method: 'DELETE'});
+            if (res.ok) {
+                showToast('Администратор удалён');
+                location.reload();
+            } else {
+                showToast('Ошибка удаления', 'error');
+            }
+        } catch (e) {
+            showToast('Ошибка соединения', 'error');
         }
-    } catch (e) {
-        showToast('Ошибка соединения', 'error');
-    }
+    });
 }
 </script>
 {% endblock %}

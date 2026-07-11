@@ -114,11 +114,11 @@ async function editTariff(id) {
 }
 
 async function deleteTariff(id) {
-    if(confirm('Удалить тариф? Это действие нельзя отменить.')) {
+    showConfirmModal('Удалить тариф? Это действие нельзя отменить.', async function() {
         await fetch(`/api/tariffs/${id}/delete/`, {method: 'DELETE'});
         showToast('Тариф удалён');
         location.reload();
-    }
+    });
 }
 
 async function syncWithBot() {

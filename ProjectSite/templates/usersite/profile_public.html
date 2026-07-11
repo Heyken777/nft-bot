@@ -41,6 +41,14 @@
                 {% endif %}
             </div>
         </div>
+
+        {% if user.is_verified_partner %}
+        <div style="display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px 18px;background:var(--glass-bg);backdrop-filter:blur(12px);border-radius:14px;border:1px solid var(--border-color);">
+            <img src="/media/HEYKEN ICON.png" alt="Heyken" style="height:1.6em;width:1.6em;object-fit:contain;flex-shrink:0;">
+            <span style="color:var(--text-muted);font-size:13px;line-height:1.4;">Пользователь верифицирован организацией «Heyken»</span>
+        </div>
+        {% endif %}
+
     </div>
 
     <div class="col-lg-8" data-reveal>
@@ -299,14 +307,15 @@ function submitReview() {
 }
 
 function deleteProfileReview(id) {
-    if (!confirm('Удалить отзыв?')) return;
-    fetch('/usersite/api/profile-reviews/delete/', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-        body: JSON.stringify({review_id: id})
-    }).then(function(r) { return r.json(); }).then(function(d) {
-        if (d.success) { showToast(d.message); setTimeout(function() { location.reload(); }, 800); }
-        else { showToast(d.error, 'error'); }
+    showConfirmModal('Удалить отзыв?', function() {
+        fetch('/usersite/api/profile-reviews/delete/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+            body: JSON.stringify({review_id: id})
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.success) { showToast(d.message); setTimeout(function() { location.reload(); }, 800); }
+            else { showToast(d.error, 'error'); }
+        });
     });
 }
 

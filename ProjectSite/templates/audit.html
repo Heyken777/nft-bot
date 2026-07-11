@@ -60,11 +60,11 @@ function exportAudit() {
 }
 
 async function clearAudit() {
-    if(confirm('Очистить весь журнал аудита? Это действие необратимо!')) {
+    showConfirmModal('Очистить весь журнал аудита? Это действие необратимо!', async function() {
         await fetch('/api/audit/clear/', {method: 'POST'});
         showToast('Журнал очищен');
         location.reload();
-    }
+    });
 }
 </script>
 {% endblock %}

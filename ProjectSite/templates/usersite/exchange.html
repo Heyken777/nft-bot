@@ -233,27 +233,29 @@ async function createOffer() {
 }
 
 async function acceptOffer(id) {
-    if (!confirm('Принять этот ордер?')) return;
-    var r = await fetch('/usersite/api/exchange/accept/', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-        body: JSON.stringify({offer_id: id})
+    showConfirmModal('Принять этот ордер?', async function() {
+        var r = await fetch('/usersite/api/exchange/accept/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+            body: JSON.stringify({offer_id: id})
+        });
+        var d = await r.json();
+        if (d.success) { showToast('Обмен выполнен'); setTimeout(function() { location.reload(); }, 1000); }
+        else { showToast(d.error || 'Ошибка', 'error'); }
     });
-    var d = await r.json();
-    if (d.success) { showToast('Обмен выполнен'); setTimeout(function() { location.reload(); }, 1000); }
-    else { showToast(d.error || 'Ошибка', 'error'); }
 }
 
 async function cancelOffer(id) {
-    if (!confirm('Отменить ордер?')) return;
-    var r = await fetch('/usersite/api/exchange/cancel/', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-        body: JSON.stringify({offer_id: id})
+    showConfirmModal('Отменить ордер?', async function() {
+        var r = await fetch('/usersite/api/exchange/cancel/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+            body: JSON.stringify({offer_id: id})
+        });
+        var d = await r.json();
+        if (d.success) { showToast('Ордер отменён'); setTimeout(function() { location.reload(); }, 1000); }
+        else { showToast(d.error || 'Ошибка', 'error'); }
     });
-    var d = await r.json();
-    if (d.success) { showToast('Ордер отменён'); setTimeout(function() { location.reload(); }, 1000); }
-    else { showToast(d.error || 'Ошибка', 'error'); }
 }
 </script>
 

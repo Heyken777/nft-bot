@@ -44,8 +44,8 @@
                     <td>{{ app.created_at|date:"d.m.Y H:i"|default:"—" }}</td>
                     <td>
                         {% if app.status == 'pending' %}
-                        <button class="btn-action btn-approve" onclick="approveApp({{ app.id }})"><i class="fas fa-check"></i></button>
-                        <button class="btn-action btn-reject" onclick="rejectApp({{ app.id }})"><i class="fas fa-times"></i></button>
+                        <button class="btn-action btn-approve" onclick="openApproveModal({{ app.id }})"><i class="fas fa-check"></i></button>
+                        <button class="btn-action btn-reject" onclick="openRejectModal({{ app.id }})"><i class="fas fa-times"></i></button>
                         {% else %}
                         <span style="color:var(--text-muted);font-size:11px;">—</span>
                         {% endif %}
@@ -82,21 +82,68 @@
     {% endif %}
 </div>
 
+<div class="modal-overlay" id="approveModal">
+    <div class="modal-window" style="text-align:center;">
+        <h4 style="margin-bottom:12px;">Подтверждение</h4>
+        <p style="color:rgba(255,255,255,0.6);font-size:14px;">Одобрить заявку? Пользователь получит статус Verified Partner.</p>
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:20px;">
+            <button class="btn btn-sm" style="background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.1);" onclick="closeModal('approveModal')">Отмена</button>
+            <button class="btn btn-primary btn-sm" onclick="confirmApprove()"><i class="fas fa-check"></i> Одобрить</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="rejectModal">
+    <div class="modal-window">
+        <h4 style="margin-bottom:12px;">Отклонение заявки</h4>
+        <p style="color:rgba(255,255,255,0.6);font-size:14px;">Укажите причину отказа (отобразится пользователю):</p>
+        <textarea id="rejectReason" class="form-control" rows="3" placeholder="Причина отказа..." style="margin-top:8px;"></textarea>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+            <button class="btn btn-sm" style="background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.1);" onclick="closeModal('rejectModal')">Отмена</button>
+            <button class="btn btn-danger btn-sm" onclick="confirmReject()"><i class="fas fa-times"></i> Отклонить</button>
+        </div>
+    </div>
+</div>
+
 <script>
+let pendingAppId = null;
+
 function getCSRF() {
     return document.cookie.match(/csrftoken=([^;]+)/) ? document.cookie.match(/csrftoken=([^;]+)/)[1] : '';
 }
-async function approveApp(id) {
-    if (!confirm('Одобрить заявку #' + id + '? Пользователь получит статус Verified Partner.')) return;
+function openModal(id) {
+    document.getElementById(id).classList.add('active');
+}
+function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+}
+
+function openApproveModal(id) {
+    pendingAppId = id;
+    openModal('approveModal');
+}
+function openRejectModal(id) {
+    pendingAppId = id;
+    document.getElementById('rejectReason').value = '';
+    openModal('rejectModal');
+}
+
+async function confirmApprove() {
+    closeModal('approveModal');
+    const id = pendingAppId;
+    pendingAppId = null;
     const r = await fetch('/api/verification/' + id + '/approve/', {method:'POST', headers:{'X-CSRFToken': getCSRF()}}).then(r => r.json());
     if (r.success) { showToast('Заявка одобрена'); setTimeout(() => location.reload(), 1000); }
     else { showToast(r.error || 'Ошибка', 'error'); }
 }
-async function rejectApp(id) {
-    const reason = prompt('Укажите причину отказа (отобразится пользователю):');
-    if (reason === null) return;
+
+async function confirmReject() {
+    const reason = document.getElementById('rejectReason').value.trim();
+    closeModal('rejectModal');
+    const id = pendingAppId;
+    pendingAppId = null;
     const form = new FormData();
-    form.append('reason', reason || '');
+    form.append('reason', reason);
     const r = await fetch('/api/verification/' + id + '/reject/', {method:'POST', body:form, headers:{'X-CSRFToken': getCSRF()}}).then(r => r.json());
     if (r.success) { showToast('Заявка отклонена'); setTimeout(() => location.reload(), 1000); }
     else { showToast(r.error || 'Ошибка', 'error'); }

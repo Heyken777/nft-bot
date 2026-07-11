@@ -64,25 +64,27 @@
 <script>
 var csrf = '{{ csrf_token }}';
 function endSession(id) {
-    if (!confirm('Завершить эту сессию? Пользователь будет разлогинен.')) return;
-    fetch('/usersite/api/sessions/' + id + '/end/', {
-        method: 'POST',
-        headers: {'X-CSRFToken': csrf},
-    }).then(function(r) { return r.json(); }).then(function(d) {
-        if (d.success) { showToast('✅ Сессия завершена'); location.reload(); }
-        else { showToast('❌ ' + (d.error || 'Ошибка'), 'error'); }
-    }).catch(function() { showToast('❌ Ошибка соединения', 'error'); });
+    showConfirmModal('Завершить эту сессию? Пользователь будет разлогинен.', function() {
+        fetch('/usersite/api/sessions/' + id + '/end/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrf},
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.success) { showToast('Сессия завершена'); location.reload(); }
+            else { showToast(d.error || 'Ошибка', 'error'); }
+        }).catch(function() { showToast('Ошибка соединения', 'error'); });
+    });
 }
 
 function endAllSessions() {
-    if (!confirm('Завершить все сессии, кроме текущей? Вы будете разлогинены на всех других устройствах.')) return;
-    fetch('/usersite/api/sessions/end-all/', {
-        method: 'POST',
-        headers: {'X-CSRFToken': csrf},
-    }).then(function(r) { return r.json(); }).then(function(d) {
-        if (d.success) { showToast('✅ Все остальные сессии завершены'); location.reload(); }
-        else { showToast('❌ ' + (d.error || 'Ошибка'), 'error'); }
-    }).catch(function() { showToast('❌ Ошибка соединения', 'error'); });
+    showConfirmModal('Завершить все сессии, кроме текущей? Вы будете разлогинены на всех других устройствах.', function() {
+        fetch('/usersite/api/sessions/end-all/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrf},
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.success) { showToast('Все остальные сессии завершены'); location.reload(); }
+            else { showToast(d.error || 'Ошибка', 'error'); }
+        }).catch(function() { showToast('Ошибка соединения', 'error'); });
+    });
 }
 </script>
 {% endblock %}

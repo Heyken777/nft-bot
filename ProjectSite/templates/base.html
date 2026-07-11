@@ -628,7 +628,17 @@ code {
             document.body.appendChild(el);
             setTimeout(() => { el.style.animation = 'toastOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 3200);
         }
-        
+
+        function showConfirmModal(msg, onConfirm) {
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay active';
+            overlay.style.display = 'flex';
+            overlay.innerHTML = `<div class="modal-window" style="text-align:center;"><h4 style="margin-bottom:12px;">Подтверждение</h4><p style="color:rgba(255,255,255,0.6);font-size:14px;margin-bottom:20px;">${msg}</p><div style="display:flex;gap:10px;justify-content:center;"><button class="btn btn-sm" style="background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.1);" id="confirmNo">Отмена</button><button class="btn btn-primary btn-sm" id="confirmYes">Подтвердить</button></div></div>`;
+            document.body.appendChild(overlay);
+            overlay.querySelector('#confirmNo').onclick = function() { overlay.remove(); };
+            overlay.querySelector('#confirmYes').onclick = function() { overlay.remove(); if (onConfirm) onConfirm(); };
+        }
+
         function logout() {
             window.location.href = '/logout/';
         }

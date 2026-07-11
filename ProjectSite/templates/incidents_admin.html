@@ -83,11 +83,12 @@
 <script>
 function getCSRF(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?m[1]:''}
 async function closeIncident(id){
-    if(!confirm('Закрыть этот инцидент?'))return;
-    var r=await fetch('/api/incidents/'+id+'/close/',{method:'POST',headers:{'X-CSRFToken':getCSRF()}});
-    var d=await r.json();
-    if(d.success){location.reload()}
-    else{showToast('Ошибка: '+(d.error||'неизвестная'),'error')}
+    showConfirmModal('Закрыть этот инцидент?', async function() {
+        var r=await fetch('/api/incidents/'+id+'/close/',{method:'POST',headers:{'X-CSRFToken':getCSRF()}});
+        var d=await r.json();
+        if(d.success){location.reload()}
+        else{showToast('Ошибка: '+(d.error||'неизвестная'),'error')}
+    });
 }
 </script>
 {% endblock %}
