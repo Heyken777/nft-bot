@@ -2318,3 +2318,123 @@ def ledger_view(request):
         'active_page': 'ledger',
         'admin_name': get_admin_name(request),
     })
+
+
+@require_permission('users_edit')
+def verification_history_view(request, user_id):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT action, reason, admin_id, created_at FROM verification_history "
+            "WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,)
+        )
+        rows = cur.fetchall()
+        history = [dict(r) for r in rows]
+    except Exception as e:
+        print(f"[verification] Error: {e}")
+        history = []
+    finally:
+        conn.close()
+    return JsonResponse({'history': history})
+
+
+@require_http_methods(["POST"])
+@require_permission('users_edit')
+def api_grant_verification(request, user_id):
+    if get_user_role(request) != 'CEO':
+        return JsonResponse({'error': 'Только CEO может выдавать верификацию'}, status=403)
+    reason = request.POST.get('reason', '').strip()
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+        if not cur.fetchone():
+            return JsonResponse({'error': 'Пользователь не найден'}, status=404)
+        cur.execute(
+            "UPDATE users SET is_verified_partner = 1, verified_at = CURRENT_TIMESTAMP, "
+            "verified_by = ?, verified_reason = ? WHERE user_id = ?",
+            (request.session.get('telegram_id'), reason, user_id)
+        )
+        cur.execute(
+            "INSERT INTO verification_history (user_id, action, reason, admin_id) "
+            "VALUES (?, 'granted', ?, ?)",
+            (user_id, reason, request.session.get('telegram_id'))
+        )
+        conn.commit()
+        log_admin_action(request, 'grant_verification', str(user_id), f'Выдана верификация: {reason}')
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+    finally:
+        conn.close()
+    return JsonResponse({'success': True})
+
+
+@require_http_methods(["POST"])
+@require_permission('users_edit')
+def api_revoke_verification(request, user_id):
+    if get_user_role(request) != 'CEO':
+        return JsonResponse({'error': 'Только CEO может отзывать верификацию'}, status=403)
+    reason = request.POST.get('reason', '').strip()
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE users SET is_verified_partner = 0, verified_at = NULL, "
+            "verified_by = NULL, verified_reason = NULL WHERE user_id = ?",
+            (user_id,)
+        )
+        cur.execute(
+            "INSERT INTO verification_history (user_id, action, reason, admin_id) "
+            "VALUES (?, 'revoked', ?, ?)",
+            (user_id, reason, request.session.get('telegram_id'))
+        )
+        conn.commit()
+        log_admin_action(request, 'revoke_verification', str(user_id), f'Отозвана верификация: {reason}')
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+    finally:
+        conn.close()
+    return JsonResponse({'success': True})
+
+
+@require_permission('users_edit')
+def verification_list_view(request):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        verified = []
+        cur.execute(
+            "SELECT user_id, username, verified_reason, verified_at, verified_by FROM users "
+            "WHERE is_verified_partner = 1 ORDER BY verified_at DESC"
+        )
+        for r in cur.fetchall():
+            u = dict(r)
+            if u.get('verified_by'):
+                cur.execute("SELECT username FROM users WHERE user_id=?", (u['verified_by'],))
+                admin = cur.fetchone()
+                u['admin_name'] = admin[0] if admin else str(u['verified_by'])
+            else:
+                u['admin_name'] = '—'
+            verified.append(u)
+
+        pending = []
+        cur.execute(
+            "SELECT st.id, st.user_id, st.created_at, u.username FROM support_tickets st "
+            "LEFT JOIN users u ON st.user_id = u.user_id "
+            "WHERE st.subject = 'Heyken Verification Request' AND st.status != 'closed' "
+            "ORDER BY st.created_at DESC"
+        )
+        pending = [dict(r) for r in cur.fetchall()]
+
+        total = cur.execute("SELECT COUNT(*) FROM users WHERE is_verified_partner=1").fetchone()[0] or 0
+    except Exception as e:
+        print(f"[verification_list] Error: {e}")
+        verified = []; pending = []; total = 0
+    finally:
+        conn.close()
+    return render(request, 'verification_list.html', {
+        'verified': verified, 'pending': pending, 'total': total,
+        'active_page': 'verification',
+        'admin_name': get_admin_name(request),
+    })

@@ -55,7 +55,7 @@
             </div>
         </div>
         <div class="row g-3 mb-4">
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <div class="stat-card h-100">
                     <h3 class="gradient-text mb-3"><i class="fas fa-crown text-cyan-300"></i> Premium</h3>
                     <div class="mb-2">
@@ -77,7 +77,33 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
+                <div class="stat-card h-100">
+                    <h3 class="gradient-text mb-3"><span class="heyken-logo">H</span> Heyken Verification</h3>
+                    <div class="mb-2">
+                        {% if user.is_verified_partner %}
+                        <span class="badge-active">✅ Верифицирован</span>
+                        {% if user.verified_at %}<div class="small text-cyan-300/50 mt-1">с {{ user.verified_at|date:"d.m.Y" }}</div>{% endif %}
+                        {% else %}
+                        <span class="badge-expired">❌ Не верифицирован</span>
+                        {% endif %}
+                    </div>
+                    {% if user.verified_reason %}
+                    <div class="small mb-2"><span class="text-cyan-300">Причина:</span> {{ user.verified_reason }}</div>
+                    {% endif %}
+                    <div class="d-flex gap-2 mt-3 flex-wrap align-items-center">
+                        <input type="text" id="verifReason" class="form-control" placeholder="Причина" style="width:100%;">
+                        {% if user.is_verified_partner %}
+                        <button class="btn-danger btn-sm w-100" onclick="revokeVerification()"><i class="fas fa-times"></i> Отозвать верификацию</button>
+                        {% else %}
+                        <button class="btn-primary btn-sm w-100" onclick="grantVerification()"><i class="fas fa-check"></i> Выдать верификацию</button>
+                        {% endif %}
+                        <button class="btn-secondary btn-sm w-100" onclick="showVerifHistory()"><i class="fas fa-history"></i> История</button>
+                    </div>
+                    <div id="verifHistoryContainer" class="mt-2" style="display:none;max-height:200px;overflow-y:auto;"></div>
+                </div>
+            </div>
+            <div class="col-md-4">
                 <div class="stat-card h-100">
                     <h3 class="gradient-text mb-3"><i class="fas fa-coins text-cyan-300"></i> Изменить баланс</h3>
                     <div class="row g-2">
@@ -339,6 +365,41 @@ async function removeTier() {
     const r = await api(`/api/users/${USER_ID}/grant-premium/`, {tier: 'free', days: 0});
     if (r.success) { showToast('Тариф сброшен на Free'); setTimeout(() => location.reload(), 1500); }
     else { showToast('Ошибка', 'error'); }
+}
+
+async function grantVerification() {
+    const reason = document.getElementById('verifReason').value;
+    if (!reason) { showToast('Укажите причину верификации', 'error'); return; }
+    const r = await api(`/api/users/${USER_ID}/grant-verification/`, {reason});
+    if (r.success) { showToast('Верификация выдана'); setTimeout(() => location.reload(), 1500); }
+    else { showToast(r.error || 'Ошибка', 'error'); }
+}
+
+async function revokeVerification() {
+    const reason = document.getElementById('verifReason').value || 'Отозвано администратором';
+    const r = await api(`/api/users/${USER_ID}/revoke-verification/`, {reason});
+    if (r.success) { showToast('Верификация отозвана'); setTimeout(() => location.reload(), 1500); }
+    else { showToast(r.error || 'Ошибка', 'error'); }
+}
+
+let verifHistoryVisible = false;
+async function showVerifHistory() {
+    const container = document.getElementById('verifHistoryContainer');
+    verifHistoryVisible = !verifHistoryVisible;
+    if (!verifHistoryVisible) { container.style.display = 'none'; return; }
+    container.style.display = 'block';
+    container.innerHTML = '<div class="small text-cyan-300/50">Загрузка...</div>';
+    const r = await api(`/api/users/${USER_ID}/verification-history/`, {});
+    if (!r.history || !r.history.length) {
+        container.innerHTML = '<div class="small text-cyan-300/50">История пуста</div>';
+        return;
+    }
+    container.innerHTML = r.history.map(function(h) {
+        const action = h.action === 'granted' ? '<span class="badge-active">Выдана</span>' : '<span class="badge-expired">Отозвана</span>';
+        return '<div class="mb-1 small" style="border-bottom:1px solid rgba(255,255,255,0.05);padding:4px 0;">' +
+            action + ' — ' + (h.reason || '—') + ' <span class="text-cyan-300/50">админ #' + h.admin_id + '</span>' +
+            ' <span class="text-cyan-300/50">' + (h.created_at || '') + '</span></div>';
+    }).join('');
 }
 
 async function backupBalance() {

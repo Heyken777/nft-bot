@@ -737,6 +737,26 @@ class Database:
         # Добавляем колонку encrypted_meta в transactions, если её нет
         self.add_column_if_not_exists("transactions", "encrypted_meta", "TEXT")
         
+        # Верификация Heyken (CEO-only)
+        self.add_column_if_not_exists("users", "is_verified_partner", "INTEGER DEFAULT 0")
+        self.add_column_if_not_exists("users", "verified_at", "TIMESTAMP")
+        self.add_column_if_not_exists("users", "verified_by", "INTEGER")
+        self.add_column_if_not_exists("users", "verified_reason", "TEXT")
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS verification_history (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                action      TEXT NOT NULL,
+                reason      TEXT,
+                admin_id    INTEGER NOT NULL,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_verification_history_user
+            ON verification_history(user_id, created_at DESC)
+        """)
+        
         # Таблица достижений пользователей
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_achievements (
@@ -1704,16 +1724,29 @@ class Database:
         self.conn.commit()
         return changed
 
-    def open_dispute(self, deal_id: int, opened_by: int, reason: str) -> bool:
-        self.cursor.execute("SELECT status FROM deals WHERE id = ?", (deal_id,))
+    def open_dispute(self, deal_id: int, opened_by: int, reason: str) -> dict:
+        self.cursor.execute("SELECT status, seller, buyer FROM deals WHERE id = ?", (deal_id,))
         row = self.cursor.fetchone()
         if not row or row[0] in ('completed', 'cancelled', 'disputed'):
-            return False
+            return {'success': False}
+        seller = row[1]
+        buyer = row[2]
         code = generate_dispute_id()
         self.cursor.execute("UPDATE deals SET status = 'disputed', disputed_at = CURRENT_TIMESTAMP WHERE id = ?", (deal_id,))
         self.cursor.execute("INSERT INTO disputes (dispute_code, deal_id, opened_by, reason) VALUES (?, ?, ?, ?)", (code, deal_id, opened_by, reason))
         self.conn.commit()
-        return True
+        result = {'success': True, 'deal_id': deal_id, 'seller': seller, 'buyer': buyer}
+        for uid in (seller, buyer):
+            if uid:
+                self.cursor.execute("SELECT is_verified_partner FROM users WHERE user_id=?", (uid,))
+                u = self.cursor.fetchone()
+                if u and u[0]:
+                    result['verified_user_id'] = uid
+                    self.cursor.execute("SELECT username FROM users WHERE user_id=?", (uid,))
+                    un = self.cursor.fetchone()
+                    result['verified_username'] = un[0] if un else str(uid)
+                    break
+        return result
 
     def resolve_dispute_with_decision(self, dispute_id: int, decision: str, resolved_by: int = 0, reason: str = '') -> Optional[dict]:
         self.cursor.execute("SELECT * FROM disputes WHERE id = ? AND status = 'pending'", (dispute_id,))
@@ -4283,7 +4316,7 @@ async def dispute_msg(msg: types.Message, state: FSMContext):
             return
 
         opened = db.open_dispute(deal_id, msg.from_user.id, reason)
-        if not opened:
+        if not opened.get('success'):
             await msg.answer("❌ Спор уже открыт или сделка недоступна", reply_markup=back_kb())
             await state.clear()
             return
@@ -4297,12 +4330,27 @@ async def dispute_msg(msg: types.Message, state: FSMContext):
          InlineKeyboardButton(text="↩️ Вернуть покупателю", callback_data=f"dispute_decide_buyer_{dispute_code}")]
     ])
 
-    for admin in ADMIN_IDS:
-        await notify_user(
-            admin,
-            f"⚠️ *Новый спор*\n\nСпор #{dispute_code}\nСделка #{deal['display_id']}\nОткрыл: `{msg.from_user.id}`\nПричина: {escape_md(reason)}",
-            reply_markup=admin_kb_markup
-        )
+    priority_prefix = ""
+    verified_uid = opened.get('verified_user_id')
+    if verified_uid:
+        vname = opened.get('verified_username', str(verified_uid))
+        priority_prefix = "🔴 *ВЕРИФИЦИРОВАННЫЙ ПОЛЬЗОВАТЕЛЬ!*\n\n"
+        for admin in ADMIN_IDS:
+            await notify_user(
+                admin,
+                f"{priority_prefix}У верифицированного пользователя *{escape_md(vname)}* (ID `{verified_uid}`) открыт спор.\n"
+                f"⚠️ Требуется ручной пересмотр статуса верификации.\n\n"
+                f"Спор #{dispute_code}\nСделка #{deal['display_id']}\nОткрыл: `{msg.from_user.id}`\nПричина: {escape_md(reason)}",
+                reply_markup=admin_kb_markup
+            )
+            continue
+    else:
+        for admin in ADMIN_IDS:
+            await notify_user(
+                admin,
+                f"⚠️ *Новый спор*\n\nСпор #{dispute_code}\nСделка #{deal['display_id']}\nОткрыл: `{msg.from_user.id}`\nПричина: {escape_md(reason)}",
+                reply_markup=admin_kb_markup
+            )
 
     counterpart_id = deal['buyer'] if msg.from_user.id == deal['seller'] else deal['seller']
     if counterpart_id:

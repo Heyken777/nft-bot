@@ -1,0 +1,84 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Heyken Verification{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/dashboard/">Главная</a>
+    <span class="separator">/</span>
+    <span class="current">Heyken Verification</span>
+</div>
+
+<div class="card" data-reveal>
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <img src="/media/HEYKEN ICON.png" alt="Heyken" style="width:48px;height:48px;border-radius:50%;">
+        <h3 class="mb-0">Heyken Verified Partner</h3>
+    </div>
+    <p class="text-cyan-300/70">Программа верификации для надёжных партнёров платформы Heyken. Знак отличия, подтверждающий высокий уровень доверия.</p>
+</div>
+
+<div class="row g-4 mt-2">
+    <div class="col-lg-6" data-reveal>
+        <div class="card h-100">
+            <h4><i class="fas fa-check-circle" style="color:var(--success);"></i> Преимущества</h4>
+            <ul class="mt-3" style="list-style:none;padding:0;">
+                <li class="mb-2">✅ Повышенное доверие со стороны продавцов и покупателей</li>
+                <li class="mb-2">✅ Приоритетная поддержка</li>
+                <li class="mb-2">✅ Значок верификации в профиле</li>
+                <li class="mb-2">✅ Упоминание в сделках как проверенного партнёра</li>
+            </ul>
+        </div>
+    </div>
+    <div class="col-lg-6" data-reveal>
+        <div class="card h-100">
+            <h4><i class="fas fa-clipboard-list" style="color:var(--warning);"></i> Требования</h4>
+            <ul class="mt-3" style="list-style:none;padding:0;">
+                <li class="mb-2">🔹 Не менее 5 успешных сделок</li>
+                <li class="mb-2">🔹 Положительный рейтинг (не ниже 4.5)</li>
+                <li class="mb-2">🔹 Отсутствие открытых споров</li>
+                <li class="mb-2">🔹 Решение принимается CEO в индивидуальном порядке</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4" data-reveal id="applySection">
+    <h4><i class="fas fa-paper-plane" style="color:var(--accent);"></i> Подать заявку</h4>
+    {% if is_verified %}
+    <div class="alert alert-success mt-3" style="background:rgba(22,163,74,0.1);border:1px solid rgba(22,163,74,0.2);border-radius:12px;padding:16px;">
+        <i class="fas fa-check-circle" style="color:var(--success);"></i> Вы верифицированы{% if verified_reason %}: {{ verified_reason }}{% endif %}
+    </div>
+    {% else %}
+    <p class="text-cyan-300/70 mt-2">Опишите, почему вы хотите получить статус верифицированного партнёра. CEO рассмотрит вашу заявку в течение 24 часов.</p>
+    <div class="mt-3">
+        <textarea id="verifMessage" class="form-control" rows="4" placeholder="Расскажите о себе, вашем опыте и причинах запроса верификации..."></textarea>
+        <button class="btn btn-primary mt-3" onclick="submitVerifRequest()">
+            <i class="fas fa-paper-plane"></i> Отправить заявку
+        </button>
+        <div id="verifStatus" class="mt-2"></div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function submitVerifRequest() {
+    const msg = document.getElementById('verifMessage').value.trim();
+    if (!msg) { document.getElementById('verifStatus').innerHTML = '<span style="color:var(--danger);">Заполните описание</span>'; return; }
+    const btn = document.querySelector('#applySection button');
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
+    const form = new FormData();
+    form.append('message', msg);
+    const r = await fetch('/usersite/api/verification/apply/', {method:'POST', body:form, headers:{'X-CSRFToken': getCSRFToken()}}).then(res => res.json());
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i> Отправить заявку';
+    if (r.success) {
+        document.getElementById('verifStatus').innerHTML = '<span style="color:var(--success);">✅ Заявка отправлена! CEO рассмотрит её в ближайшее время.</span>';
+        document.getElementById('verifMessage').value = '';
+    } else {
+        document.getElementById('verifStatus').innerHTML = '<span style="color:var(--danger);">❌ ' + (r.error || 'Ошибка') + '</span>';
+    }
+}
+function getCSRFToken() {
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : '';
+}
+</script>
+{% endblock %}

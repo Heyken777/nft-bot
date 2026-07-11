@@ -19,7 +19,9 @@
                 <div class="avatar-overlay"><i class="fi fi-rr-camera"></i></div>
             </div>
             <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar(this)">
-            <h3 class="mt-3 profile-username">{{ user.username|default:"Пользователь" }}</h3>
+            <h3 class="mt-3 profile-username">{{ user.username|default:"Пользователь" }}
+            {% if user.is_verified_partner %}<span class="verified-badge" title="Heyken Verified Partner — подтверждённый партнёр"><img src="/media/HEYKEN ICON.png" alt="Heyken" style="width:22px;height:22px;vertical-align:middle;margin-left:6px;border-radius:50%;"><span class="verified-tooltip">Heyken Verified</span></span>{% endif %}
+            </h3>
             {% if tier_active %}<span class="badge {% if tier == 'vip' %}badge-danger{% elif tier == 'platinum' %}badge-info{% else %}badge-success{% endif %}">{{ tier_badge }}</span>{% endif %}
             <div class="mt-3">
                 <div class="info-row">

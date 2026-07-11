@@ -464,6 +464,34 @@ def _ensure_avatar_column():
         conn.commit()
     conn.close()
 
+def _ensure_verification_columns():
+    conn = get_db()
+    cur = conn.cursor()
+    for col, col_type in [('is_verified_partner', 'INTEGER DEFAULT 0'), ('verified_at', 'TIMESTAMP'), ('verified_by', 'INTEGER'), ('verified_reason', 'TEXT')]:
+        try:
+            cur.execute(f"SELECT {col} FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
+    try:
+        cur.execute("SELECT id FROM verification_history LIMIT 1")
+    except sqlite3.OperationalError:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS verification_history (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                action      TEXT NOT NULL,
+                reason      TEXT,
+                admin_id    INTEGER NOT NULL,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_verification_history_user
+            ON verification_history(user_id, created_at DESC)
+        """)
+    conn.commit()
+    conn.close()
+
 def _avatar_url(user_id):
     return f'/usersite/avatar/{user_id}/'
 CURRENCY_SYMBOLS = {'RUB': '₽', 'USD': '$', 'EUR': '€', 'BYN': 'Br', 'UAH': '₴', 'KZT': '₸', 'UZS': "so'm", 'TON': 'TON', 'USDT': 'USDT', 'STARS': '★'}
@@ -2062,6 +2090,59 @@ def api_exchange_cancel(request):
     conn.commit()
     conn.close()
     return JsonResponse({'success': True})
+
+
+def verification_view(request):
+    _ensure_verification_columns()
+    ctx = {}
+    if check_auth(request):
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            user_id = request.session.get('user_id')
+            cur.execute("SELECT is_verified_partner, verified_reason, verified_at FROM users WHERE user_id=?", (user_id,))
+            row = cur.fetchone()
+            if row:
+                ctx['is_verified'] = row[0]
+                ctx['verified_reason'] = row[1]
+                ctx['verified_at_dt'] = row[2]
+        finally:
+            conn.close()
+    return render(request, 'usersite/verification.html', ctx)
+
+
+@csrf_exempt
+def verification_apply_api(request):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Not logged in'}, status=401)
+    user_id = request.session.get('user_id')
+    message = request.POST.get('message', '')
+    if not message:
+        return JsonResponse({'success': False, 'error': 'Опишите причину заявки'})
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT is_verified_partner FROM users WHERE user_id=?", (user_id,))
+        row = cur.fetchone()
+        if row and row[0]:
+            return JsonResponse({'success': False, 'error': 'Вы уже верифицированы'})
+        cur.execute("SELECT username FROM users WHERE user_id=?", (user_id,))
+        row = cur.fetchone()
+        username = row[0] if row else str(user_id)
+        cur.execute(
+            "INSERT INTO support_tickets (user_id, subject, category, user_type) VALUES (?,?,?,?)",
+            (user_id, 'Heyken Verification Request', 'verification', 'buyer')
+        )
+        ticket_id = cur.lastrowid
+        cur.execute(
+            "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_name, message) VALUES (?,'user',?,?)",
+            (ticket_id, username, f"Заявка на верификацию Heyken\n\n{message}")
+        )
+        cur.execute("UPDATE support_tickets SET assigned_to=? WHERE id=?", (str(OWNER_TELEGRAM_ID), ticket_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return JsonResponse({'success': True, 'ticket_id': ticket_id})
 
 
 def terms_view(request):

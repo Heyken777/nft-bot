@@ -51,6 +51,9 @@ urlpatterns = [
     path('api/users/search/', views.api_search_users, name='api_search_users'),
     path('api/users/<int:telegram_id>/delete-avatar/', views.api_delete_user_avatar),
     path('api/users/export/', views.api_export_users),
+    path('api/users/<int:telegram_id>/grant-verification/', views.api_grant_verification),
+    path('api/users/<int:telegram_id>/revoke-verification/', views.api_revoke_verification),
+    path('api/users/<int:telegram_id>/verification-history/', views.verification_history_view),
     
     # API: Сделки
     path('api/deals/search/', views.api_search_deals, name='api_search_deals'),
@@ -112,6 +115,9 @@ urlpatterns = [
     # Ledger
     path('analytics/', views.analytics_view, name='analytics'),
     path('ledger/', views.ledger_view, name='ledger'),
+
+    # Верификация Heyken
+    path('verification/', views.verification_list_view, name='verification_list'),
 
     # Статус сервиса (публичный)
     path('status/', usersite_views.status_view, name='status'),

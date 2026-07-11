@@ -529,6 +529,9 @@ code {
     <div class="sidebar">
         <h2>NovixGift</h2>
         <div class="sidebar-version">✦ ESCROW PANEL v1.0 ✦</div>
+        <div class="sidebar-search" style="padding:0 16px 12px;">
+            <input id="navSearch" type="text" placeholder="🔍 Поиск вкладок..." style="width:100%;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);color:#e8ecf4;font-size:13px;outline:none;transition:border-color 0.2s;" oninput="filterNav(this.value)" onfocus="this.style.borderColor='rgba(99,102,241,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.08)'">
+        </div>
         <div class="sidebar-user">
             <div class="avatar">{{ user_name|default:"A"|first }}</div>
             <div class="info">
@@ -581,6 +584,9 @@ code {
         <a href="/ledger/" class="{% if active_page == 'ledger' %}active{% endif %}">
             <i class="fas fa-book"></i> Ledger
         </a>
+        <a href="/verification/" class="{% if active_page == 'verification' %}active{% endif %}">
+            <i class="fas fa-check-circle"></i> Верификация
+        </a>
         <a href="/admins/" class="{% if active_page == 'admins' %}active{% endif %}">
             <i class="fas fa-user-shield"></i> Администраторы
         </a>
@@ -628,7 +634,44 @@ code {
         }
         
         generateStars();
-        
+
+        function filterNav(val) {
+            const q = val.toLowerCase().trim();
+            const links = document.querySelectorAll('.sidebar a');
+            let anyVisible = false;
+            links.forEach(a => {
+                const text = a.textContent.toLowerCase().trim();
+                if (!q || text.includes(q)) {
+                    a.style.display = '';
+                    anyVisible = true;
+                } else {
+                    a.style.display = 'none';
+                }
+            });
+            const searchBox = document.getElementById('navSearch');
+            if (!anyVisible && q) {
+                let hint = searchBox.nextElementSibling;
+                if (!hint || !hint.classList.contains('nav-search-empty')) {
+                    hint = document.createElement('div');
+                    hint.className = 'nav-search-empty';
+                    hint.style.cssText = 'padding:20px 16px;text-align:center;color:rgba(255,255,255,0.25);font-size:13px;';
+                    searchBox.parentNode.appendChild(hint);
+                }
+                hint.textContent = '❌ Ничего не найдено';
+            } else {
+                const hint = searchBox.parentNode.querySelector('.nav-search-empty');
+                if (hint) hint.remove();
+            }
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                const inp = document.getElementById('navSearch');
+                if (inp) inp.focus();
+            }
+        });
+
         const ADMIN_NAME = '{{ admin_name|default:"Admin" }}';
     </script>
     {% block extra_js %}{% endblock %}

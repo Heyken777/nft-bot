@@ -489,6 +489,14 @@
         .badge-warning { background: rgba(245,158,11,0.1); color: var(--warning); border: 1px solid rgba(245,158,11,0.15); }
         .badge-danger { background: rgba(220,38,38,0.1); color: var(--danger); border: 1px solid rgba(220,38,38,0.15); }
         .badge-info { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--border-color); }
+        .verified-badge { position:relative; display:inline-flex; align-items:center; cursor:help; }
+        .verified-badge .verified-tooltip {
+            position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%);
+            background:#1E293B; color:#F8FAFC; font-size:0.7rem; padding:4px 8px; border-radius:6px;
+            white-space:nowrap; pointer-events:none; opacity:0; transition:opacity 0.2s;
+            border:1px solid rgba(255,255,255,0.1); z-index:100;
+        }
+        .verified-badge:hover .verified-tooltip { opacity:1; }
 
         .stat-value { font-size: 26px; font-weight: 700; color: var(--accent); }
         .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
@@ -811,6 +819,7 @@
                 <a href="/usersite/profile/" class="glass-nav__link" data-page="profile">Профиль</a>
                 <a href="/usersite/top/" class="glass-nav__link" data-page="top">Топ</a>
                 <a href="/usersite/partnership/my/" class="glass-nav__link" data-page="partnership">Сотрудничество</a>
+                <a href="/usersite/verification/" class="glass-nav__link" data-page="verification">Верификация</a>
                 <a href="/usersite/tickets/" class="glass-nav__link" data-page="tickets">Поддержка</a>
             </div>
             <div class="glass-nav__actions">
@@ -854,6 +863,7 @@
             <a href="/usersite/reviews/" class="slide-link" data-page="reviews"><i class="fi fi-rr-star"></i> Отзывы</a>
             <a href="/usersite/withdraw/" class="slide-link" data-page="withdraw"><i class="fi fi-rr-coins"></i> Вывод</a>
             <a href="/usersite/partnership/my/" class="slide-link" data-page="partnership"><i class="fi fi-rr-handshake"></i> Сотрудничество</a>
+            <a href="/usersite/verification/" class="slide-link" data-page="verification"><i class="fi fi-rr-badge-check"></i> Верификация</a>
             <a href="/usersite/tickets/" class="slide-link" data-page="tickets"><i class="fi fi-rr-headset"></i> Поддержка</a>
             <hr>
             <a href="/usersite/logout/" class="slide-link"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a>

@@ -1,3 +1,4 @@
+import os
 from decimal import Decimal
 import logging
 import sqlite3
@@ -6,7 +7,7 @@ from currency_api import currency_api as _ca
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = 'novixgift.db'
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'novixgift.db')
 
 
 def get_user_gmv_rub_30d(user_id: int) -> Decimal:
