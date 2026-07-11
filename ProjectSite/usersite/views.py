@@ -2222,6 +2222,9 @@ def deal_detail_view(request, deal_id):
         'messages': messages,
         'user_id': user_id,
         'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot'),
+        'counter_offers': deal_dict.get('counter_offers') or 0,
+        'proposed_amount': deal_dict.get('proposed_amount'),
+        'proposed_by': deal_dict.get('proposed_by'),
     })
 
 
@@ -2312,6 +2315,42 @@ def api_deal_confirm_receipt(request, deal_id):
         return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
     user_id = request.session.get('user_id')
     result = _call_bot_internal('/api/confirm_receipt', user_id, {'deal_id': deal_id})
+    return JsonResponse(result)
+
+
+@require_http_methods(["POST"])
+def api_deal_propose_amount(request, deal_id):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
+    user_id = request.session.get('user_id')
+    try:
+        data = json.loads(request.body)
+        proposed = float(data.get('amount', 0))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return JsonResponse({'success': False, 'error': 'Некорректная сумма'}, status_code=400)
+    if proposed <= 0:
+        return JsonResponse({'success': False, 'error': 'Сумма должна быть больше 0'}, status_code=400)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM deals WHERE id=?", (deal_id,))
+    deal = cur.fetchone()
+    if not deal:
+        conn.close()
+        return JsonResponse({'success': False, 'error': 'Сделка не найдена'}, status_code=404)
+    deal_dict = dict(deal)
+    conn.close()
+    if deal_dict['status'] != 'awaiting':
+        return JsonResponse({'success': False, 'error': 'Сделка уже оплачена или закрыта'})
+    if deal_dict['seller'] == user_id:
+        return JsonResponse({'success': False, 'error': 'Вы не можете предлагать сумму в своей сделке'})
+    if deal_dict.get('buyer') and deal_dict['buyer'] != user_id:
+        return JsonResponse({'success': False, 'error': 'Сделка закреплена за другим покупателем'})
+    if (deal_dict.get('counter_offers') or 0) >= 3:
+        return JsonResponse({'success': False, 'error': 'Лимит предложений (3) исчерпан'})
+    result = _call_bot_internal('/api/internal/propose-amount', user_id, {
+        'deal_id': deal_id,
+        'proposed_amount': proposed,
+    })
     return JsonResponse(result)
 
 

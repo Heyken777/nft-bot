@@ -103,6 +103,29 @@
             </div>
             {% endif %}
 
+            {% if deal.status == 'awaiting' and is_buyer %}
+            <div class="mt-3" id="counterOfferSection">
+                {% if proposed_amount and proposed_by == user_id %}
+                <div class="text-sm mb-2" style="color:var(--text-muted);">
+                    💬 Ваше предложение: <strong>{{ proposed_amount }} {{ deal.currency }}</strong> ожидает ответа продавца
+                </div>
+                {% elif counter_offers >= 3 %}
+                <div class="text-sm text-muted">Лимит предложений (3) исчерпан</div>
+                {% else %}
+                <button class="btn btn-outline w-100" onclick="showProposeForm()" id="btnPropose">
+                    <i class="fi fi-rr-hand-holding-usd"></i> Предложить свою сумму
+                </button>
+                <div id="proposeForm" style="display:none;margin-top:8px;">
+                    <div style="display:flex;gap:8px;">
+                        <input type="number" step="0.01" min="1" id="proposeAmount" placeholder="Новая сумма" style="flex:1;padding:10px 12px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-size:14px;">
+                        <button class="btn btn-primary" onclick="submitProposal({{ deal.id }})" style="white-space:nowrap;">Отправить</button>
+                    </div>
+                    <div class="text-xs text-muted mt-1">Предложений: {{ counter_offers }}/3</div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <div class="mt-3">
                 <a href="/usersite/profile/" class="btn btn-outline w-100"><i class="fi fi-rr-arrow-left"></i> Назад</a>
             </div>
@@ -224,5 +247,30 @@ function refreshChat() {
 
 var chatAutoRefresh = setInterval(refreshChat, 10000);
 chatBox.scrollTop = chatBox.scrollHeight;
+
+// Counter-offer
+function showProposeForm() {
+    document.getElementById('btnPropose').style.display = 'none';
+    document.getElementById('proposeForm').style.display = 'block';
+    document.getElementById('proposeAmount').focus();
+}
+function submitProposal(dealId) {
+    var amt = document.getElementById('proposeAmount').value;
+    if (!amt || parseFloat(amt) <= 0) { showToast('Введите корректную сумму', 'error'); return; }
+    var btn = document.getElementById('proposeForm').querySelector('button');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    fetch('/usersite/api/deal/' + dealId + '/propose-amount/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({amount: parseFloat(amt)})
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        btn.disabled = false; btn.innerHTML = 'Отправить';
+        if (d.success) { showToast('✅ Предложение отправлено продавцу'); setTimeout(function() { location.reload(); }, 1000); }
+        else { showToast('❌ ' + (d.error || 'Ошибка'), 'error'); }
+    }).catch(function() {
+        btn.disabled = false; btn.innerHTML = 'Отправить';
+        showToast('❌ Ошибка соединения', 'error');
+    });
+}
 </script>
 {% endblock %}

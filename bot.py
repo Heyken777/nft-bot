@@ -532,6 +532,10 @@ class Database:
         self.add_column_if_not_exists("deals", "disputed_at", "TIMESTAMP")  # CHANGED: время перевода в спор
         self.add_column_if_not_exists("deals", "updated_at", "TIMESTAMP")  # время последнего изменения статуса
         self.add_column_if_not_exists("deals", "escalated_ticket_id", "INTEGER")  # ID тикета при автоэскалации
+        self.add_column_if_not_exists("deals", "proposed_amount", "REAL")
+        self.add_column_if_not_exists("deals", "proposed_by", "INTEGER")
+        self.add_column_if_not_exists("deals", "proposed_at", "TIMESTAMP")
+        self.add_column_if_not_exists("deals", "counter_offers", "INTEGER DEFAULT 0")
         
         # Таблица сообщений по сделкам
         self.cursor.execute("""
@@ -1160,6 +1164,30 @@ class Database:
             (deal_id,)
         )
         return [dict(row) for row in self.cursor.fetchall()]
+
+    def propose_amount(self, deal_id: int, proposed_by: int, amount: float) -> bool:
+        self.cursor.execute(
+            "UPDATE deals SET proposed_amount=?, proposed_by=?, proposed_at=CURRENT_TIMESTAMP, counter_offers=COALESCE(counter_offers,0)+1 WHERE id=? AND status='awaiting' AND counter_offers < 3",
+            (amount, proposed_by, deal_id)
+        )
+        self.conn.commit()
+        return self.cursor.rowcount > 0
+
+    def accept_counter_offer(self, deal_id: int) -> bool:
+        self.cursor.execute(
+            "UPDATE deals SET amount=proposed_amount, proposed_amount=NULL, proposed_by=NULL, proposed_at=NULL WHERE id=? AND proposed_amount IS NOT NULL",
+            (deal_id,)
+        )
+        self.conn.commit()
+        return self.cursor.rowcount > 0
+
+    def reject_counter_offer(self, deal_id: int) -> bool:
+        self.cursor.execute(
+            "UPDATE deals SET proposed_amount=NULL, proposed_by=NULL, proposed_at=NULL WHERE id=?",
+            (deal_id,)
+        )
+        self.conn.commit()
+        return self.cursor.rowcount > 0
 
     def create_deal(self, seller, item, amount, commission, currency="RUB", payment_method="internal", payment_comment=None, payment_address=None, payment_amount=None):
         allowed = ['RUB', 'BYN', 'UAH', 'KZT', 'UZS', 'EUR', 'USD', 'TON', 'USDT', 'STARS']
@@ -4100,6 +4128,65 @@ async def receive_cb(call: CallbackQuery):
     # Предложение оценить партнёра после завершения сделки
     await send_rating_prompt(seller_id, did, deal["buyer"])
     await send_rating_prompt(call.from_user.id, did, seller_id)
+
+
+# ========== КОНТР-ПРЕДЛОЖЕНИЯ ==========
+
+@dp.callback_query(lambda c: c.data.startswith("caccept_"))
+async def counter_accept_cb(call: CallbackQuery):
+    did = int(call.data[8:])
+    async with deal_lock:
+        deal = db.get_deal(did)
+        if not deal or deal['status'] != 'awaiting':
+            await call.answer("❌ Сделка уже оплачена или закрыта", show_alert=True)
+            return
+        if deal['seller'] != call.from_user.id:
+            await call.answer("❌ Только продавец может принять предложение", show_alert=True)
+            return
+        if not deal.get('proposed_amount'):
+            await call.answer("❌ Нет активного предложения", show_alert=True)
+            return
+        new_amount = float(deal['proposed_amount'])
+        buyer_id = deal['proposed_by']
+        db.accept_counter_offer(did)
+    await call.answer("✅ Предложение принято!", show_alert=True)
+    await call.message.edit_text(
+        f"✅ *Предложение принято!*\n"
+        f"Сумма сделки #{deal['display_id']} изменена на {fmt_num(new_amount)} {deal['currency']}",
+        parse_mode="Markdown"
+    )
+    await notify_user(buyer_id,
+        f"✅ *Продавец принял ваше предложение!*\n\n"
+        f"Сделка #{deal['display_id']}: новая сумма {fmt_num(new_amount)} {deal['currency']}\n"
+        f"Можете перейти к оплате."
+    )
+
+
+@dp.callback_query(lambda c: c.data.startswith("creject_"))
+async def counter_reject_cb(call: CallbackQuery):
+    did = int(call.data[8:])
+    async with deal_lock:
+        deal = db.get_deal(did)
+        if not deal or deal['status'] != 'awaiting':
+            await call.answer("❌ Сделка уже оплачена или закрыта", show_alert=True)
+            return
+        if deal['seller'] != call.from_user.id:
+            await call.answer("❌ Только продавец может отклонить предложение", show_alert=True)
+            return
+        if not deal.get('proposed_amount'):
+            await call.answer("❌ Нет активного предложения", show_alert=True)
+            return
+        buyer_id = deal['proposed_by']
+        db.reject_counter_offer(did)
+    await call.answer("❌ Предложение отклонено", show_alert=True)
+    await call.message.edit_text(
+        f"❌ *Предложение отклонено*\nСделка #{deal['display_id']} — сумма не изменилась.",
+        parse_mode="Markdown"
+    )
+    await notify_user(buyer_id,
+        f"❌ *Продавец отклонил ваше предложение*\n\n"
+        f"Сделка #{deal['display_id']} — сумма осталась {fmt_num(float(deal['amount']))} {deal['currency']}."
+    )
 
 
 # ========== РЕЙТИНГ И ОТЗЫВЫ ==========
@@ -7415,6 +7502,49 @@ async def handle_internal_deal_messages(request):
     return JSONResponse(content={'success': True, 'messages': msgs})
 
 
+async def handle_internal_propose_amount(request):
+    """Получает запрос на контр-предложение от Django, отправляет уведомление продавцу."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'success': False, 'error': 'Invalid JSON'}, status_code=400)
+    deal_id = data.get('deal_id')
+    user_id = data.get('user_id')
+    proposed_amount = data.get('proposed_amount')
+    if not all([deal_id, user_id, proposed_amount]):
+        return JSONResponse(content={'success': False, 'error': 'Missing fields'}, status_code=400)
+    async with deal_lock:
+        deal = db.get_deal(deal_id)
+        if not deal or deal['status'] != 'awaiting':
+            return JSONResponse(content={'success': False, 'error': 'Сделка недоступна для предложений'})
+        if deal['seller'] == user_id:
+            return JSONResponse(content={'success': False, 'error': 'Вы не можете предлагать сумму в своей сделке'})
+        if deal.get('buyer') and deal['buyer'] != user_id:
+            return JSONResponse(content={'success': False, 'error': 'Сделка закреплена за другим покупателем'})
+        ok = db.propose_amount(deal_id, user_id, proposed_amount)
+        if not ok:
+            c = deal.get('counter_offers') or 0
+            if c >= 3:
+                return JSONResponse(content={'success': False, 'error': 'Лимит предложений (3) исчерпан'})
+            return JSONResponse(content={'success': False, 'error': 'Не удалось отправить предложение'})
+        deal = db.get_deal(deal_id)
+    cur_count = deal.get('counter_offers') or 0
+    asyncio.create_task(notify_user(
+        deal['seller'],
+        f"💬 *Новое предложение цены* для сделки #{deal['display_id']}\n\n"
+        f"🎁 {escape_md(deal['item'])}\n"
+        f"💰 Было: {fmt_num(float(deal['amount']))} {deal['currency']}\n"
+        f"💰 Предложено: {fmt_num(proposed_amount)} {deal['currency']}\n"
+        f"📊 Предложений: {cur_count}/3\n\n"
+        f"*Только в приложении:* перейдите в профиль → сделка → принять/отклонить",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Принять", callback_data=f"caccept_{deal_id}"),
+             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"creject_{deal_id}")]
+        ])
+    ))
+    return JSONResponse(content={'success': True, 'counter_offers': cur_count})
+
+
 # ========== WebSocket Connections (real-time notifications) ==========
 
 ws_connections: dict[int, list] = {}
@@ -7491,6 +7621,7 @@ fastapi_app.add_api_route("/api/internal/notify-new-login", handle_internal_noti
 fastapi_app.add_api_route("/api/internal/2fa-request", handle_internal_2fa_request, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/user-fee-rate", handle_internal_user_fee_rate, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/deal-messages", handle_internal_deal_messages, methods=["POST"])
+fastapi_app.add_api_route("/api/internal/propose-amount", handle_internal_propose_amount, methods=["POST"])
 
 # WebSocket endpoint for real-time notifications
 async def ws_notify_user(user_id: int, message: dict):

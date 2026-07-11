@@ -60,6 +60,7 @@ urlpatterns = [
     path('api/deal/<int:deal_id>/pay/', views.api_deal_pay, name='api_deal_pay'),
     path('api/deal/<int:deal_id>/mark-sent/', views.api_deal_mark_sent, name='api_deal_mark_sent'),
     path('api/deal/<int:deal_id>/confirm-receipt/', views.api_deal_confirm_receipt, name='api_deal_confirm_receipt'),
+    path('api/deal/<int:deal_id>/propose-amount/', views.api_deal_propose_amount, name='api_deal_propose_amount'),
 
     # Витрина сделок
     path('marketplace/', views.marketplace_view, name='marketplace'),
