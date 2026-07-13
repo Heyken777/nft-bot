@@ -18,7 +18,7 @@
 .deal-info .info-item .info-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; }
 .deal-info .info-item .info-value { font-size:15px; font-weight:600; margin-top:4px; color:var(--text-primary); }
 
-.chat-box { max-height:400px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:12px; background:var(--bg-secondary); border-radius:var(--radius-sm); margin-bottom:12px; }
+.chat-box { max-height:600px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:12px; background:var(--bg-secondary); border-radius:var(--radius-sm); margin-bottom:12px; }
 .chat-msg { max-width:85%; padding:10px 14px; border-radius:var(--radius-sm); font-size:14px; line-height:1.4; word-break:break-word; }
 .chat-msg.mine { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
 .chat-msg.theirs { align-self:flex-start; background:var(--bg-primary); color:var(--text-primary); border-bottom-left-radius:4px; border:1px solid var(--border-color); }
@@ -63,11 +63,11 @@
             <div class="deal-info">
                 <div class="info-item">
                     <div class="info-label">Продавец</div>
-                    <div class="info-value">{{ seller_name }}{% if seller_verified %} <span class="verified-badge-inline" title="Heyken Verified Partner"><img src="/media/HEYKEN ICON.png" alt="✓" style="height:18px;width:18px;vertical-align:middle;border-radius:50%;"></span>{% endif %}</div>
+                    <div class="info-value">{{ seller_name }}{% if seller_verified %}<br><span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);margin-top:2px;"><img src="/media/HEYKEN ICON.png" alt="" style="height:12px;width:12px;border-radius:50%;"> Верифицирован организацией «Heyken»</span>{% endif %}</div>
                 </div>
                 <div class="info-item">
                     <div class="info-label">Покупатель</div>
-                    <div class="info-value">{{ buyer_name }}{% if buyer_verified %} <span class="verified-badge-inline" title="Heyken Verified Partner"><img src="/media/HEYKEN ICON.png" alt="✓" style="height:18px;width:18px;vertical-align:middle;border-radius:50%;"></span>{% endif %}</div>
+                    <div class="info-value">{{ buyer_name }}{% if buyer_verified %}<br><span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);margin-top:2px;"><img src="/media/HEYKEN ICON.png" alt="" style="height:12px;width:12px;border-radius:50%;"> Верифицирован организацией «Heyken»</span>{% endif %}</div>
                 </div>
                 <div class="info-item">
                     <div class="info-label">Сумма</div>

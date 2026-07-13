@@ -88,7 +88,7 @@
                 <span><i class="fi fi-rr-tag"></i> #{{ deal.deal_code|default:deal.id }}</span>
             </div>
             <div class="deal-seller">
-                <span class="seller-name"><i class="fi fi-rr-user"></i> {{ deal.seller_name }}{% if deal.seller_verified %} <span class="verified-badge-inline" title="Heyken Verified Partner"><img src="/media/HEYKEN ICON.png" alt="✓" style="height:18px;width:18px;vertical-align:middle;border-radius:50%;"></span>{% endif %}</span>
+                <span class="seller-name"><i class="fi fi-rr-user"></i> {{ deal.seller_name }}{% if deal.seller_verified %} <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--text-muted);margin-left:4px;"><img src="/media/HEYKEN ICON.png" alt="" style="height:10px;width:10px;border-radius:50%;"> Верифицирован</span>{% endif %}</span>
                 <span class="seller-rating">
                     <span class="stars">{% if deal.seller_rating >= 4.5 %}★★★★★{% elif deal.seller_rating >= 3.5 %}★★★★{% elif deal.seller_rating >= 2.5 %}★★★{% elif deal.seller_rating >= 1.5 %}★★{% else %}★{% endif %}</span>
                     {{ deal.seller_rating|floatformat:1 }} ({{ deal.seller_reviews_count }})
