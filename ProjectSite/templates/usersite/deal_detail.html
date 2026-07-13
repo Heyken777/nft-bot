@@ -63,11 +63,11 @@
             <div class="deal-info">
                 <div class="info-item">
                     <div class="info-label">Продавец</div>
-                    <div class="info-value">{{ deal.seller }}</div>
+                    <div class="info-value">{{ deal.seller }}{% if seller_verified %} <span class="verified-badge-inline" title="Heyken Verified Partner"><img src="/media/HEYKEN ICON.png" alt="✓" style="height:14px;width:14px;vertical-align:middle;border-radius:50%;"></span>{% endif %}</div>
                 </div>
                 <div class="info-item">
                     <div class="info-label">Покупатель</div>
-                    <div class="info-value">{{ deal.buyer|default:'—' }}</div>
+                    <div class="info-value">{{ deal.buyer|default:'—' }}{% if buyer_verified %} <span class="verified-badge-inline" title="Heyken Verified Partner"><img src="/media/HEYKEN ICON.png" alt="✓" style="height:14px;width:14px;vertical-align:middle;border-radius:50%;"></span>{% endif %}</div>
                 </div>
                 <div class="info-item">
                     <div class="info-label">Сумма</div>

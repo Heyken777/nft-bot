@@ -44,8 +44,8 @@
                     <td>{{ d.item|truncatechars:30 }}</td>
                     <td>{{ d.amount|floatformat:2 }}</td>
                     <td>{{ d.currency }}</td>
-                    <td><a href="/users/{{ d.seller }}/">{{ d.seller }}</a></td>
-                    <td><a href="/users/{{ d.buyer }}/">{{ d.buyer }}</a></td>
+                    <td><a href="/users/{{ d.seller }}/">{{ d.seller_name|default:d.seller }}{% if d.seller_vp %} <img src="/media/HEYKEN ICON.png" alt="✓" style="height:12px;width:12px;vertical-align:middle;border-radius:50%;">{% endif %}</a></td>
+                    <td><a href="/users/{{ d.buyer }}/">{{ d.buyer_name|default:d.buyer }}{% if d.buyer_vp %} <img src="/media/HEYKEN ICON.png" alt="✓" style="height:12px;width:12px;vertical-align:middle;border-radius:50%;">{% endif %}</a></td>
                     <td>
                         <span class="badge-{{ d.status }}" style="
                             {% if d.status == 'completed' %}background:rgba(0,255,100,.15);color:#00ff66;

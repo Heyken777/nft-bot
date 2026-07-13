@@ -2390,6 +2390,14 @@ def deal_detail_view(request, deal_id):
     is_buyer = deal_dict['buyer'] == user_id
     is_seller = deal_dict['seller'] == user_id
     status = deal_dict['status']
+    cur.execute("SELECT is_verified_partner FROM users WHERE user_id=?", (deal_dict['seller'],))
+    row = cur.fetchone()
+    seller_verified = bool(row and row[0])
+    buyer_verified = False
+    if deal_dict.get('buyer'):
+        cur.execute("SELECT is_verified_partner FROM users WHERE user_id=?", (deal_dict['buyer'],))
+        row2 = cur.fetchone()
+        buyer_verified = bool(row2 and row2[0])
 
     available_actions = []
     if is_buyer and status == 'awaiting':
@@ -2410,6 +2418,8 @@ def deal_detail_view(request, deal_id):
         'available_actions': available_actions,
         'messages': messages,
         'user_id': user_id,
+        'seller_verified': seller_verified,
+        'buyer_verified': buyer_verified,
         'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot'),
         'counter_offers': deal_dict.get('counter_offers') or 0,
         'proposed_amount': deal_dict.get('proposed_amount'),
@@ -2672,7 +2682,7 @@ def marketplace_view(request):
 
     count_sql = f"SELECT COUNT(*) FROM deals d WHERE {where}"
     deals_sql = (
-        f"SELECT d.*, u.username, "
+        f"SELECT d.*, u.username, u.is_verified_partner, "
         f"(SELECT COALESCE(AVG(rating), 0) FROM reviews WHERE reviewed_id=d.seller) as seller_rating, "
         f"(SELECT COUNT(*) FROM reviews WHERE reviewed_id=d.seller) as seller_reviews_count "
         f"FROM deals d LEFT JOIN users u ON u.user_id=d.seller "
@@ -2697,6 +2707,7 @@ def marketplace_view(request):
         if min_rating is not None and d['seller_rating'] < min_rating:
             continue
         d['seller_name'] = d.get('username') or f"ID{d['seller']}"
+        d['seller_verified'] = bool(d.get('is_verified_partner'))
         d['symbol'] = CURRENCY_SYMBOLS_MAP.get(d['currency'], d['currency'])
         deals.append(d)
 

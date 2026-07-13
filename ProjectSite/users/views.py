@@ -697,7 +697,7 @@ def deals_list_view(request):
             conditions.append("status=?")
             params.append(status_filter)
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
-        cur.execute(f"SELECT * FROM deals {where} ORDER BY created DESC LIMIT ? OFFSET ?", params + [per_page, offset])
+        cur.execute(f"SELECT d.*, us.username as seller_name, us.is_verified_partner as seller_vp, ub.username as buyer_name, ub.is_verified_partner as buyer_vp FROM deals d LEFT JOIN users us ON us.user_id=d.seller LEFT JOIN users ub ON ub.user_id=d.buyer {where} ORDER BY d.created DESC LIMIT ? OFFSET ?", params + [per_page, offset])
         deals = cur.fetchall()
         cur.execute(f"SELECT COUNT(*) FROM deals {where}", params)
         total = cur.fetchone()[0] or 0
