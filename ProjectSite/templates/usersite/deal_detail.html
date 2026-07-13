@@ -18,12 +18,15 @@
 .deal-info .info-item .info-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; }
 .deal-info .info-item .info-value { font-size:15px; font-weight:600; margin-top:4px; color:var(--text-primary); }
 
-.chat-box { max-height:600px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:12px; background:var(--bg-secondary); border-radius:var(--radius-sm); margin-bottom:12px; }
+.deal-chat-card { display:flex; flex-direction:column; height:100%; }
+.chat-box { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:12px; background:var(--bg-secondary); border-radius:var(--radius-sm); margin-bottom:12px; min-height:300px; }
 .chat-msg { max-width:85%; padding:10px 14px; border-radius:var(--radius-sm); font-size:14px; line-height:1.4; word-break:break-word; }
 .chat-msg.mine { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
 .chat-msg.theirs { align-self:flex-start; background:var(--bg-primary); color:var(--text-primary); border-bottom-left-radius:4px; border:1px solid var(--border-color); }
 .chat-msg .meta { font-size:11px; opacity:.7; margin-top:4px; }
 .chat-msg .attachment-link { display:inline-flex; align-items:center; gap:4px; margin-top:6px; font-size:13px; color:inherit; opacity:.9; text-decoration:underline; }
+.emoji { vertical-align:middle; line-height:1; }
+@media (max-width:991px) { .deal-chat-card { min-height:400px; } }
 </style>
 {% endblock %}
 {% block content %}
@@ -33,9 +36,9 @@
     <span class="current">Сделка #{{ deal.deal_code|default:deal.id }}</span>
 </div>
 
-<div class="row g-4 justify-content-center">
+<div class="row g-4 justify-content-center align-items-stretch">
     <div class="col-lg-6" data-reveal>
-        <div class="card">
+        <div class="card h-100">
             <h3><i class="fi fi-rr-receipt"></i> Сделка #{{ deal.deal_code|default:deal.id }}</h3>
             <p class="text-muted small mb-4">{{ deal.item }}</p>
 
@@ -76,13 +79,13 @@
                 <div class="info-item">
                     <div class="info-label">Статус</div>
                     <div class="info-value">
-                        {% if deal.status == 'open' %}🌐 На витрине
-                        {% elif deal.status == 'awaiting' %}⏳ Ожидание оплаты
-                        {% elif deal.status == 'paid' %}💰 Оплачено
-                        {% elif deal.status == 'item_sent' %}📦 Товар передан
-                        {% elif deal.status == 'completed' %}✅ Завершено
-                        {% elif deal.status == 'cancelled' %}❌ Отменено
-                        {% elif deal.status == 'disputed' %}⚠️ Диспут
+                        {% if deal.status == 'open' %}<span class="emoji">🌐</span> На витрине
+                        {% elif deal.status == 'awaiting' %}<span class="emoji">⏳</span> Ожидание оплаты
+                        {% elif deal.status == 'paid' %}<span class="emoji">💰</span> Оплачено
+                        {% elif deal.status == 'item_sent' %}<span class="emoji">📦</span> Товар передан
+                        {% elif deal.status == 'completed' %}<span class="emoji">✅</span> Завершено
+                        {% elif deal.status == 'cancelled' %}<span class="emoji">❌</span> Отменено
+                        {% elif deal.status == 'disputed' %}<span class="emoji">⚠️</span> Диспут
                         {% else %}{{ deal.status }}
                         {% endif %}
                     </div>
@@ -133,7 +136,7 @@
     </div>
 
     <div class="col-lg-6" data-reveal>
-        <div class="card">
+        <div class="card deal-chat-card">
             <h4><i class="fi fi-rr-comment"></i> Чат сделки</h4>
             <div class="chat-box" id="chatBox">
                 {% for msg in messages %}
