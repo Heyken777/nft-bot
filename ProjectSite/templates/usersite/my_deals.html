@@ -1,0 +1,104 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% block title %}Мои сделки{% endblock %}
+{% block extra_css %}
+<style>
+.deal-row { display:flex; align-items:center; gap:16px; padding:14px 16px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:var(--radius-md); margin-bottom:8px; transition:all .2s ease; }
+.deal-row:hover { border-color:var(--accent); }
+.deal-row .deal-id { font-size:12px; color:var(--text-muted); min-width:50px; }
+.deal-row .deal-item { flex:1; font-weight:500; color:var(--text-primary); }
+.deal-row .deal-amount { font-weight:600; color:var(--accent); white-space:nowrap; }
+.deal-row .deal-role { font-size:12px; color:var(--text-muted); min-width:80px; }
+.deal-row .deal-status { min-width:110px; }
+.deal-row .deal-date { font-size:12px; color:var(--text-muted); min-width:70px; }
+.deal-row .deal-actions { min-width:40px; text-align:center; }
+.pagination-row { display:flex; justify-content:center; gap:6px; margin-top:20px; }
+.pagination-row a, .pagination-row span { padding:8px 14px; border-radius:var(--radius-sm); font-size:13px; border:1px solid var(--border-color); color:var(--text-primary); text-decoration:none; }
+.pagination-row a:hover { border-color:var(--accent); color:var(--accent); }
+.pagination-row .active { background:var(--accent); border-color:var(--accent); color:#fff; }
+.pagination-row .disabled { opacity:.4; pointer-events:none; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/profile/">Профиль</a>
+    <span class="separator">/</span>
+    <span class="current">Мои сделки</span>
+</div>
+
+<h3 style="margin-bottom:16px;"><i class="fi fi-rr-clipboard"></i> Мои сделки <span class="text-muted" style="font-size:14px;font-weight:400;">({{ total }})</span></h3>
+
+{% if deals %}
+    {% for d in deals %}
+    <div class="deal-row" onclick="window.location.href='/usersite/deal/{{ d.id }}/'" style="cursor:pointer;">
+        <span class="deal-id">#{{ d.deal_code|default:d.id }}</span>
+        <span class="deal-item">{{ d.item|truncatechars:30 }}</span>
+        <span class="deal-amount">{{ d.amount|floatformat:-2 }} {{ d.currency }}</span>
+        <span class="deal-role">{% if d.buyer == request.session.user_id %}Покупатель{% else %}Продавец{% endif %}</span>
+        <span class="deal-status">
+            <span class="badge {% if d.status == 'completed' %}badge-success{% elif d.status == 'open' %}badge-info{% elif d.status == 'awaiting' %}badge-warning{% elif d.status == 'cancelled' or d.status == 'disputed' %}badge-danger{% elif d.status == 'paid' %}badge-warning{% elif d.status == 'item_sent' %}badge-info{% endif %}">
+                {% if d.status == 'completed' %}Завершено{% elif d.status == 'open' %}На витрине{% elif d.status == 'awaiting' %}Ожидание{% elif d.status == 'cancelled' %}Отменено{% elif d.status == 'disputed' %}В споре{% elif d.status == 'paid' %}Оплачено{% elif d.status == 'item_sent' %}Товар отправлен{% else %}{{ d.status }}{% endif %}
+            </span>
+        </span>
+        <span class="deal-date">{{ d.created|date:"d.m" }}</span>
+        <span class="deal-actions">
+            {% if d.seller == request.session.user_id %}
+            <button class="btn btn-sm btn-danger" style="padding:4px 10px;font-size:11px;" onclick="event.stopPropagation();deleteDeal({{ d.id }}, this)" title="Удалить"><i class="fi fi-rr-trash"></i></button>
+            {% endif %}
+        </span>
+    </div>
+    {% endfor %}
+
+    {% if total_pages > 1 %}
+    <div class="pagination-row">
+        {% if page > 1 %}
+        <a href="?page={{ page|add:'-1' }}">← Назад</a>
+        {% endif %}
+        {% for p in page_range|default:'' %}
+        {% endfor %}
+        <span>{{ page }}/{{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a href="?page={{ page|add:'1' }}">Вперёд →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+{% else %}
+<div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+    <i class="fi fi-rr-box-open" style="font-size:48px;display:block;margin-bottom:16px;opacity:0.3;"></i>
+    <h4>Нет сделок</h4>
+    <p class="small">Вы ещё не участвовали ни в одной сделке.</p>
+    <a href="{% url 'marketplace' %}" class="btn btn-primary mt-3"><i class="fi fi-rr-shop"></i> Перейти на витрину</a>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block extra_js %}
+<script>
+var csrf = '{{ csrf_token }}';
+function deleteDeal(dealId, btn) {
+    showConfirmModal('Удалить сделку #' + dealId + '? Это действие необратимо.', function() {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;"></span>';
+        fetch('/usersite/api/deal/' + dealId + '/delete/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.success) {
+                showToast(d.message);
+                var row = btn.closest('.deal-row');
+                if (row) row.style.opacity = '0';
+                setTimeout(function() { if (row) row.remove(); }, 300);
+            } else {
+                showToast(d.error, 'error');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fi fi-rr-trash"></i>';
+            }
+        }).catch(function() {
+            showToast('Ошибка соединения', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fi fi-rr-trash"></i>';
+        });
+    });
+}
+</script>
+{% endblock %}

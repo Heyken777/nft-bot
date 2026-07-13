@@ -107,6 +107,10 @@ urlpatterns = [
     # Сохранение платёжных реквизитов с 2FA
     path('api/save-payment-details/', views.api_save_payment_details, name='api_save_payment_details'),
 
+    # Мои сделки
+    path('deals/', views.my_deals_view, name='my_deals'),
+    path('api/deal/<int:deal_id>/delete/', views.api_delete_deal, name='api_delete_deal'),
+
     # API объёмного тарифа
     path('api/volume-tier/', views.api_user_fee_rate, name='api_volume_tier'),
 

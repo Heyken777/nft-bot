@@ -266,8 +266,8 @@ def admin_ticket_reply_api(request, ticket_id):
         row = cur.fetchone()
         if row:
             cur.execute(
-                "INSERT INTO notifications (user_id, title, message) VALUES (?, 'Новый ответ в тикете', ?)",
-                (row['user_id'], '🔔 В вашем тикете на сайте появился новый ответ от поддержки!')
+                "INSERT INTO usersite_notifications (user_id, type, title, body, link) VALUES (?, ?, ?, ?, ?)",
+                (row['user_id'], 'ticket_reply', 'Новый ответ в тикете', 'В вашем тикете появился новый ответ от поддержки', f'/usersite/tickets/{ticket_id}/')
             )
         conn.commit()
         conn.close()

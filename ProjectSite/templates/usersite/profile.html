@@ -191,7 +191,7 @@
 
         <!-- Последние сделки -->
         <div class="card mt-4" data-reveal>
-            <h4><i class="fas fa-handshake"></i> Последние сделки</h4>
+            <h4><i class="fas fa-handshake"></i> Последние сделки <a href="{% url 'my_deals' %}" style="font-size:12px;font-weight:400;color:var(--accent);text-decoration:none;margin-left:8px;">Все →</a></h4>
             <div class="table-responsive mt-3">
                 <table class="table-custom">
                     <thead>
@@ -211,7 +211,7 @@
                             <td>{{ d.item|truncatechars:20 }}</td>
                             <td>{{ d.amount }} {{ d.currency }}</td>
                             <td>{% if d.buyer == user.telegram_id %}Покупатель{% else %}Продавец{% endif %}</td>
-                            <td><span class="badge {% if d.status == 'completed' %}badge-success{% elif d.status == 'awaiting' %}badge-warning{% else %}badge-danger{% endif %}">{% if d.status == 'completed' %}Выполнено{% elif d.status == 'awaiting' %}Ожидание{% elif d.status == 'cancelled' %}Отменено{% elif d.status == 'disputed' %}В споре{% elif d.status == 'paid' %}Оплачено{% elif d.status == 'item_sent' %}Товар отправлен{% else %}{{ d.status }}{% endif %}</span></td>
+                            <td><span class="badge {% if d.status == 'completed' %}badge-success{% elif d.status == 'open' %}badge-info{% elif d.status == 'awaiting' %}badge-warning{% else %}badge-danger{% endif %}">{% if d.status == 'completed' %}Выполнено{% elif d.status == 'open' %}На витрине{% elif d.status == 'awaiting' %}Ожидание{% elif d.status == 'cancelled' %}Отменено{% elif d.status == 'disputed' %}В споре{% elif d.status == 'paid' %}Оплачено{% elif d.status == 'item_sent' %}Товар отправлен{% else %}{{ d.status }}{% endif %}</span></td>
                             <td>{{ d.created|date:"d.m H:i" }}</td>
                         </tr>
                         {% empty %}

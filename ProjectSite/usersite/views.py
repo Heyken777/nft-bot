@@ -366,7 +366,7 @@ def notifications_mark_read(request):
     user_id = request.session.get('user_id')
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("UPDATE notifications SET is_read=1 WHERE user_id=?", (user_id,))
+    cur.execute("UPDATE usersite_notifications SET is_read=1 WHERE user_id=?", (user_id,))
     conn.commit()
     conn.close()
     return JsonResponse({'success': True})
@@ -567,9 +567,9 @@ def dashboard_view(request):
         open_tickets = cur.fetchone()[0] or 0
 
         try:
-            cur.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (user_id,))
+            cur.execute("SELECT id, type, title, COALESCE(body, message) as body, link, is_read, created_at FROM usersite_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (user_id,))
             notifications = [dict(n) for n in cur.fetchall()]
-            cur.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0", (user_id,))
+            cur.execute("SELECT COUNT(*) FROM usersite_notifications WHERE user_id=? AND is_read=0", (user_id,))
             unread_notifications = cur.fetchone()[0] or 0
         except Exception:
             notifications = []; unread_notifications = 0
@@ -2379,10 +2379,15 @@ def deal_detail_view(request, deal_id):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM deals WHERE id=? AND (buyer=? OR seller=?)", (deal_id, user_id, user_id))
+    cur.execute("SELECT * FROM deals WHERE id=?", (deal_id,))
     deal = cur.fetchone()
 
     if not deal:
+        conn.close()
+        return redirect('/usersite/profile/')
+
+    # Allow viewing if user is buyer, seller, or deal is open (public)
+    if deal['seller'] != user_id and deal.get('buyer') != user_id and deal['status'] != 'open':
         conn.close()
         return redirect('/usersite/profile/')
 
@@ -2390,14 +2395,18 @@ def deal_detail_view(request, deal_id):
     is_buyer = deal_dict['buyer'] == user_id
     is_seller = deal_dict['seller'] == user_id
     status = deal_dict['status']
-    cur.execute("SELECT is_verified_partner FROM users WHERE user_id=?", (deal_dict['seller'],))
+    cur.execute("SELECT username, is_verified_partner FROM users WHERE user_id=?", (deal_dict['seller'],))
     row = cur.fetchone()
-    seller_verified = bool(row and row[0])
+    seller_name = row['username'] if row else str(deal_dict['seller'])
+    seller_verified = bool(row and row['is_verified_partner'])
     buyer_verified = False
+    buyer_name = str(deal_dict['buyer']) if deal_dict.get('buyer') else '—'
     if deal_dict.get('buyer'):
-        cur.execute("SELECT is_verified_partner FROM users WHERE user_id=?", (deal_dict['buyer'],))
+        cur.execute("SELECT username, is_verified_partner FROM users WHERE user_id=?", (deal_dict['buyer'],))
         row2 = cur.fetchone()
-        buyer_verified = bool(row2 and row2[0])
+        if row2:
+            buyer_name = row2['username'] or str(deal_dict['buyer'])
+            buyer_verified = bool(row2['is_verified_partner'])
 
     available_actions = []
     if is_buyer and status == 'awaiting':
@@ -2418,6 +2427,8 @@ def deal_detail_view(request, deal_id):
         'available_actions': available_actions,
         'messages': messages,
         'user_id': user_id,
+        'seller_name': seller_name,
+        'buyer_name': buyer_name,
         'seller_verified': seller_verified,
         'buyer_verified': buyer_verified,
         'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NovixGiftBot'),
@@ -2763,33 +2774,46 @@ def marketplace_view(request):
 
 def api_claim_deal(request, deal_id):
     if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status_code=405)
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
     if not check_auth(request):
-        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status_code=401)
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
     user_id = request.session.get('user_id')
 
-    conn = get_db()
-    cur = conn.cursor()
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    # Atomic: захват сделки — только если статус 'open' (никто ещё не откликнулся)
-    cur.execute(
-        "UPDATE deals SET status='awaiting', buyer=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='open'",
-        (user_id, deal_id)
-    )
-    conn.commit()
-    rowcount = cur.rowcount
-    conn.close()
+        # Не даём откликнуться на свою же сделку
+        cur.execute("SELECT seller FROM deals WHERE id=?", (deal_id,))
+        row = cur.fetchone()
+        if row and row['seller'] == user_id:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Нельзя откликнуться на свою сделку'})
 
-    if rowcount == 0:
+        # Atomic: захват сделки — только если статус 'open' (никто ещё не откликнулся)
+        cur.execute(
+            "UPDATE deals SET status='awaiting', buyer=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='open'",
+            (user_id, deal_id)
+        )
+        conn.commit()
+        rowcount = cur.rowcount
+        conn.close()
+
+        if rowcount == 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Сделка уже занята другим покупателем',
+            })
+
         return JsonResponse({
-            'success': False,
-            'error': 'Сделка уже занята другим покупателем',
+            'success': True,
+            'redirect': f'/usersite/deal/{deal_id}/',
         })
-
-    return JsonResponse({
-        'success': True,
-        'redirect': f'/usersite/deal/{deal_id}/',
-    })
+    except Exception as e:
+        print(f"[claim_deal] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'success': False, 'error': 'Ошибка сервера'}, status=500)
 
 
 # ========== NOTIFICATIONS ==========
@@ -3244,3 +3268,75 @@ def api_save_payment_details(request):
             return JsonResponse({'success': False, 'error': d.get('error', 'Ошибка отправки подтверждения')})
     except Exception as e:
         return JsonResponse({'success': False, 'error': f'Бот недоступен: {str(e)}'})
+
+
+# ========== MY DEALS ==========
+
+def my_deals_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+
+    page = int(request.GET.get('page', 1))
+    if page < 1:
+        page = 1
+    per_page = 20
+    offset = (page - 1) * per_page
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT d.*, u.username as seller_username
+        FROM deals d
+        LEFT JOIN users u ON u.user_id=d.seller
+        WHERE d.buyer=? OR d.seller=?
+        ORDER BY d.created DESC
+        LIMIT ? OFFSET ?
+    """, (user_id, user_id, per_page, offset))
+    deals = [dict(r) for r in cur.fetchall()]
+
+    cur.execute("SELECT COUNT(*) FROM deals WHERE buyer=? OR seller=?", (user_id, user_id))
+    total = cur.fetchone()[0] or 0
+    conn.close()
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    return render(request, 'usersite/my_deals.html', {
+        'deals': deals,
+        'page': page,
+        'total_pages': total_pages,
+        'total': total,
+    })
+
+
+def api_delete_deal(request, deal_id):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM deals WHERE id=? AND seller=?", (deal_id, user_id))
+        deal = cur.fetchone()
+        if not deal:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Сделка не найдена или вы не являетесь продавцом'})
+
+        from datetime import datetime, timedelta
+        created = datetime.strptime(deal['created'], '%Y-%m-%d %H:%M:%S')
+        if datetime.now() - created > timedelta(days=14):
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Сделку можно удалить только в течение 14 дней после создания'})
+
+        cur.execute("DELETE FROM deals WHERE id=?", (deal_id,))
+        conn.commit()
+        conn.close()
+        return JsonResponse({'success': True, 'message': 'Сделка удалена'})
+    except Exception as e:
+        print(f"[delete_deal] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'success': False, 'error': 'Ошибка сервера'}, status=500)
