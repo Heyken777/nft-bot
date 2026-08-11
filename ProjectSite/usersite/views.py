@@ -37,6 +37,98 @@ def _get_client_ip(request):
     return request.META.get('REMOTE_ADDR', '0.0.0.0')
 
 
+def _get_trusted_client_ip(request):
+    """IP для антифрода: XFF принимается только если валидный публичный адрес,
+    иначе — REMOTE_ADDR. Защита от подделки X-Forwarded-For."""
+    import ipaddress as _ipa
+    remote = request.META.get('REMOTE_ADDR', '0.0.0.0')
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    if xff:
+        candidate = xff.split(',')[0].strip()
+        try:
+            addr = _ipa.ip_address(candidate)
+            if not (addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_multicast):
+                return candidate
+        except ValueError:
+            pass
+    return remote
+
+
+@csrf_exempt
+def api_report_fingerprint(request):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    import risk_engine
+
+    fp = (request.POST.get('fingerprint_hash') or request.GET.get('fingerprint_hash') or '').strip().lower()
+    if not risk_engine.valid_fingerprint_hash(fp):
+        return JsonResponse({'success': False, 'error': 'Invalid fingerprint'}, status=400)
+
+    ip = _get_trusted_client_ip(request)
+    ua = request.META.get('HTTP_USER_AGENT', '')[:255]
+    session_key = request.session.session_key or ''
+
+    _ensure_known_devices_table()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id FROM known_devices WHERE user_id=? AND fingerprint_hash=? LIMIT 1",
+        (user_id, fp)
+    )
+    row = cur.fetchone()
+    if row:
+        cur.execute(
+            "UPDATE known_devices SET last_seen=CURRENT_TIMESTAMP, session_key=?, ip_address=? "
+            "WHERE id=? AND (ip_address IS NULL OR ip_address='' OR ip_address='0.0.0.0' OR session_key IS NULL)",
+            (session_key, ip, row[0])
+        )
+    else:
+        cur.execute(
+            "INSERT INTO known_devices (user_id, ip_address, user_agent, session_key, fingerprint_hash) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (user_id, ip, ua, session_key, fp)
+        )
+    conn.commit()
+    conn.close()
+    return JsonResponse({'success': True})
+
+
+def _score_and_flag_deal(cur, deal_id, seller_id, buyer_id=None):
+    """Пересчитывает риск сделки и выставляет flagged для ручной проверки админом."""
+    import risk_engine
+    cur.execute("SELECT amount, currency, flagged FROM deals WHERE id=?", (deal_id,))
+    drow = cur.fetchone()
+    if not drow:
+        return
+    try:
+        amount = float(drow['amount'] or 0)
+    except (TypeError, ValueError):
+        amount = 0.0
+    currency = (drow['currency'] or 'RUB').upper()
+    was_flagged = int(drow['flagged'] or 0)
+
+    score, reasons = risk_engine.compute_deal_risk(
+        cur, seller_id, buyer_id=buyer_id, amount=amount, currency=currency
+    )
+    flagged = 1 if score >= risk_engine.RISK_FLAG_THRESHOLD else 0
+    reason_text = (', '.join(reasons))[:500] if (flagged and reasons) else ''
+    cur.execute(
+        "UPDATE deals SET risk_score=?, flagged=?, flagged_reason=? WHERE id=?",
+        (score, flagged, reason_text or None, deal_id)
+    )
+    if flagged and not was_flagged:
+        try:
+            requests.post(
+                f"{BACKEND_URL}/api/internal/deal-flagged",
+                json={'deal_id': deal_id, 'score': score, 'reasons': reason_text},
+                headers={"X-Internal-Secret": INTERNAL_API_SECRET},
+                timeout=5
+            )
+        except Exception:
+            pass
+
+
 def log_user_action(user_id, action_type, details='', request=None):
     ip_address = _get_client_ip(request) if request else '0.0.0.0'
     user_agent = request.META.get('HTTP_USER_AGENT', '') if request else ''
@@ -55,6 +147,10 @@ def check_new_device_and_notify(user_id, request):
     ip = _get_client_ip(request)
     ua = request.META.get('HTTP_USER_AGENT', '')
     session_key = request.session.session_key or ''
+    fp = request.POST.get('fingerprint_hash') or request.GET.get('fingerprint_hash') or getattr(request, '_fp_hash', '')
+    import risk_engine
+    if not risk_engine.valid_fingerprint_hash(fp):
+        fp = ''
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -63,16 +159,22 @@ def check_new_device_and_notify(user_id, request):
     )
     known = cur.fetchone()
     if known:
-        cur.execute(
-            "UPDATE known_devices SET last_seen=CURRENT_TIMESTAMP, session_key=? WHERE user_id=? AND ip_address=? AND user_agent=?",
-            (session_key, user_id, ip, ua)
-        )
+        if fp:
+            cur.execute(
+                "UPDATE known_devices SET last_seen=CURRENT_TIMESTAMP, session_key=?, fingerprint_hash=? WHERE user_id=? AND ip_address=? AND user_agent=?",
+                (session_key, fp, user_id, ip, ua)
+            )
+        else:
+            cur.execute(
+                "UPDATE known_devices SET last_seen=CURRENT_TIMESTAMP, session_key=? WHERE user_id=? AND ip_address=? AND user_agent=?",
+                (session_key, user_id, ip, ua)
+            )
         conn.commit()
         conn.close()
         return
     cur.execute(
-        "INSERT INTO known_devices (user_id, ip_address, user_agent, session_key) VALUES (?, ?, ?, ?)",
-        (user_id, ip, ua, session_key)
+        "INSERT INTO known_devices (user_id, ip_address, user_agent, session_key, fingerprint_hash) VALUES (?, ?, ?, ?, ?)",
+        (user_id, ip, ua, session_key, fp or None)
     )
     conn.commit()
     conn.close()
@@ -434,6 +536,30 @@ def _ensure_known_devices_table():
         cur.execute("SELECT session_key FROM known_devices LIMIT 1")
     except sqlite3.OperationalError:
         cur.execute("ALTER TABLE known_devices ADD COLUMN session_key TEXT")
+    try:
+        cur.execute("SELECT fingerprint_hash FROM known_devices LIMIT 1")
+    except sqlite3.OperationalError:
+        cur.execute("ALTER TABLE known_devices ADD COLUMN fingerprint_hash TEXT")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_known_dev_fp ON known_devices(fingerprint_hash)")
+    conn.commit()
+    conn.close()
+
+def _ensure_deals_risk_columns():
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT risk_score FROM deals LIMIT 1")
+    except sqlite3.OperationalError:
+        cur.execute("ALTER TABLE deals ADD COLUMN risk_score REAL DEFAULT 0")
+    try:
+        cur.execute("SELECT flagged FROM deals LIMIT 1")
+    except sqlite3.OperationalError:
+        cur.execute("ALTER TABLE deals ADD COLUMN flagged INTEGER DEFAULT 0")
+    try:
+        cur.execute("SELECT flagged_reason FROM deals LIMIT 1")
+    except sqlite3.OperationalError:
+        cur.execute("ALTER TABLE deals ADD COLUMN flagged_reason TEXT")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_deals_flagged ON deals(flagged)")
     conn.commit()
     conn.close()
 
@@ -1493,6 +1619,22 @@ def withdraw_create_api(request):
         tier = u.get('premium_tier', 'free') or 'free'
         commission_pct = TIER_COMMISSION.get(tier, 4)
         net_rub = total_rub * (1 - commission_pct / 100)
+
+        # Антифрод: cooldown на вывод для новых аккаунтов (владелец и премиум обходят)
+        import risk_engine
+        if user_id != OWNER_TELEGRAM_ID and tier not in ('premium', 'platinum', 'vip'):
+            cd = risk_engine.withdrawal_cooldown_status(cur, user_id, rates=EXCHANGE_RATES)
+            if cd['in_cooldown'] and amount > cd['remaining_rub']:
+                conn.close()
+                return JsonResponse({
+                    'success': False,
+                    'error': (
+                        f'Лимит вывода для новых аккаунтов: {cd["limit_rub"]:.0f} RUB в день. '
+                        f'Сегодня уже использовано {cd["used_today_rub"]:.0f} RUB. '
+                        f'Доступно: {cd["remaining_rub"]:.0f} RUB. Лимит снимут через '
+                        f'{max(0, cd["min_age_days"] - (cd["account_age_days"] or 0))} дн.'
+                    )
+                })
     except Exception as e:
         print(f"Ошибка withdraw API: {e}")
         return JsonResponse({'success': False, 'error': 'Ошибка сервера'}, status=500)
@@ -2320,8 +2462,9 @@ def create_deal_view(request):
             INSERT INTO deals (seller, item, amount, commission, currency, status, deal_code, is_public)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (user_id, item_name, price, commission, currency, initial_status, deal_code, 1 if is_public else 0))
-        conn.commit()
         deal_id = cur.lastrowid
+        _score_and_flag_deal(cur, deal_id, user_id)
+        conn.commit()
         conn.close()
 
         if is_public:
@@ -2795,8 +2938,10 @@ def api_claim_deal(request, deal_id):
             "UPDATE deals SET status='awaiting', buyer=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='open'",
             (user_id, deal_id)
         )
-        conn.commit()
         rowcount = cur.rowcount
+        if rowcount:
+            _score_and_flag_deal(cur, deal_id, row['seller'], buyer_id=user_id)
+        conn.commit()
         conn.close()
 
         if rowcount == 0:

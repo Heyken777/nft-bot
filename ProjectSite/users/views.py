@@ -685,6 +685,7 @@ def deals_list_view(request):
     try:
         search = request.GET.get('q', '').strip()
         status_filter = request.GET.get('status', '').strip()
+        flagged_filter = request.GET.get('flagged', '').strip()
         per_page = 50
         offset = (page - 1) * per_page
         conn = get_db()
@@ -696,9 +697,14 @@ def deals_list_view(request):
         if status_filter:
             conditions.append("status=?")
             params.append(status_filter)
+        if flagged_filter in ('1', '0'):
+            conditions.append("flagged=?")
+            params.append(int(flagged_filter))
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
         cur.execute(f"SELECT d.*, us.username as seller_name, us.is_verified_partner as seller_vp, ub.username as buyer_name, ub.is_verified_partner as buyer_vp FROM deals d LEFT JOIN users us ON us.user_id=d.seller LEFT JOIN users ub ON ub.user_id=d.buyer {where} ORDER BY d.created DESC LIMIT ? OFFSET ?", params + [per_page, offset])
         deals = cur.fetchall()
+        cur.execute("SELECT COUNT(*) FROM deals WHERE flagged=1", [])
+        flagged_total = cur.fetchone()[0] or 0
         cur.execute(f"SELECT COUNT(*) FROM deals {where}", params)
         total = cur.fetchone()[0] or 0
         conn.close()
@@ -710,9 +716,10 @@ def deals_list_view(request):
         'admin_name': get_admin_name(request),
         'deals': [dict(d) for d in deals],
         'search': search, 'status_filter': status_filter,
+        'flagged_filter': flagged_filter,
         'statuses': statuses, 'page': page,
         'total_pages': max(1, (total + 50 - 1) // 50),
-        'total': total,
+        'total': total, 'flagged_total': flagged_total,
     })
 
 
@@ -795,6 +802,24 @@ def withdrawal_approve_api(request, req_id):
             conn.close()
             return JsonResponse({'error': 'User not found'}, status=404)
         u = dict(user)
+
+        # Антифрод: жёсткий лимит вывода для новых аккаунтов (CEO и премиум обходят)
+        import risk_engine
+        tier = u.get('premium_tier') or 'free'
+        if user_id != OWNER_TELEGRAM_ID and tier not in ('premium', 'platinum', 'vip'):
+            cd = risk_engine.withdrawal_cooldown_status(cur, user_id, rates=risk_engine._UBG_RATES)
+            if cd['in_cooldown']:
+                used_plus_req = cd['used_today_rub'] + float(amount)
+                if used_plus_req > cd['limit_rub']:
+                    conn.close()
+                    log_admin_action(request, "withdrawal_approve_failed_cooldown", user_id, float(amount))
+                    return JsonResponse({
+                        'error': (
+                            f'Отклонено антифродом: новые аккаунты могут выводить до '
+                            f'{cd["limit_rub"]:.0f} RUB/день. Заявка {float(amount):.2f} + уже '
+                            f'выведено {cd["used_today_rub"]:.2f} превышает лимит.'
+                        )
+                    }, status=400)
 
         # Build list of (currency, balance, rub_equivalent) for non-zero balances
         purse = []
@@ -1628,6 +1653,28 @@ def api_search_deals(request):
     except Exception as e:
         print(f"[search_deals] Error: {e}")
         return JsonResponse({'deals': [], 'total': 0})
+
+
+@csrf_exempt
+@require_permission('deals')
+def api_unflag_deal(request, deal_id):
+    """Снимает флаг антифрода после ручной проверки сделки админом."""
+    if request.method not in ('POST', 'GET'):
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE deals SET flagged=0, risk_score=0, flagged_reason=NULL WHERE id=?",
+            (deal_id,)
+        )
+        conn.commit()
+        conn.close()
+        log_page_view(request, 'Снятие флага антифрода', f'Администратор снял флаг антифрода со сделки #{deal_id}')
+        return JsonResponse({'success': True})
+    except Exception as e:
+        print(f"[unflag_deal] Error: {e}")
+        return JsonResponse({'success': False, 'error': 'Ошибка сервера'}, status=500)
 
 
 # ===================== API: OTHER =====================

@@ -38,6 +38,7 @@ urlpatterns = [
     path('register/', views.register_profile_view, name='register_profile'),
     path('api/save-profile/', views.save_profile_api, name='save_profile'),
     path('api/local-login/', views.local_login_api, name='local_login'),
+    path('api/fingerprint/', views.api_report_fingerprint, name='api_report_fingerprint'),
 
     # Premium wizard
     path('premium/', views.premium_wizard_view, name='premium_wizard'),

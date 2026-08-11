@@ -36,6 +36,12 @@ DEAL_ESCALATION_HOURS = int(os.getenv("DEAL_ESCALATION_HOURS", "72"))
 
 CEO_APPROVAL_THRESHOLD_RUB = int(os.getenv("CEO_APPROVAL_THRESHOLD_RUB", "10000"))
 
+# ==== Антифрод: скоринг сделок и cooldown вывода ====
+NEW_ACCOUNT_MIN_AGE_DAYS = int(os.getenv("NEW_ACCOUNT_MIN_AGE_DAYS", "7"))          # аккаунт младше — в cooldown
+NEW_ACCOUNT_WITHDRAW_LIMIT_RUB = float(os.getenv("NEW_ACCOUNT_WITHDRAW_LIMIT_RUB", "5000"))  # дневной лимит вывода в cooldown
+RISK_FLAG_THRESHOLD = int(os.getenv("RISK_FLAG_THRESHOLD", "50"))                   # порог flagged для сделок
+RISK_FP_LINK_WINDOW_DAYS = int(os.getenv("RISK_FP_LINK_WINDOW_DAYS", "30"))         # окно IP-совпадений для связки аккаунтов
+
 VOLUME_FEE_TIERS = [
     (0, 0.04),
     (10_000, 0.03),

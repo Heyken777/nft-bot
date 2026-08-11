@@ -13,6 +13,11 @@
                 <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
                 {% endfor %}
             </select>
+            <select id="dealFlagFilter" class="form-control" style="width:auto;" onchange="location.href='/deals/?flagged='+this.value">
+                <option value="">Флаг: все</option>
+                <option value="1" {% if flagged_filter == '1' %}selected{% endif %}>⚠ Флаг ({{ flagged_total }})</option>
+                <option value="0" {% if flagged_filter == '0' %}selected{% endif %}>Без флага</option>
+            </select>
             <div class="position-relative">
                 <i class="fas fa-search position-absolute" style="left:15px;top:12px;color:rgba(0,255,255,.5);"></i>
                 <input type="text" id="dealSearch" class="form-control ps-5" style="width:200px;" placeholder="ID или товар..." value="{{ search }}" autocomplete="off">
@@ -35,12 +40,13 @@
                     <th>Покупатель</th>
                     <th>Статус</th>
                     <th>Дата</th>
+                    <th>Антифрод</th>
                 </tr>
             </thead>
             <tbody id="dealsTableBody">
                 {% for d in deals %}
                 <tr>
-                    <td>{{ d.id }}</td>
+                    <td>{% if d.flagged %}<span class="badge" style="background:rgba(255,71,87,.2);color:#ff4757;cursor:help;" title="Риск {{ d.risk_score|floatformat:0 }}: {{ d.flagged_reason|default:'Подозрительная сделка' }}">⚠ {{ d.id }}</span>{% else %}{{ d.id }}{% endif %}</td>
                     <td>{{ d.item|truncatechars:30 }}</td>
                     <td>{{ d.amount|floatformat:2 }}</td>
                     <td>{{ d.currency }}</td>
@@ -57,9 +63,10 @@
                         ">{% if d.status == 'completed' %}Выполнено{% elif d.status == 'awaiting' %}Ожидание{% elif d.status == 'cancelled' %}Отменено{% elif d.status == 'disputed' %}В споре{% elif d.status == 'paid' %}Оплачено{% elif d.status == 'item_sent' %}Товар отправлен{% else %}{{ d.status }}{% endif %}</span>
                     </td>
                     <td>{{ d.created|date:"d.m H:i" }}</td>
+                    <td>{% if d.flagged %}<button class="btn-sm" style="background:rgba(255,71,87,.15);color:#ff4757;border:none;" onclick="unflagDeal({{ d.id }})">Снять флаг</button>{% else %}<span style="color:rgba(255,255,255,.2);font-size:11px;">—</span>{% endif %}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="8" class="text-center text-cyan-300 py-4" id="emptyDealRow"><i class="fi fi-rr-star-shine"></i> Сделок нет <i class="fi fi-rr-star-shine"></i></td></tr>
+                <tr><td colspan="9" class="text-center text-cyan-300 py-4" id="emptyDealRow"><i class="fi fi-rr-star-shine"></i> Сделок нет <i class="fi fi-rr-star-shine"></i></td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -96,7 +103,7 @@ function renderDealRow(d) {
     const date = d.created ? new Date(d.created).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
     var sm = {'completed':'Выполнено','awaiting':'Ожидание','cancelled':'Отменено','disputed':'В споре','paid':'Оплачено','item_sent':'Товар отправлен'};
     return `<tr>
-        <td>${d.id}</td>
+        <td>${d.flagged ? `<span class="badge" style="background:rgba(255,71,87,.2);color:#ff4757;cursor:help;" title="Риск ${Math.round(Number(d.risk_score)||0)}: ${d.flagged_reason || 'Подозрительная сделка'}">⚠ ${d.id}</span>` : d.id}</td>
         <td>${(d.item || '').substring(0, 30)}</td>
         <td>${Number(d.amount || 0).toFixed(2)}</td>
         <td>${d.currency}</td>
@@ -104,6 +111,7 @@ function renderDealRow(d) {
         <td><a href="/users/${d.buyer}/">${d.buyer}</a></td>
         <td><span class="badge-${d.status}" style="${style}padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;">${sm[d.status] || d.status}</span></td>
         <td>${date}</td>
+        ${d.flagged ? `<td><button class="btn-sm" style="background:rgba(255,71,87,.15);color:#ff4757;border:none;" onclick="unflagDeal(${d.id})">Снять флаг</button></td>` : ''}
     </tr>`;
 }
 
@@ -121,11 +129,22 @@ function searchDeals() {
             const count = document.getElementById('dealCount');
             count.textContent = '(' + data.total + ')';
             if (!data.deals || data.deals.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-cyan-300 py-4"><i class="fi fi-rr-star-shine"></i> Сделок нет <i class="fi fi-rr-star-shine"></i></td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-cyan-300 py-4"><i class="fi fi-rr-star-shine"></i> Сделок нет <i class="fi fi-rr-star-shine"></i></td></tr>';
                 return;
             }
             tbody.innerHTML = data.deals.map(renderDealRow).join('');
         });
+}
+
+function unflagDeal(dealId) {
+    showConfirmModal('Снять флаг антифрода со сделки ' + dealId + '?', function() {
+        fetch('/api/deals/' + dealId + '/unflag/', {method: 'POST', headers: {'X-CSRFToken': '{{ csrf_token }}'}})
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) { location.reload(); }
+                else { alert(data.error || 'Ошибка'); }
+            });
+    });
 }
 
 document.getElementById('dealSearch').addEventListener('input', function() {

@@ -57,6 +57,7 @@ urlpatterns = [
     
     # API: Сделки
     path('api/deals/search/', views.api_search_deals, name='api_search_deals'),
+    path('api/deals/<int:deal_id>/unflag/', views.api_unflag_deal, name='api_unflag_deal'),
 
     # API: промокоды (code — строка)
     path('api/promocodes/create/', views.api_create_promocode),

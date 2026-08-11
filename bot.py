@@ -536,6 +536,12 @@ class Database:
         self.add_column_if_not_exists("deals", "proposed_by", "INTEGER")
         self.add_column_if_not_exists("deals", "proposed_at", "TIMESTAMP")
         self.add_column_if_not_exists("deals", "counter_offers", "INTEGER DEFAULT 0")
+
+        # ==== Антифрод: скоринг сделки ====
+        self.add_column_if_not_exists("deals", "risk_score", "REAL DEFAULT 0")
+        self.add_column_if_not_exists("deals", "flagged", "INTEGER DEFAULT 0")
+        self.add_column_if_not_exists("deals", "flagged_reason", "TEXT")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_flagged ON deals(flagged)")
         
         # Таблица сообщений по сделкам
         self.cursor.execute("""
@@ -697,6 +703,8 @@ class Database:
             ON known_devices(user_id, ip_address, user_agent)
         """)
         self.add_column_if_not_exists("known_devices", "session_key", "TEXT")
+        self.add_column_if_not_exists("known_devices", "fingerprint_hash", "TEXT")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_known_dev_fp ON known_devices(fingerprint_hash)")
         
         # Таблица очереди подтверждений CEO для крупных операций
         self.cursor.execute("""
@@ -7537,6 +7545,28 @@ async def handle_internal_user_fee_rate(request):
     return JSONResponse(content={'success': True, **info})
 
 
+async def handle_internal_deal_flagged(request):
+    """Уведомляет CEO о сделке, помеченной антифродом (вызывается Django)."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'success': False, 'error': 'Invalid JSON'}, status_code=400)
+    deal_id = data.get('deal_id')
+    score = data.get('score', 0)
+    reasons = data.get('reasons', '')
+    if not deal_id:
+        return JSONResponse(content={'success': False, 'error': 'Missing deal_id'}, status_code=400)
+    msg = (
+        f"⚠️ *Антифрод: подозрительная сделка*\n\n"
+        f"📦 Сделка #`{deal_id}`\n"
+        f"🎯 Риск: *{score}*\n"
+        f"📋 Причины: {reasons or 'не указаны'}\n\n"
+        f"Проверить: /admin → Сделки → фильтр «Флаг»"
+    )
+    await notify_user(OWNER_TELEGRAM_ID, msg)
+    return JSONResponse(content={'success': True})
+
+
 async def handle_internal_deal_messages(request):
     """Возвращает сообщения по сделке (вызывается Django)."""
     try:
@@ -7670,6 +7700,7 @@ fastapi_app.add_api_route("/api/internal/2fa-request", handle_internal_2fa_reque
 fastapi_app.add_api_route("/api/internal/user-fee-rate", handle_internal_user_fee_rate, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/deal-messages", handle_internal_deal_messages, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/propose-amount", handle_internal_propose_amount, methods=["POST"])
+fastapi_app.add_api_route("/api/internal/deal-flagged", handle_internal_deal_flagged, methods=["POST"])
 
 # WebSocket endpoint for real-time notifications
 async def ws_notify_user(user_id: int, message: dict):
