@@ -781,6 +781,18 @@ def profile_view(request):
         cur.execute("SELECT * FROM users WHERE referred_by=?", (user_id,))
         referrals = [dict(r) for r in cur.fetchall()]
 
+        # Антифрод-рефералы: засчитанные (завершённая сделка + не связанные аккаунты)
+        try:
+            cur.execute("SELECT COUNT(*) FROM referral_credits WHERE referrer_id=? AND status='qualified'", (user_id,))
+            qualified_referrals = cur.fetchone()[0] or 0
+            cur.execute("SELECT COUNT(*) FROM referral_credits WHERE referrer_id=? AND status='suspicious'", (user_id,))
+            suspicious_referrals = cur.fetchone()[0] or 0
+        except Exception:
+            qualified_referrals = 0; suspicious_referrals = 0
+
+        REFERRAL_LEVELS_UI = [(5, '🥉 Активный амбассадор'), (25, '🥈 Серебряный амбассадор'), (100, '🏆 Золотой амбассадор')]
+        ambassador_level = next((name for threshold, name in sorted(REFERRAL_LEVELS_UI, reverse=True) if qualified_referrals >= threshold), None)
+
         referral_earnings_rub = float(user_dict_raw.get('referral_earnings', 0) or 0) if user else 0
         referral_earnings_level2 = float(user_dict_raw.get('referral_earnings_level2', 0) or 0) if user else 0
         try:
@@ -877,6 +889,9 @@ def profile_view(request):
         'active_deals': active_deals, 'tickets_count': tickets_count,
         'referral_earnings_rub': referral_earnings_rub,
         'referral_earnings_level2': referral_earnings_level2,
+        'qualified_referrals': qualified_referrals,
+        'suspicious_referrals': suspicious_referrals,
+        'ambassador_level': ambassador_level,
         'referral_total_commission': referral_total_commission,
         'referral_deposit_total': referral_deposit_total,
         'referral_level2_count': referral_level2_count,
@@ -1070,6 +1085,16 @@ def public_profile_view(request, username):
 
             seller_stats = _get_seller_stats(u['user_id'])
             avatar_url = _avatar_url(u.get('user_id')) if u.get('avatar') else None
+
+            # Публичный неденежный статус амбассадора
+            try:
+                cur.execute("SELECT COUNT(*) FROM referral_credits WHERE referrer_id=? AND status='qualified'", (u['user_id'],))
+                qualified_referrals = cur.fetchone()[0] or 0
+            except Exception:
+                qualified_referrals = 0
+            REFERRAL_LEVELS_UI = [(5, '🥉 Активный амбассадор'), (25, '🥈 Серебряный амбассадор'), (100, '🏆 Золотой амбассадор')]
+            ambassador_level = next((name for threshold, name in sorted(REFERRAL_LEVELS_UI, reverse=True) if qualified_referrals >= threshold), None)
+
             conn.close()
             return render(request, 'usersite/profile_public.html', {
                 'user': user, 'deals': deals, 'balances': balances, 'total_rub': round(total_rub, 2),
@@ -1081,6 +1106,8 @@ def public_profile_view(request, username):
                 'has_reviewed': has_reviewed,
                 'my_profile_review': my_profile_review,
                 'seller_stats': seller_stats,
+                'ambassador_level': ambassador_level,
+                'qualified_referrals': qualified_referrals,
             })
         conn.close()
     except Exception as e:

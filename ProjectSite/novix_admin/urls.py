@@ -30,6 +30,8 @@ urlpatterns = [
     path('disputes/', disputes_views.disputes_view, name='disputes'),
     path('disputes/<int:dispute_id>/', disputes_views.dispute_detail_view, name='dispute_detail'),
     path('deals/', views.deals_list_view, name='deals_list'),
+    path('referrals/', views.referrals_view, name='referrals_list'),
+    path('api/referrals/<int:ref_id>/resolve/', views.api_resolve_referral, name='api_resolve_referral'),
     path('withdrawals/', views.withdrawals_view, name='withdrawals'),
     path('api/withdrawals/<int:req_id>/approve/', views.withdrawal_approve_api),
     path('api/withdrawals/<int:req_id>/reject/', views.withdrawal_reject_api),

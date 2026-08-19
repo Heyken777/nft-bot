@@ -723,6 +723,85 @@ def deals_list_view(request):
     })
 
 
+# ===================== REFERRALS (антифрод-модерация) =====================
+
+@require_permission('users')
+def referrals_view(request):
+    log_page_view(request, 'Просмотр Рефералов', 'Администратор открыл страницу рефералов')
+    suspicious = []; pending = []; top = []
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT rc.id, rc.referrer_id, ru.username AS referrer_name,
+                   rc.referred_id, du.username AS referred_name,
+                   rc.status, rc.reason, rc.created_at
+            FROM referral_credits rc
+            LEFT JOIN users ru ON ru.user_id = rc.referrer_id
+            LEFT JOIN users du ON du.user_id = rc.referred_id
+            WHERE rc.status = 'suspicious'
+            ORDER BY rc.created_at DESC LIMIT 100
+        """)
+        suspicious = [dict(r) for r in cur.fetchall()]
+        cur.execute("""
+            SELECT rc.id, rc.referrer_id, ru.username AS referrer_name,
+                   rc.referred_id, du.username AS referred_name,
+                   rc.status, rc.created_at
+            FROM referral_credits rc
+            LEFT JOIN users ru ON ru.user_id = rc.referrer_id
+            LEFT JOIN users du ON du.user_id = rc.referred_id
+            WHERE rc.status = 'pending'
+            ORDER BY rc.created_at DESC LIMIT 100
+        """)
+        pending = [dict(r) for r in cur.fetchall()]
+        cur.execute("""
+            SELECT u.user_id, u.username, COUNT(rc.id) AS qualified_count
+            FROM referral_credits rc
+            JOIN users u ON u.user_id = rc.referrer_id
+            WHERE rc.status = 'qualified'
+            GROUP BY rc.referrer_id
+            ORDER BY qualified_count DESC LIMIT 10
+        """)
+        top = [dict(r) for r in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        print(f"[referrals] Error: {e}")
+    return render(request, 'referrals_list.html', {
+        'active_page': 'referrals',
+        'admin_name': get_admin_name(request),
+        'suspicious': suspicious, 'pending': pending, 'top': top,
+    })
+
+
+@csrf_exempt
+@require_permission('users')
+def api_resolve_referral(request, ref_id):
+    if request.method not in ('POST', 'GET'):
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE referral_credits SET status='pending', reason=NULL, resolved_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND status='suspicious'",
+            (ref_id,)
+        )
+        if cur.rowcount == 0:
+            conn.close()
+            return JsonResponse({'success': False, 'error': 'Не найдено или уже решено'}, status=404)
+        cur.execute("SELECT referred_id FROM referral_credits WHERE id=?", (ref_id,))
+        row = cur.fetchone()
+        if row:
+            cur.execute("UPDATE users SET referred_suspicious=0 WHERE user_id=?", (row[0],))
+        conn.commit()
+        conn.close()
+        log_page_view(request, 'Снятие подозрительности реферала', f'Администратор снял подозрительность реферала #{ref_id}')
+        return JsonResponse({'success': True})
+    except Exception as e:
+        print(f"[resolve_referral] Error: {e}")
+        return JsonResponse({'success': False, 'error': 'Ошибка сервера'}, status=500)
+
+
 # ===================== WITHDRAWALS =====================
 
 @require_permission('withdrawals')

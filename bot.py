@@ -300,6 +300,10 @@ CURRENCIES = {
     "STARS": {"symbol": "⭐️", "name": "STARS"}
 }
 
+# Резервные курсы для конвертации (реферальная квалификация, если currency_api недоступен)
+_FALLBACK_RATES = {'RUB': 1.0, 'USD': 73.0, 'EUR': 83.0, 'BYN': 26.0, 'UAH': 1.6,
+                   'KZT': 0.15, 'UZS': 0.0061, 'TON': 120.0, 'USDT': 73.0, 'STARS': 2.0}
+
 def card_currency_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇷🇺 RUB", callback_data="card_cur_RUB"),
@@ -498,7 +502,8 @@ class Database:
             "profile_login": "TEXT",
             "profile_password_hash": "TEXT",
             "profile_email": "TEXT",
-            "profile_setup_complete": "INTEGER DEFAULT 0"
+            "profile_setup_complete": "INTEGER DEFAULT 0",
+            "referred_suspicious": "INTEGER DEFAULT 0"
         }
         
         for col_name, col_type in columns_to_add.items():
@@ -698,12 +703,19 @@ class Database:
                 last_seen   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        self.add_column_if_not_exists("known_devices", "session_key", "TEXT")
+        self.add_column_if_not_exists("known_devices", "fingerprint_hash", "TEXT")
+        # Дедупликация легаси-данных до создания уникального индекса
+        self.cursor.execute("""
+            DELETE FROM known_devices WHERE id NOT IN (
+                SELECT MAX(id) FROM known_devices
+                GROUP BY user_id, ip_address, user_agent
+            )
+        """)
         self.cursor.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_known_device
             ON known_devices(user_id, ip_address, user_agent)
         """)
-        self.add_column_if_not_exists("known_devices", "session_key", "TEXT")
-        self.add_column_if_not_exists("known_devices", "fingerprint_hash", "TEXT")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_known_dev_fp ON known_devices(fingerprint_hash)")
         
         # Таблица очереди подтверждений CEO для крупных операций
@@ -854,6 +866,23 @@ class Database:
             )
         """)
 
+        # Таблица статусов рефералов (антифрод: только нематериальные награды)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS referral_credits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER NOT NULL,
+                referred_id INTEGER NOT NULL,
+                deal_id INTEGER,
+                deal_amount REAL,
+                currency TEXT,
+                status TEXT DEFAULT 'pending',
+                reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TIMESTAMP,
+                UNIQUE(referrer_id, referred_id)
+            )
+        """)
+
         # Таблица начислений 10% реферальных отчислений с пополнений
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS referral_deposit_log (
@@ -896,7 +925,9 @@ class Database:
             ('hot_ten', '🔥 Горячая десятка', '10 завершённых сделок', '🔥', 100, 'deals_completed', 10),
             ('diamond_trader', '💎 Алмазный трейдер', '50 завершённых сделок', '💎', 500, 'deals_completed', 50),
             ('legend', '👑 Легенда', '100 завершённых сделок', '👑', 1000, 'deals_completed', 100),
-            ('referral_master', '📱 Мастер рефералов', '10 приглашённых друзей', '📱', 200, 'referrals', 10),
+            ('referral_master', '📱 Мастер рефералов', '5 приглашённых друзей с завершённой сделкой', '📱', 0, 'referrals', 5),
+            ('referral_ambassador', '🥈 Серебряный амбассадор', '25 засчитанных рефералов', '🥈', 0, 'referrals', 25),
+            ('referral_legend', '🏆 Золотой амбассадор', '100 засчитанных рефералов', '🏆', 0, 'referrals', 100),
             ('premium_starter', '⭐ Премиум-старт', 'Первая покупка Premium', '⭐', 0, 'premium_purchase', 1),
             ('first_sale', '💰 Первый продавец', 'Первая сделка в роли продавца', '💰', 50, 'sales_count', 1),
             ('super_seller', '🚀 Супер-продавец', '50 сделок в роли продавца', '🚀', 500, 'sales_count', 50),
@@ -1479,9 +1510,10 @@ class Database:
             elif req_type == 'premium_purchase' and stats.get('premium_count', 0) >= req_value:
                 achieved = True
             if achieved:
+                claimed_flag = 1 if reward == 0 else 0
                 self.cursor.execute("""
-                    INSERT INTO user_achievements (user_id, achievement_id) VALUES (?, ?)
-                """, (user_id, ach_id))
+                    INSERT INTO user_achievements (user_id, achievement_id, claimed) VALUES (?, ?, ?)
+                """, (user_id, ach_id, claimed_flag))
                 self.conn.commit()
                 earned.append((ach_id, reward))
         return earned
@@ -1508,8 +1540,7 @@ class Database:
         completed_deals = self.cursor.fetchone()[0]
         self.cursor.execute("SELECT COUNT(*) FROM deals WHERE seller = ? AND status = 'completed'", (user_id,))
         sales = self.cursor.fetchone()[0]
-        self.cursor.execute("SELECT COUNT(*) FROM users WHERE referred_by = ?", (user_id,))
-        referrals = self.cursor.fetchone()[0]
+        referrals = self.get_qualified_referral_count(user_id)
         ton_balance = self.get_balance(user_id, 'TON')
         self.cursor.execute("SELECT COUNT(*) FROM user_achievements WHERE user_id = ? AND achievement_id = 'premium_starter'", (user_id,))
         premium_count = self.cursor.fetchone()[0]
@@ -1622,26 +1653,7 @@ class Database:
             new_balance = (current[0] or 0) + promo['amount']
             self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (new_balance, user_id))
             self.add_transaction(user_id, promo['amount'], 'RUB', 'promocode', f"Промокод {code}", related_id=0)
-            
-            # Начисляем 10% реферальных отчислений с пополнения по промокоду
-            self.cursor.execute("SELECT referrer_id FROM friend_promo_activations WHERE user_id = ?", (user_id,))
-            ref_row = self.cursor.fetchone()
-            if ref_row:
-                ref_id = ref_row[0]
-                reward = quantize_amount(promo['amount'] * 0.10)
-                if reward > 0:
-                    self.cursor.execute(f"SELECT {col_name} FROM users WHERE user_id = ?", (ref_id,))
-                    ref_cur = self.cursor.fetchone()
-                    if ref_cur:
-                        new_ref_bal = (ref_cur[0] or 0) + reward
-                        self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (new_ref_bal, ref_id))
-                        self.cursor.execute("""
-                            INSERT INTO referral_deposit_log (referrer_id, user_id, currency, deposit_amount, reward_amount)
-                            VALUES (?, ?, 'RUB', ?, ?)
-                        """, (ref_id, user_id, promo['amount'], reward))
-                        self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)",
-                                            (ref_id, "Уведомление", f"💰 Реферальное отчисление: +{reward} RUB от пополнения пользователя."))
-            
+
             # Увеличиваем счётчик использований
             self.cursor.execute("UPDATE promocodes SET used_count = used_count + 1 WHERE code = ?", (code.upper(),))
             # Записываем факт использования
@@ -1815,55 +1827,156 @@ class Database:
         """, (code.upper(), amount, max_uses, expires_at, created_by))
         self.conn.commit()
 
-    def credit_referral_commission(self, seller_id: int, deal_id: int, currency: str, commission_amount: float) -> Optional[dict]:
-        self.cursor.execute("SELECT referred_by FROM users WHERE user_id = ?", (seller_id,))
-        row = self.cursor.fetchone()
-        referrer_id = row[0] if row else None
-        if not referrer_id:
-            return None
+    def referral_is_linked(self, referrer_id: int, referred_id: int) -> Optional[str]:
+        """Антифрод: связаны ли аккаунты общим fingerprint/IP (get_linked_accounts из risk_engine)."""
+        try:
+            import risk_engine
+            if risk_engine.has_same_fingerprint(self.cursor, referrer_id, referred_id):
+                return 'Общий fingerprint устройства'
+            if risk_engine.has_ip_overlap(self.cursor, referrer_id, referred_id):
+                return 'Общий IP-адрес'
+        except Exception as e:
+            logger.warning(f"referral_is_linked error: {e}")
+        return None
 
-        self.cursor.execute("SELECT 1 FROM referral_commission_log WHERE deal_id = ?", (deal_id,))
-        if self.cursor.fetchone():
-            return None
-
-        reward = quantize_amount(commission_amount * REFERRAL_COMMISSION_SHARE)
-        if reward <= 0:
-            return None
-
+    def register_referral_link(self, referrer_id: int, referred_id: int) -> str:
+        """Фиксирует реферальную связь. Возвращает статус ('pending'|'suspicious')."""
         self.cursor.execute("""
-            INSERT INTO referral_commission_log (referrer_id, referred_user_id, deal_id, currency, commission_amount, reward_amount)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (referrer_id, seller_id, deal_id, currency, commission_amount, reward))
-        self.cursor.execute("UPDATE users SET referral_earnings = COALESCE(referral_earnings, 0) + ? WHERE user_id = ?", (reward, referrer_id))
-
-        # Multi-level: level 2 (referrer of referrer) gets 2% of commission
-        self.cursor.execute("SELECT referred_by FROM users WHERE user_id = ?", (referrer_id,))
-        row2 = self.cursor.fetchone()
-        level2_id = row2[0] if row2 else None
-        if level2_id and level2_id != referrer_id:
-            level2_reward = quantize_amount(commission_amount * 0.02)
-            if level2_reward > 0:
-                self.cursor.execute("""
-                    INSERT INTO referral_level2_log (level1_id, level2_id, referred_user_id, deal_id, currency, commission_amount, reward_amount)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (referrer_id, level2_id, seller_id, deal_id, currency, commission_amount, level2_reward))
-                self.cursor.execute("UPDATE users SET referral_earnings_level2 = COALESCE(referral_earnings_level2, 0) + ? WHERE user_id = ?", (level2_reward, level2_id))
-
-        # Auto-payout: if referral_earnings >= 100 RUB, auto-transfer to RUB balance
-        AUTO_PAYOUT_THRESHOLD = 100
-        self.cursor.execute("SELECT referral_earnings FROM users WHERE user_id = ?", (referrer_id,))
-        earnings_row = self.cursor.fetchone()
-        total_earnings = earnings_row[0] or 0
-        if total_earnings >= AUTO_PAYOUT_THRESHOLD:
-            self.cursor.execute("UPDATE users SET referral_earnings = 0 WHERE user_id = ?", (referrer_id,))
-            self.cursor.execute("UPDATE users SET balance_RUB = COALESCE(balance_RUB, 0) + ? WHERE user_id = ?", (total_earnings, referrer_id))
-            self.cursor.execute(
-                "INSERT INTO transactions (user_id, amount, currency, type, description) VALUES (?, ?, 'RUB', 'referral_payout', 'Автовыплата реферальных бонусов')",
-                (referrer_id, total_earnings)
-            )
-
+            INSERT OR IGNORE INTO referral_credits (referrer_id, referred_id, status)
+            VALUES (?, ?, 'pending')
+        """, (referrer_id, referred_id))
+        reason = self.referral_is_linked(referrer_id, referred_id)
+        if reason:
+            self.cursor.execute("""
+                UPDATE referral_credits SET status='suspicious', reason=?
+                WHERE referrer_id=? AND referred_id=?
+            """, (reason, referrer_id, referred_id))
+            self.cursor.execute("UPDATE users SET referred_suspicious=1 WHERE user_id=?", (referred_id,))
+            self.conn.commit()
+            return 'suspicious'
         self.conn.commit()
-        return {'referrer_id': referrer_id, 'reward': reward, 'currency': currency, 'commission_amount': commission_amount}
+        return 'pending'
+
+    def qualify_referral(self, referred_id: int, deal_id: int, amount: float, currency: str,
+                         rates: dict = None) -> Optional[dict]:
+        """
+        Вызывается при завершении сделки: если реферал совершил сделку с реальным
+        движением средств >= REFERRAL_QUALIFY_MIN_RUB (и аккаунты не связаны) —
+        реферал засчитывается в нематериальную статистику.
+        Возвращает {'referrer_id', 'status', 'reason'} или None.
+        """
+        if rates is None:
+            rates = _FALLBACK_RATES
+        self.cursor.execute("SELECT referred_by FROM users WHERE user_id=?", (referred_id,))
+        row = self.cursor.fetchone()
+        if not row or not row[0]:
+            return None
+        referrer_id = row[0]
+        self.cursor.execute("""
+            SELECT id, status, reason FROM referral_credits
+            WHERE referrer_id=? AND referred_id=?
+        """, (referrer_id, referred_id))
+        cred = self.cursor.fetchone()
+        if not cred:
+            self.cursor.execute("""
+                INSERT OR IGNORE INTO referral_credits (referrer_id, referred_id, deal_id, deal_amount, currency, status)
+                VALUES (?, ?, ?, ?, ?, 'pending')
+            """, (referrer_id, referred_id, deal_id, amount, currency))
+            self.cursor.execute("""
+                SELECT id, status, reason FROM referral_credits
+                WHERE referrer_id=? AND referred_id=?
+            """, (referrer_id, referred_id))
+            cred = self.cursor.fetchone()
+        if not cred:
+            return None
+        cred_id, status, reason = cred
+        if status in ('qualified', 'suspicious', 'resolved'):
+            return None
+        amount_rub = float(amount or 0) * float(rates.get(currency, 1) or 1)
+        if amount_rub < REFERRAL_QUALIFY_MIN_RUB:
+            return None
+        reason = self.referral_is_linked(referrer_id, referred_id)
+        if reason:
+            new_status = 'suspicious'
+            self.cursor.execute("UPDATE users SET referred_suspicious=1 WHERE user_id=?", (referred_id,))
+        else:
+            new_status = 'qualified'
+        self.cursor.execute("""
+            UPDATE referral_credits SET status=?, reason=?, deal_id=?, deal_amount=?, currency=?
+            WHERE id=?
+        """, (new_status, reason, deal_id, amount, currency, cred_id))
+        self.conn.commit()
+        return {'referrer_id': referrer_id, 'status': new_status, 'reason': reason}
+
+    def get_qualified_referral_count(self, user_id: int) -> int:
+        """Число засчитанных рефералов (завершённая сделка + не связанные аккаунты)."""
+        self.cursor.execute(
+            "SELECT COUNT(*) FROM referral_credits WHERE referrer_id=? AND status='qualified'",
+            (user_id,)
+        )
+        return self.cursor.fetchone()[0] or 0
+
+    def get_suspicious_referral_count(self, user_id: int) -> int:
+        self.cursor.execute(
+            "SELECT COUNT(*) FROM referral_credits WHERE referrer_id=? AND status='suspicious'",
+            (user_id,)
+        )
+        return self.cursor.fetchone()[0] or 0
+
+    def get_referral_level(self, user_id: int) -> Optional[str]:
+        """Неденежный уровень амбассадора по числу засчитанных рефералов."""
+        count = self.get_qualified_referral_count(user_id)
+        for threshold, name in sorted(REFERRAL_LEVELS, reverse=True):
+            if count >= threshold:
+                return name
+        return None
+
+    def get_referral_top(self, limit: int = 10) -> List[dict]:
+        """Публичный лидерборд амбассадоров (без денежных призов)."""
+        self.cursor.execute("""
+            SELECT u.user_id, u.username, COUNT(rc.id) as qualified_count
+            FROM referral_credits rc
+            JOIN users u ON u.user_id = rc.referrer_id
+            WHERE rc.status = 'qualified'
+            GROUP BY rc.referrer_id
+            ORDER BY qualified_count DESC, rc.referrer_id
+            LIMIT ?
+        """, (limit,))
+        rows = self.cursor.fetchall()
+        return [dict(zip(['user_id', 'username', 'qualified_count'], r)) for r in rows]
+
+    def get_referral_suspicious_list(self) -> List[dict]:
+        """Подозрительные рефералы для ручного просмотра в админке."""
+        self.cursor.execute("""
+            SELECT rc.id, rc.referrer_id, ru.username AS referrer_name,
+                   rc.referred_id, du.username AS referred_name,
+                   rc.status, rc.reason, rc.created_at
+            FROM referral_credits rc
+            LEFT JOIN users ru ON ru.user_id = rc.referrer_id
+            LEFT JOIN users du ON du.user_id = rc.referred_id
+            WHERE rc.status = 'suspicious' OR rc.status = 'pending'
+            ORDER BY rc.created_at DESC
+        """)
+        rows = self.cursor.fetchall()
+        return [dict(zip(['id', 'referrer_id', 'referrer_name', 'referred_id', 'referred_name',
+                          'status', 'reason', 'created_at'], r)) for r in rows]
+
+    def resolve_referral(self, ref_id: int, resolved_by: int = 0) -> bool:
+        """Админ снял подозрительность: статус -> pending, повторная проверка при следующей сделке."""
+        self.cursor.execute("""
+            UPDATE referral_credits SET status='pending', reason=NULL, resolved_at=CURRENT_TIMESTAMP
+            WHERE id=? AND status='suspicious'
+        """, (ref_id,))
+        if self.cursor.rowcount == 0:
+            self.conn.commit()
+            return False
+        self.cursor.execute("SELECT referred_id FROM referral_credits WHERE id=?", (ref_id,))
+        row = self.cursor.fetchone()
+        if row:
+            self.cursor.execute("UPDATE users SET referred_suspicious=0 WHERE user_id=?", (row[0],))
+        self.conn.commit()
+        self.add_audit_log(resolved_by, "referral_resolve", target=f"referral_{ref_id}", details="Админ снял подозрительность реферала")
+        return True
 
     def get_user_by_friend_code(self, code: str):
         """Ищет пользователя по его реферальному коду (Промокод друга)"""
@@ -1894,13 +2007,8 @@ class Database:
             # Устанавливаем реферальную связь
             self.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
 
-            # Начисляем 50 RUB новому другу
-            if not self.update_balance(user_id, "RUB", 50, operation_type='referral_bonus', note='Активация промокода друга'):
-                self.conn.rollback()
-                return False, 'Ошибка начисления бонуса'
-
-            # Начисляем 50 RUB пригласителю
-            self.update_balance(referrer_id, "RUB", 50, operation_type='referral_bonus', note='Реферальный бонус за активацию промокода')
+            # Антифрод: связка аккаунтов (общий fingerprint/IP) → реферал не засчитывается
+            link_status = self.register_referral_link(referrer_id, user_id)
 
             # Записываем активацию
             self.cursor.execute("""
@@ -1908,56 +2016,22 @@ class Database:
                 VALUES (?, ?)
             """, (referrer_id, user_id))
 
-            # Уведомления
-            self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)",
-                                (user_id, "Уведомление", f"🎉 Вы активировали промокод друга! Получено 50 RUB"))
-            self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)",
-                                (referrer_id, "Уведомление", f"🎉 Пользователь активировал ваш промокод! Вам начислено 50 RUB. Теперь вы получаете +10% с каждого его пополнения."))
+            # Уведомления (без денежных бонусов — только нематериальный статус)
+            if link_status == 'suspicious':
+                self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)",
+                                    (user_id, "Уведомление", "⚠️ Промокод активирован, но обнаружена связь с аккаунтом пригласившего — реферал не будет засчитан."))
+            else:
+                self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)",
+                                    (user_id, "Уведомление", "🎉 Вы активировали промокод друга! Реферал засчитается после вашей первой завершённой сделки."))
+                self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)",
+                                    (referrer_id, "Уведомление", "🎉 Пользователь активировал ваш промокод! Реферал засчитается после его первой завершённой сделки."))
 
             self.conn.commit()
-            return True, {'referrer_id': referrer_id, 'bonus': 50, 'referrer_bonus': 50}
+            return True, {'referrer_id': referrer_id, 'status': link_status}
         except Exception as e:
             self.conn.rollback()
             logger.error(f"use_friend_promocode error: {e}")
             return False, 'Ошибка при активации промокода друга'
-
-    def credit_referral_deposit_commission(self, user_id: int, currency: str, deposit_amount: float):
-        """Начисляет 10% реферальных отчислений с пополнения другу, если пользователь активировал промокод друга"""
-        self.cursor.execute("SELECT referrer_id FROM friend_promo_activations WHERE user_id = ?", (user_id,))
-        row = self.cursor.fetchone()
-        if not row:
-            return None
-        referrer_id = row[0]
-
-        reward = quantize_amount(deposit_amount * 0.10)
-        if reward <= 0:
-            return None
-
-        self.cursor.execute("BEGIN IMMEDIATE")
-        try:
-            col_name = f"balance_{currency}"
-            self.cursor.execute(f"SELECT {col_name} FROM users WHERE user_id = ?", (referrer_id,))
-            current = self.cursor.fetchone()
-            if current is None:
-                self.conn.rollback()
-                return None
-            new_bal = (current[0] or 0) + reward
-            self.cursor.execute(f"UPDATE users SET {col_name} = ? WHERE user_id = ?", (new_bal, referrer_id))
-
-            self.cursor.execute("""
-                INSERT INTO referral_deposit_log (referrer_id, user_id, currency, deposit_amount, reward_amount)
-                VALUES (?, ?, ?, ?, ?)
-            """, (referrer_id, user_id, currency, deposit_amount, reward))
-
-            self.cursor.execute("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)",
-                                (referrer_id, "Уведомление", f"💰 Реферальное отчисление: +{reward} {currency} от пополнения пользователя."))
-
-            self.conn.commit()
-            return {'referrer_id': referrer_id, 'reward': reward, 'currency': currency}
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"credit_referral_deposit_commission error: {e}")
-            return None
 
     def get_friend_promo_activations_count(self, user_id: int) -> int:
         """Сколько человек активировали промокод этого пользователя"""
@@ -2604,12 +2678,14 @@ async def start_cmd(msg: types.Message, state: FSMContext):
         referrer_id = db.get_user_by_referral_code(ref_code)
         if referrer_id and referrer_id != uid:
             db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, uid))
-            db.conn.commit()
-            db.update_balance(referrer_id, "RUB", 50, operation_type='referral_bonus', note='Реферальный бонус')
-            db.update_balance(uid, "RUB", 50, operation_type='referral_bonus', note='Приветственный бонус за регистрацию')
-            db.add_notification(referrer_id, f"🎉 Пользователь @{name} перешёл по вашей реферальной ссылке! Вам начислено 50 RUB")
-            db.add_notification(uid, "🎉 Добро пожаловать! Вам начислено 50 RUB за регистрацию по реферальной ссылке")
-            logger.info(f"Реферальный бонус: {referrer_id} -> {uid}")
+            link_status = db.register_referral_link(referrer_id, uid)
+            if link_status == 'suspicious':
+                db.add_notification(referrer_id, f"⚠️ Пользователь @{name} перешёл по вашей реферальной ссылке, но аккаунты связаны (общий fingerprint/IP) — реферал не засчитан.")
+                db.add_notification(uid, "⚠️ Вы перешли по реферальной ссылке, но связь с пригласившим не подтверждена — реферал не будет засчитан.")
+            else:
+                db.add_notification(referrer_id, f"🎉 Пользователь @{name} перешёл по вашей реферальной ссылке! Реферал засчитается после его первой завершённой сделки.")
+                db.add_notification(uid, "🎉 Добро пожаловать! Реферал засчитается после вашей первой завершённой сделки.")
+            logger.info(f"Реферальная ссылка: {referrer_id} -> {uid} ({link_status})")
 
     is_admin = uid in ADMIN_IDS
 
@@ -2858,26 +2934,30 @@ async def referral_cb(call: CallbackQuery):
         await call.answer("❌ Пользователь не найден", show_alert=True)
         return
     
-    ref_count = db.get_referral_count(uid)
+    ref_count = db.get_qualified_referral_count(uid)
     ref_earnings = db.get_referral_earnings(uid)
     ref_code = user.get('referral_code') or uid
     friend_activations = db.get_friend_promo_activations_count(uid)
     friend_earnings = db.get_friend_promo_earnings(uid)
+    level = db.get_referral_level(uid)
     
+    level_text = f"\n🏅 Статус: *{level}*" if level else ""
     text = (f"👥 *Реферальная программа*\n\n"
-            f"👤 Приглашено по ссылке: {ref_count} друзей\n"
-            f"💰 Заработано: {ref_earnings} RUB\n"
+            f"👤 Приглашено: {db.get_referral_count(uid)} (засчитано: {ref_count}){level_text}\n"
             f"📱 Активаций промокода: {friend_activations}\n"
-            f"💵 Отчислений с пополнений: {friend_earnings:.2f} RUB\n\n"
+            f"💰 Начислено ранее: {ref_earnings} RUB\n\n"
+            f"📌 Реферал засчитывается после первой завершённой сделки приглашённого "
+            f"(от {int(REFERRAL_QUALIFY_MIN_RUB)} RUB). За приглашения начисляется "
+            f"публичный статус «Амбассадор», а не деньги.\n\n"
             f"🔗 Ваша ссылка:\n`https://t.me/NovixGift_Bot?start=ref_{ref_code}`\n\n"
-            f"🎫 *Ваш промокод друга:* `{ref_code}`\n"
-            f"Передайте его друзьям — они получат 50 RUB, а вы будете "
-            f"получать +10% от каждого их пополнения!")
+            f"🎫 *Ваш промокод друга:* `{ref_code}`")
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔗 Создать приглашение", callback_data="ref_create_link")
     builder.button(text="📱 QR-код", callback_data="ref_qr")
-    builder.button(text=f"💳 Вывести бонусы ({ref_earnings} ₽)", callback_data="ref_withdraw")
+    builder.button(text="🏆 Топ амбассадоров", callback_data="ref_top")
+    if ref_earnings > 0:
+        builder.button(text=f"💳 Вывести бонусы ({ref_earnings} ₽)", callback_data="ref_withdraw")
     builder.button(text="📋 Список рефералов", callback_data="ref_list")
     builder.button(text="📊 Аналитика", callback_data="ref_analytics")
     builder.button(text="🔙 В меню", callback_data="menu")
@@ -2892,7 +2972,7 @@ async def ref_create_link_cb(call: CallbackQuery):
     user = db.get_user_dict(uid)
     code = user.get('referral_code') or uid
     link = f"https://t.me/NovixGift_Bot?start=ref_{code}"
-    share_text = f"🎁 Присоединяйся к NovixGift! Переходи по моей ссылке и получи бонус: {link}"
+    share_text = f"🎁 Присоединяйся к NovixGift! Переходи по моей ссылке: {link}"
     text = (f"🔗 *Ваша реферальная ссылка*\n\n"
             f"`{link}`\n\n"
             f"📤 Нажмите «Поделиться», чтобы отправить друзьям")
@@ -2984,10 +3064,17 @@ async def ref_list_cb(call: CallbackQuery):
     if referrals:
         for r in referrals[:20]:
             tag = f"@{r[0]}" if r[0] else f"ID {r[1]}"
-            text += f"👤 {tag}\n"
+            db.cursor.execute(
+                "SELECT status FROM referral_credits WHERE referrer_id=? AND referred_id=?",
+                (uid, r[1])
+            )
+            rstat = db.cursor.fetchone()
+            status = rstat[0] if rstat else 'pending'
+            mark = {'qualified': '✅', 'suspicious': '⚠️', 'pending': '⏳'}.get(status, '⏳')
+            text += f"{mark} {tag}\n"
     else:
         text += "Пока нет приглашённых друзей\n"
-    text += f"\nВсего: {len(referrals)}"
+    text += f"\n✅ — засчитан, ⏳ — ждёт первой сделки, ⚠️ — подозрительный\nВсего: {len(referrals)}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]])
     photo_path = img_path("ПРИГЛАСИТЬ ДРУГА.jpg")
     if img_exists("ПРИГЛАСИТЬ ДРУГА.jpg"):
@@ -3003,6 +3090,8 @@ async def ref_list_cb(call: CallbackQuery):
 async def ref_analytics_cb(call: CallbackQuery):
     uid = call.from_user.id
     ref_count = db.get_referral_count(uid)
+    qualified = db.get_qualified_referral_count(uid)
+    suspicious = db.get_suspicious_referral_count(uid)
     earnings = db.get_referral_earnings(uid)
     db.cursor.execute("""
         SELECT COUNT(DISTINCT d.seller) FROM deals d 
@@ -3012,9 +3101,11 @@ async def ref_analytics_cb(call: CallbackQuery):
     active = db.cursor.fetchone()[0] or 0
     text = (f"📊 *Реферальная аналитика*\n\n"
             f"👥 Приглашено: {ref_count}\n"
-            f"✅ Активных: {active}\n"
-            f"💰 Заработано: {earnings} RUB\n"
-            f"📈 Конверсия: {round(active/ref_count*100, 1) if ref_count > 0 else 0}%")
+            f"✅ Засчитано: {qualified}\n"
+            f"⚠️ Подозрительных: {suspicious}\n"
+            f"💼 Активных продавцов: {active}\n"
+            f"💰 Начислено ранее: {earnings} RUB\n"
+            f"📈 Конверсия: {round(qualified/ref_count*100, 1) if ref_count > 0 else 0}%")
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]])
     photo_path = img_path("ПРИГЛАСИТЬ ДРУГА.jpg")
     if img_exists("ПРИГЛАСИТЬ ДРУГА.jpg"):
@@ -3024,6 +3115,24 @@ async def ref_analytics_cb(call: CallbackQuery):
         )
     else:
         await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data == "ref_top")
+async def ref_top_cb(call: CallbackQuery):
+    top = db.get_referral_top(10)
+    text = "🏆 *Топ амбассадоров*\n\n"
+    if top:
+        medals = ['🥇', '🥈', '🥉']
+        for i, row in enumerate(top):
+            prefix = medals[i] if i < 3 else f"{i + 1}."
+            name = row['username'] or f"ID {row['user_id']}"
+            text += f"{prefix} {name} — {row['qualified_count']} рефералов\n"
+    else:
+        text += "Пока нет засчитанных рефералов.\n\n"
+        text += "Засчитывание: приглашённый должен завершить сделку от "
+        text += f"{int(REFERRAL_QUALIFY_MIN_RUB)} RUB."
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]])
+    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("copy_ref_"))
@@ -3062,12 +3171,18 @@ async def activate_promo_cmd(msg: types.Message):
         friend_result = db.use_friend_promocode(code, msg.from_user.id)
     if friend_result[0]:
         data = friend_result[1]
-        await msg.answer(
-            f"✅ *Промокод друга активирован!*\n\n"
-            f"💰 Вам начислено: {data['bonus']} RUB\n"
-            f"👤 Пригласитель получил: {data['referrer_bonus']} RUB",
-            parse_mode="Markdown"
-        )
+        if data.get('status') == 'suspicious':
+            await msg.answer(
+                f"✅ *Промокод друга активирован!*\n\n"
+                f"⚠️ Но обнаружена связь вашего аккаунта с аккаунтом пригласившего — реферал не будет засчитан.",
+                parse_mode="Markdown"
+            )
+        else:
+            await msg.answer(
+                f"✅ *Промокод друга активирован!*\n\n"
+                f"🏅 Реферал засчитается после вашей первой завершённой сделки — пригласивший получит статус «Амбассадор».",
+                parse_mode="Markdown"
+            )
         return
     
     success, result = db.use_promocode(code, msg.from_user.id)
@@ -3102,14 +3217,20 @@ async def activate_promo_code_msg(msg: types.Message, state: FSMContext):
     if friend_result[0]:
         data = friend_result[1]
         await state.clear()
-        await msg.answer(
-            f"✅ *Промокод друга активирован!*\n\n"
-            f"💰 Вам начислено: {data['bonus']} RUB\n"
-            f"👤 Пригласитель получил: {data['referrer_bonus']} RUB\n\n"
-            f"✨ Теперь пригласитель будет получать +10% от каждого вашего пополнения!",
-            parse_mode="Markdown",
-            reply_markup=back_kb()
-        )
+        if data.get('status') == 'suspicious':
+            await msg.answer(
+                f"✅ *Промокод друга активирован!*\n\n"
+                f"⚠️ Обнаружена связь вашего аккаунта с пригласившим — реферал не будет засчитан.",
+                parse_mode="Markdown",
+                reply_markup=back_kb()
+            )
+        else:
+            await msg.answer(
+                f"✅ *Промокод друга активирован!*\n\n"
+                f"🏅 Реферал засчитается после вашей первой завершённой сделки.",
+                parse_mode="Markdown",
+                reply_markup=back_kb()
+            )
         return
     
     # Если не промокод друга, пробуем административный промокод
@@ -4136,7 +4257,8 @@ async def receive_cb(call: CallbackQuery):
 
         db.update_balance(seller_id, currency, seller_amount, operation_type='deal_release', reference_id=str(did))
         db.upd_deal_status(did, "completed")
-        referral_bonus = db.credit_referral_commission(seller_id, did, currency, commission_amount)
+        db.qualify_referral(deal["buyer"], did, amount, currency, _FALLBACK_RATES)
+        db.qualify_referral(seller_id, did, amount, currency, _FALLBACK_RATES)
 
     await call.answer("✅ Сделка завершена!", show_alert=True)
     await call.message.edit_text(f"✅ *Сделка #{deal['display_id']} завершена!*\nСпасибо!", parse_mode="Markdown")
@@ -4156,15 +4278,6 @@ async def receive_cb(call: CallbackQuery):
     # WebSocket real-time notification
     asyncio.create_task(ws_notify_user(seller_id, {'type': 'notification', 'title': 'Сделка завершена', 'message': f'Получено {seller_amount} {currency}'}))
     asyncio.create_task(ws_notify_user(call.from_user.id, {'type': 'notification', 'title': 'Сделка завершена', 'message': 'Средства переведены продавцу'}))
-
-    if referral_bonus:
-        await notify_user(
-            referral_bonus['referrer_id'],
-            f"👥 *Реферальный бонус*\n\n"
-            f"По сделке #{deal['display_id']} начислено {referral_bonus['reward']} RUB "
-            f"(10% от сервисной комиссии)."
-        )
-        asyncio.create_task(ws_notify_user(referral_bonus['referrer_id'], {'type': 'notification', 'title': 'Реферальный бонус', 'message': f'Начислено {referral_bonus["reward"]} RUB'}))
 
     # Предложение оценить партнёра после завершения сделки
     await send_rating_prompt(seller_id, did, deal["buyer"])
@@ -4380,9 +4493,14 @@ async def achievements_cb(call: CallbackQuery):
     
     earned = db.check_and_award_achievements(user_id, stats)
     for ach_id, reward in earned:
-        await call.answer(f"🎉 Получено достижение! +{reward} RUB", show_alert=True)
-        asyncio.create_task(notify_usersite(user_id, 'achievement', 'Новое достижение',
-            f'🏆 {ach_id} — +{reward} RUB', '/usersite/dashboard/'))
+        if reward > 0:
+            await call.answer(f"🎉 Получено достижение! +{reward} RUB", show_alert=True)
+            asyncio.create_task(notify_usersite(user_id, 'achievement', 'Новое достижение',
+                f'🏆 {ach_id} — +{reward} RUB', '/usersite/dashboard/'))
+        else:
+            await call.answer(f"🎉 Получено достижение: {ach_id}", show_alert=True)
+            asyncio.create_task(notify_usersite(user_id, 'achievement', 'Новое достижение',
+                f'🏆 {ach_id} — статус получен', '/usersite/dashboard/'))
     
     achievements = db.get_user_achievements(user_id)
     
@@ -4390,7 +4508,7 @@ async def achievements_cb(call: CallbackQuery):
     text += f"📊 *Статистика:*\n"
     text += f"• Завершённых сделок: {stats['completed_deals']}\n"
     text += f"• Продаж: {stats['sales']}\n"
-    text += f"• Приглашённых друзей: {stats['referrals']}\n\n"
+    text += f"• Засчитанных рефералов: {stats['referrals']}\n\n"
     
     text += "✨ *Достижения:*\n"
     for ach in achievements:
@@ -4403,11 +4521,17 @@ async def achievements_cb(call: CallbackQuery):
         
         if earned_at:
             if claimed:
-                text += f"✅ {icon} *{name}* — получено (+{reward} RUB)\n"
+                if reward > 0:
+                    text += f"✅ {icon} *{name}* — получено (+{reward} RUB)\n"
+                else:
+                    text += f"✅ {icon} *{name}* — получено\n"
             else:
                 text += f"🎁 {icon} *{name}* — доступно! /claim_{ach[0]}\n"
         else:
-            text += f"🔒 {icon} *{name}* — {desc} (+{reward} RUB)\n"
+            if reward > 0:
+                text += f"🔒 {icon} *{name}* — {desc} (+{reward} RUB)\n"
+            else:
+                text += f"🔒 {icon} *{name}* — {desc}\n"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu")]
@@ -4883,7 +5007,6 @@ async def admin_credit_amount(msg: types.Message, state: FSMContext):
         uid = data.get('user_id', data.get('uid', data.get('target_user_id', 0)))
         currency = data.get('currency', 'RUB')
         db.update_balance(uid, currency, amount, operation_type='admin_credit', initiated_by=msg.from_user.id)
-        db.credit_referral_deposit_commission(uid, currency, amount)
         db.add_audit_log(msg.from_user.id, "admin_credit", target=f"user_{uid}", details=f"+{amount} {currency}")
         await bot.send_message(uid, f"💰 Вам зачислено {fmt_num(amount)} {currency}!")
         await state.clear()
@@ -6484,6 +6607,8 @@ async def handle_api(request):
         'ton_escrow_enabled': bool(TON_ESCROW_ADDRESS and TON_API_KEY)
     })
 
+limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+
 @limiter.limit("10/minute")
 async def handle_create_deal(request):
     try:
@@ -6644,8 +6769,8 @@ async def handle_activate_ref_code(request):
         if success_friend:
             return JSONResponse(content={
                 'success': True,
-                'bonus': result_friend['bonus'],
-                'message': f'✅ Промокод друга активирован! Вы получили {result_friend["bonus"]} RUB'
+                'bonus': 0,
+                'message': '✅ Промокод друга активирован! Реферал засчитается после первой завершённой сделки.'
             })
 
         success, result = db.use_promocode(code, user_id)
@@ -7167,7 +7292,8 @@ async def handle_confirm_receipt(request):
                 return JSONResponse(content={'success': False, 'error': 'Item not sent yet'})
 
             db.update_balance(seller_id, currency, seller_amount, operation_type='deal_release', reference_id=str(did))
-            referral_bonus = db.credit_referral_commission(seller_id, did, currency, commission_amount)
+            db.qualify_referral(user_id, did, amount, currency, _FALLBACK_RATES)
+            db.qualify_referral(seller_id, did, amount, currency, _FALLBACK_RATES)
 
         premium_text = " (без комиссии)" if commission == 0 else ""
         asyncio.create_task(notify_user(
@@ -7186,15 +7312,6 @@ async def handle_confirm_receipt(request):
             f'Сделка #{deal["display_id"]}: получено {fmt_num(seller_amount)} {currency}', f'/usersite/dashboard/'))
         asyncio.create_task(notify_usersite(user_id, 'deal_completed', 'Сделка завершена',
             f'Сделка #{deal["display_id"]} успешно завершена', f'/usersite/dashboard/'))
-
-        if referral_bonus:
-            asyncio.create_task(notify_user(
-                referral_bonus['referrer_id'],
-                f"👥 *Реферальный бонус*\n\nПо сделке #{deal['display_id']} начислено {referral_bonus['reward']} RUB (10% от сервисной комиссии)."
-            ))
-            asyncio.create_task(ws_notify_user(referral_bonus['referrer_id'], {'type': 'notification', 'title': 'Реферальный бонус', 'message': f'Начислено {referral_bonus["reward"]} RUB'}))
-            asyncio.create_task(notify_usersite(referral_bonus['referrer_id'], 'referral_bonus', 'Реферальный бонус',
-                f'+{referral_bonus["reward"]} RUB за сделку #{deal["display_id"]}', f'/usersite/dashboard/'))
 
         # Предложение оценки
         asyncio.create_task(send_rating_prompt(seller_id, did, user_id))
@@ -7330,19 +7447,21 @@ async def handle_activate_promo(request):
             if user and user.get('referred_by') is not None:
                 return JSONResponse(content={'success': False, 'error': 'Вы уже активировали реферальный код'})
             db.cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
-            db.update_balance(referrer_id, "RUB", 50, operation_type='referral_bonus', note='Реферальный бонус за промокод друга')
-            db.update_balance(user_id, "RUB", 50, operation_type='referral_bonus', note='Приветственный бонус за активацию промокода друга')
-            db.add_notification(referrer_id, "🎉 Пользователь активировал ваш реферальный код! +50 RUB")
-            db.add_notification(user_id, "🎉 Добро пожаловать! +50 RUB за активацию реферального кода")
-            db.conn.commit()
+            link_status = db.register_referral_link(referrer_id, user_id)
+            if link_status == 'suspicious':
+                db.add_notification(referrer_id, f"⚠️ Пользователь {user_id} активировал ваш реферальный код, но аккаунты связаны — реферал не засчитан.")
+                db.add_notification(user_id, "⚠️ Реферальный код активирован, но обнаружена связь с пригласившим — реферал не будет засчитан.")
+            else:
+                db.add_notification(referrer_id, "🎉 Пользователь активировал ваш реферальный код! Реферал засчитается после его первой завершённой сделки.")
+                db.add_notification(user_id, "🎉 Реферальный код активирован! Реферал засчитается после вашей первой завершённой сделки.")
             asyncio.create_task(notify_usersite(user_id, 'promo_activated', 'Промокод активирован',
-                f'Реферальный код активирован! +50 RUB', '/usersite/dashboard/'))
+                'Реферальный код активирован! Реферал засчитается после первой завершённой сделки', '/usersite/dashboard/'))
             asyncio.create_task(notify_usersite(referrer_id, 'promo_activated', 'Реферальный бонус',
-                f'{user_id} активировал ваш код! +50 RUB', '/usersite/dashboard/'))
+                f'{user_id} активировал ваш код! Реферал засчитается после его первой завершённой сделки', '/usersite/dashboard/'))
             return JSONResponse(content={
                 'success': True,
-                'bonus': 50,
-                'message': '✅ Реферальный код активирован! Вы получили 50 RUB'
+                'bonus': 0,
+                'message': '✅ Реферальный код активирован! Бонус — статус «Амбассадор» после первой завершённой сделки.'
             })
 
         success, result = db.use_promocode(promo_code, user_id)
@@ -7655,8 +7774,6 @@ async def lifespan(app: FastAPI):
 
 fastapi_app = FastAPI(title="Novix Gift Bot API", lifespan=lifespan)
 
-
-limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
 fastapi_app.state.limiter = limiter
 fastapi_app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 fastapi_app.add_middleware(SlowAPIMiddleware)

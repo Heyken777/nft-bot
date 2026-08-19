@@ -23,7 +23,6 @@ TON_API_KEY = os.getenv("TON_API_KEY")
 TON_ESCROW_ADDRESS = os.getenv("TON_ESCROW_ADDRESS", "")
 TON_PAYMENT_TTL_MINUTES = int(os.getenv("TON_PAYMENT_TTL_MINUTES", "30"))
 TON_POLL_INTERVAL_SECONDS = int(os.getenv("TON_POLL_INTERVAL_SECONDS", "30"))
-REFERRAL_COMMISSION_SHARE = float(os.getenv("REFERRAL_COMMISSION_SHARE", "0.10"))
 
 COMMISSION_DEAL = 0.02
 COMMISSION_WITHDRAW = 0.10
@@ -41,6 +40,14 @@ NEW_ACCOUNT_MIN_AGE_DAYS = int(os.getenv("NEW_ACCOUNT_MIN_AGE_DAYS", "7"))      
 NEW_ACCOUNT_WITHDRAW_LIMIT_RUB = float(os.getenv("NEW_ACCOUNT_WITHDRAW_LIMIT_RUB", "5000"))  # дневной лимит вывода в cooldown
 RISK_FLAG_THRESHOLD = int(os.getenv("RISK_FLAG_THRESHOLD", "50"))                   # порог flagged для сделок
 RISK_FP_LINK_WINDOW_DAYS = int(os.getenv("RISK_FP_LINK_WINDOW_DAYS", "30"))         # окно IP-совпадений для связки аккаунтов
+
+# ==== Реферальная программа (только нематериальные награды) ====
+REFERRAL_QUALIFY_MIN_RUB = float(os.getenv("REFERRAL_QUALIFY_MIN_RUB", "1000"))   # мин. сумма завершённой сделки для засчитывания реферала (RUB)
+REFERRAL_LEVELS = [  # (порог рефералов, название уровня)
+    (5, "🥉 Активный амбассадор"),
+    (25, "🥈 Серебряный амбассадор"),
+    (100, "🏆 Золотой амбассадор"),
+]
 
 VOLUME_FEE_TIERS = [
     (0, 0.04),

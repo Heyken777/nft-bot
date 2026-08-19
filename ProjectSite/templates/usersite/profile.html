@@ -74,29 +74,35 @@
         <div class="card mt-4" data-reveal>
             <h4><i class="fas fa-users"></i> Партнёрская программа</h4>
             <div class="mt-2">
+                {% if ambassador_level %}
+                <div class="info-row" style="font-weight:600;color:var(--accent);">
+                    <span class="info-label"><i class="fi fi-rr-medal"></i> Статус</span>
+                    <span class="info-value">{{ ambassador_level }}</span>
+                </div>
+                {% endif %}
                 <div class="info-row">
-                    <span class="info-label">Приглашено лично</span>
+                    <span class="info-label">Засчитано рефералов</span>
+                    <span class="info-value">{{ qualified_referrals }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Приглашено всего</span>
                     <span class="info-value">{{ referrals|length }}</span>
                 </div>
+                {% if suspicious_referrals %}
                 <div class="info-row">
-                    <span class="info-label">Рефералов 2-го уровня</span>
-                    <span class="info-value">{{ referral_level2_count }}</span>
+                    <span class="info-label">Подозрительных связок</span>
+                    <span class="info-value" style="color:#ff4757;">⚠ {{ suspicious_referrals }}</span>
                 </div>
+                {% endif %}
+                {% if referral_earnings_rub or referral_total_commission or referral_deposit_total %}
                 <div class="info-row">
-                    <span class="info-label">Комиссионных начислений</span>
-                    <span class="info-value">{{ referral_commission_count }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">С комиссий сделок</span>
-                    <span class="info-value">{{ referral_total_commission|floatformat:2 }} ₽</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">С пополнений (10%)</span>
-                    <span class="info-value">{{ referral_deposit_total|floatformat:2 }} ₽</span>
-                </div>
-                <div class="info-row" style="font-weight:600;color:var(--accent);">
-                    <span class="info-label">Всего заработано</span>
+                    <span class="info-label">Начислено ранее</span>
                     <span class="info-value">{{ referral_total_all|floatformat:2 }} ₽</span>
+                </div>
+                {% endif %}
+                <div class="info-row">
+                    <span class="info-label">Как засчитывается</span>
+                    <span class="info-value" style="font-size:12px;color:var(--text-muted);">после первой завершённой сделки друга</span>
                 </div>
             </div>
             <div class="form-group mt-3">
