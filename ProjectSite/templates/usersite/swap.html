@@ -1,0 +1,183 @@
+{% extends 'usersite/base.html' %}
+{% load static %}
+{% load dict_filters %}
+{% block title %}Конвертация валют{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/usersite/profile/">Главная</a>
+    <span class="separator">/</span>
+    <span class="current">Конвертация</span>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card" data-reveal>
+            <h4><i class="fi fi-rr-exchange"></i> Мгновенная конвертация</h4>
+            <p class="text-muted" style="font-size:13px;">
+                Обмен валюты внутри баланса по текущему курсу. Комиссия платформы — {{ swap_commission_pct|floatformat:1 }}%.
+                Комиссия удерживается из суммы к зачислению, курс фиксируется на момент исполнения.
+            </p>
+
+            <div class="form-group mt-2">
+                <label class="form-label">Отдаю</label>
+                <div class="d-flex gap-2">
+                    <select id="fromCur" class="form-control" style="max-width:130px;" onchange="onInputChange()">
+                        {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                    </select>
+                    <input type="number" id="fromAmt" class="form-control" placeholder="Сумма" step="any" min="0" oninput="onInputChange()">
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px;" id="fromBalance"></div>
+            </div>
+
+            <div class="text-center my-2">
+                <i class="fi fi-rr-arrow-down" style="color:var(--accent);"></i>
+            </div>
+
+            <div class="form-group mt-2">
+                <label class="form-label">Получаю</label>
+                <div class="d-flex gap-2">
+                    <select id="toCur" class="form-control" style="max-width:130px;" onchange="onInputChange()">
+                        {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                    </select>
+                    <input type="text" id="toAmt" class="form-control" readonly>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px;" id="toBalance"></div>
+            </div>
+
+            <div id="swapDetails" class="mt-3" style="display:none;font-size:13px;background:rgba(37,99,235,.06);border-radius:10px;padding:12px;">
+                <div class="d-flex justify-content-between mb-1">
+                    <span style="color:var(--text-muted);">Курс</span>
+                    <span id="swapRate" style="font-weight:600;"></span>
+                </div>
+                <div class="d-flex justify-content-between mb-1">
+                    <span style="color:var(--text-muted);">Списание</span>
+                    <span id="swapOut"></span>
+                </div>
+                <div class="d-flex justify-content-between mb-1">
+                    <span style="color:var(--text-muted);">Комиссия платформы</span>
+                    <span id="swapFee" style="color:#ff4757;"></span>
+                </div>
+                <div class="d-flex justify-content-between" style="border-top:1px solid var(--border-color);padding-top:8px;">
+                    <span style="font-weight:600;">К зачислению</span>
+                    <span id="swapNet" style="font-weight:700;color:var(--accent);"></span>
+                </div>
+            </div>
+
+            <div id="swapError" style="color:#ff4757;font-size:13px;margin-top:8px;display:none;"></div>
+            <button class="btn btn-primary mt-3" onclick="confirmSwap()" style="width:100%;" id="swapBtn" disabled>
+                <i class="fi fi-rr-refresh"></i> Конвертировать
+            </button>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card" data-reveal>
+            <h4><i class="fi fi-rr-wallet"></i> Мои балансы</h4>
+            <div class="mt-2">
+                {% for c in currencies %}
+                <div class="d-flex justify-content-between" style="padding:8px 0;border-bottom:1px solid var(--border-color);font-size:14px;">
+                    <span>{{ c }} <span style="color:var(--text-muted);font-size:12px;">{{ currency_symbols|dictget:c }}</span></span>
+                    <span id="bal_{{ c }}" style="font-weight:600;">{% with b=balances|dictget:c %}{{ b|floatformat:2 }}{% endwith %}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var csrf = '{{ csrf_token }}';
+var BALANCES = {{ balances|safe }};
+var COMMISSION_PCT = {{ swap_commission_pct|floatformat:1 }};
+var MIN_RUB = {{ swap_min_rub }};
+var MAX_RUB = {{ swap_max_rub }};
+var _previewTimer = null;
+
+function fmt(v) { return (Math.round(v * 10000) / 10000).toString(); }
+
+function showBalances() {
+    var fromCur = document.getElementById('fromCur').value;
+    var toCur = document.getElementById('toCur').value;
+    document.getElementById('fromBalance').textContent = 'Доступно: ' + fmt(BALANCES[fromCur]) + ' ' + fromCur;
+    document.getElementById('toBalance').textContent = 'Баланс: ' + fmt(BALANCES[toCur]) + ' ' + toCur;
+}
+
+function onInputChange() {
+    var fromCur = document.getElementById('fromCur').value;
+    var toCur = document.getElementById('toCur').value;
+    if (fromCur === toCur) {
+        var toSel = document.getElementById('toCur');
+        var idx = 0;
+        for (var i = 0; i < toSel.options.length; i++) {
+            if (toSel.options[i].value !== fromCur) { idx = i; break; }
+        }
+        toSel.selectedIndex = idx;
+        toCur = toSel.value;
+    }
+    showBalances();
+    var fromAmt = parseFloat(document.getElementById('fromAmt').value);
+    var details = document.getElementById('swapDetails');
+    var err = document.getElementById('swapError');
+    var btn = document.getElementById('swapBtn');
+    err.style.display = 'none';
+    if (!fromAmt || fromAmt <= 0) {
+        details.style.display = 'none'; btn.disabled = true; return;
+    }
+    btn.disabled = true;
+    clearTimeout(_previewTimer);
+    _previewTimer = setTimeout(function() {
+        fetch('/usersite/api/swap/preview/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+            body: JSON.stringify({from_currency: fromCur, to_currency: toCur, amount: fromAmt})
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.success) {
+                err.textContent = d.error || 'Ошибка расчёта'; err.style.display = 'block';
+                details.style.display = 'none'; return;
+            }
+            document.getElementById('swapRate').textContent = '1 ' + d.from_currency + ' = ' + fmt(d.rate) + ' ' + d.to_currency;
+            document.getElementById('swapOut').textContent = fmt(d.amount) + ' ' + d.from_currency;
+            document.getElementById('swapFee').textContent = d.commission_pct.toFixed(1) + '% (' + fmt(d.commission) + ' ' + d.to_currency + ')';
+            document.getElementById('swapNet').textContent = fmt(d.net) + ' ' + d.to_currency;
+            document.getElementById('toAmt').value = fmt(d.net) + ' ' + d.to_currency;
+            details.style.display = 'block';
+            btn.disabled = false;
+            btn.dataset.amount = d.amount;
+        })
+        .catch(function() {
+            err.textContent = 'Сервис недоступен, попробуйте позже'; err.style.display = 'block';
+            details.style.display = 'none';
+        });
+    }, 350);
+}
+
+function confirmSwap() {
+    var fromCur = document.getElementById('fromCur').value;
+    var toCur = document.getElementById('toCur').value;
+    var fromAmt = parseFloat(document.getElementById('fromAmt').value);
+    if (!fromAmt || fromAmt <= 0) return;
+    var netEl = document.getElementById('swapNet');
+    showConfirmModal('Подтвердить конвертацию?\n\n' + fmt(fromAmt) + ' ' + fromCur + ' → ' + netEl.textContent, function() {
+        fetch('/usersite/api/swap/execute/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+            body: JSON.stringify({from_currency: fromCur, to_currency: toCur, amount: fromAmt})
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.success) {
+                showToast('Конвертация выполнена');
+                setTimeout(function() { location.reload(); }, 1200);
+            } else {
+                showToast(d.error || 'Ошибка конвертации', 'error');
+            }
+        })
+        .catch(function() { showToast('Сервис недоступен', 'error'); });
+    });
+}
+
+showBalances();
+</script>
+{% endblock %}

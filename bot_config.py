@@ -30,6 +30,11 @@ PREMIUM_COMMISSION_DEAL = 0.01
 PREMIUM_COMMISSION_WITHDRAW = 0.05
 PREMIUM_PRICE = 500
 
+# ==== Своп (внутренняя конвертация баланса, без эскроу-риска) ====
+SWAP_COMMISSION = float(os.getenv("SWAP_COMMISSION", "0.005"))            # 0.5% — ниже комиссии сделки (2%)
+SWAP_MIN_AMOUNT_RUB = float(os.getenv("SWAP_MIN_AMOUNT_RUB", "10"))       # мин. сумма свопа в RUB-эквиваленте
+SWAP_MAX_AMOUNT_RUB = float(os.getenv("SWAP_MAX_AMOUNT_RUB", "100000"))   # макс. сумма одной операции
+
 DEAL_REMINDER_HOURS = int(os.getenv("DEAL_REMINDER_HOURS", "24"))
 DEAL_ESCALATION_HOURS = int(os.getenv("DEAL_ESCALATION_HOURS", "72"))
 

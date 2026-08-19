@@ -2164,6 +2164,73 @@ def exchange_view(request):
     })
 
 
+def swap_view(request):
+    if not check_auth(request):
+        return redirect('/usersite/login/')
+    user_id = request.session.get('user_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    balances = {}
+    if row:
+        u = dict(row)
+        for c in CURRENCIES:
+            balances[c] = float(u.get(f'balance_{c}', 0) or 0)
+    swap_commission = float(os.getenv('SWAP_COMMISSION', '0.005'))
+    swap_min_rub = float(os.getenv('SWAP_MIN_AMOUNT_RUB', '10'))
+    swap_max_rub = float(os.getenv('SWAP_MAX_AMOUNT_RUB', '100000'))
+    return render(request, 'usersite/swap.html', {
+        'currencies': CURRENCIES,
+        'balances': balances,
+        'currency_symbols': CURRENCY_SYMBOLS,
+        'exchange_rates': EXCHANGE_RATES,
+        'swap_commission': swap_commission,
+        'swap_commission_pct': swap_commission * 100,
+        'swap_min_rub': swap_min_rub,
+        'swap_max_rub': swap_max_rub,
+    })
+
+
+@csrf_exempt
+@safe_db
+@require_http_methods(["POST"])
+def api_swap_preview(request):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    result = _call_bot_internal('/api/internal/swap-preview', user_id, {
+        'from_currency': data.get('from_currency', ''),
+        'to_currency': data.get('to_currency', ''),
+        'amount': data.get('amount', 0),
+    })
+    return JsonResponse(result)
+
+
+@csrf_exempt
+@safe_db
+@require_http_methods(["POST"])
+def api_swap_execute(request):
+    if not check_auth(request):
+        return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=401)
+    user_id = request.session.get('user_id')
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    result = _call_bot_internal('/api/internal/swap', user_id, {
+        'from_currency': data.get('from_currency', ''),
+        'to_currency': data.get('to_currency', ''),
+        'amount': data.get('amount', 0),
+    })
+    return JsonResponse(result)
+
+
 @csrf_exempt
 @safe_db
 @require_http_methods(["POST"])

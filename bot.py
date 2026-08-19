@@ -304,6 +304,46 @@ CURRENCIES = {
 _FALLBACK_RATES = {'RUB': 1.0, 'USD': 73.0, 'EUR': 83.0, 'BYN': 26.0, 'UAH': 1.6,
                    'KZT': 0.15, 'UZS': 0.0061, 'TON': 120.0, 'USDT': 73.0, 'STARS': 2.0}
 
+SWAP_CURRENCIES = ('RUB', 'USD', 'EUR', 'BYN', 'UAH', 'KZT', 'UZS', 'TON', 'USDT', 'STARS')
+_SWAP_PREC = {'TON': '0.0001', 'USDT': '0.0001', 'STARS': '1'}
+
+
+def compute_swap(from_currency: str, to_currency: str, amount: float, rates: dict = None) -> Optional[dict]:
+    """Чистый расчёт свопа: курс из RUB-таблицы rates, комиссия платформы из суммы к зачислению.
+    Decimal на всех этапах вычисления. Возвращает детали или None при невалидных параметрах."""
+    if rates is None:
+        rates = _FALLBACK_RATES
+    from_cur = str(from_currency or '').upper()
+    to_cur = str(to_currency or '').upper()
+    if from_cur not in SWAP_CURRENCIES or to_cur not in SWAP_CURRENCIES or from_cur == to_cur:
+        return None
+    try:
+        amount_d = Decimal(str(amount))
+    except Exception:
+        return None
+    if amount_d <= 0:
+        return None
+    rate_from = Decimal(str(rates.get(from_cur, 0) or 0))
+    rate_to = Decimal(str(rates.get(to_cur, 0) or 0))
+    if rate_from <= 0 or rate_to <= 0:
+        return None
+    amount_rub = amount_d * rate_from
+    if amount_rub < Decimal(str(SWAP_MIN_AMOUNT_RUB)) or amount_rub > Decimal(str(SWAP_MAX_AMOUNT_RUB)):
+        return None
+    rate = rate_from / rate_to
+    gross = amount_d * rate
+    commission = gross * Decimal(str(SWAP_COMMISSION))
+    net = gross - commission
+    q = Decimal(_SWAP_PREC.get(to_cur, '0.01'))
+    net = net.quantize(q, rounding=ROUND_DOWN)
+    return {
+        'from_currency': from_cur, 'to_currency': to_cur,
+        'amount': float(amount_d), 'amount_rub': float(amount_rub),
+        'rate': float(rate), 'gross': float(gross),
+        'commission': float(commission), 'commission_pct': float(SWAP_COMMISSION * 100),
+        'net': float(net),
+    }
+
 def card_currency_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇷🇺 RUB", callback_data="card_cur_RUB"),
@@ -1136,7 +1176,7 @@ class Database:
         p = prec.get(currency, 2)
         return round(value, p)
 
-    def update_balance(self, uid, currency, delta, operation_type='unknown', reference_id=None, initiated_by=None, note=None):
+    def update_balance(self, uid, currency, delta, operation_type='unknown', reference_id=None, initiated_by=None, note=None, commit=True):
         col_name = f"balance_{currency}"
         self.cursor.execute("SAVEPOINT sp_update_balance")
         try:
@@ -1159,7 +1199,9 @@ class Database:
             )
             self.cursor.execute("RELEASE sp_update_balance")
             tx_type = 'deposit' if delta > 0 else 'withdrawal'
-            self.add_transaction(uid, delta, currency, tx_type, f"{'Пополнение' if delta > 0 else 'Списание'} баланса")
+            self.add_transaction(uid, delta, currency, tx_type, f"{'Пополнение' if delta > 0 else 'Списание'} баланса", commit=commit)
+            if commit:
+                self.conn.commit()
             return True
         except Exception as e:
             self.cursor.execute("ROLLBACK TO sp_update_balance")
@@ -1171,6 +1213,30 @@ class Database:
         for curr in ["RUB", "BYN", "UAH", "KZT", "UZS", "EUR", "USD", "TON", "USDT", "STARS"]:
             balances[curr] = self.get_balance(uid, curr)
         return balances
+
+    def swap_currencies(self, uid, from_currency, to_currency, amount, rates=None):
+        """Внутренняя конвертация баланса. ЕДИНАЯ транзакция: swap_out + swap_in с одним reference_id.
+        Комиссия платформы удерживается из суммы к зачислению. Возвращает детали свопа или None."""
+        calc = compute_swap(from_currency, to_currency, amount, rates)
+        if not calc:
+            return None
+        ref_id = f"swap_{uid}_{int(datetime.now().timestamp() * 1000)}"
+        note = f"Конвертация {calc['from_currency']}→{calc['to_currency']}"
+        self.cursor.execute("SAVEPOINT sp_swap")
+        ok_out = self.update_balance(uid, calc['from_currency'], -calc['amount'],
+                                     operation_type='swap_out', reference_id=ref_id,
+                                     initiated_by=uid, note=note, commit=False)
+        ok_in = self.update_balance(uid, calc['to_currency'], calc['net'],
+                                    operation_type='swap_in', reference_id=ref_id,
+                                    initiated_by=uid, note=note, commit=False)
+        if ok_out and ok_in:
+            self.cursor.execute("RELEASE sp_swap")
+            self.conn.commit()
+            calc['reference_id'] = ref_id
+            return calc
+        self.cursor.execute("ROLLBACK TO sp_swap")
+        logger.warning(f"swap failed (uid={uid}, {calc['from_currency']}→{calc['to_currency']}, amount={calc['amount']}): insufficient funds or error")
+        return None
 
     def set_card(self, uid, card, currency="RUB"):
         encrypted = encrypt_value(card)
@@ -2115,14 +2181,15 @@ class Database:
         self.conn.commit()
 
     # ========== ENCRYPTED TRANSACTIONS ==========
-    def add_transaction(self, user_id: int, amount: float, currency: str, tx_type: str, description: str = None, related_id: int = None):
+    def add_transaction(self, user_id: int, amount: float, currency: str, tx_type: str, description: str = None, related_id: int = None, commit: bool = True):
         import json as _json
         encrypted_meta = encrypt_value(_json.dumps({"amount": amount, "desc": description or ""}))
         self.cursor.execute(
             "INSERT INTO transactions (user_id, amount, currency, type, description, related_id, encrypted_meta) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (user_id, amount, currency, tx_type, description, related_id, encrypted_meta)
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def decrypt_transaction(self, row: dict) -> dict:
         import json as _json
@@ -6266,10 +6333,11 @@ async def _execute_ceo_approved(queue_id: int):
             note = payload.get('note', '')
             ref_id = f"p2p_{user_id}_{to_user_id}_{int(datetime.now().timestamp())}"
             db.cursor.execute("SAVEPOINT sp_p2p_ceo")
-            ok1 = db.update_balance(user_id, currency, -amount, operation_type='p2p_transfer_out', reference_id=ref_id, note=note)
-            ok2 = db.update_balance(to_user_id, currency, amount, operation_type='p2p_transfer_in', reference_id=ref_id, note=note)
+            ok1 = db.update_balance(user_id, currency, -float(amount), operation_type='p2p_transfer_out', reference_id=ref_id, note=note, commit=False)
+            ok2 = db.update_balance(to_user_id, currency, float(amount), operation_type='p2p_transfer_in', reference_id=ref_id, note=note, commit=False)
             if ok1 and ok2:
                 db.cursor.execute("RELEASE sp_p2p_ceo")
+                db.conn.commit()
                 db.add_audit_log(OWNER_TELEGRAM_ID, "ceo_approve_p2p", target=f"user_{user_id}->{to_user_id}", details=f"{amount} {currency}")
                 await notify_user(user_id, f"✅ Перевод {amount} {currency} пользователю @{payload.get('to_username', to_user_id)} одобрен и выполнен.")
                 await notify_user(to_user_id, f"💸 *Получен перевод!*\n\n"
@@ -6362,10 +6430,11 @@ async def confirm_transaction_cb(call: CallbackQuery):
             ref_id = f"p2p_{user_id}_{to_user_id}_{int(datetime.now().timestamp())}"
             db.cursor.execute("SAVEPOINT sp_p2p")
             try:
-                ok1 = db.update_balance(user_id, currency, -amount, operation_type='p2p_transfer_out', reference_id=ref_id, note=note)
-                ok2 = db.update_balance(to_user_id, currency, amount, operation_type='p2p_transfer_in', reference_id=ref_id, note=note)
+                ok1 = db.update_balance(user_id, currency, -float(amount), operation_type='p2p_transfer_out', reference_id=ref_id, note=note, commit=False)
+                ok2 = db.update_balance(to_user_id, currency, float(amount), operation_type='p2p_transfer_in', reference_id=ref_id, note=note, commit=False)
                 if ok1 and ok2:
                     db.cursor.execute("RELEASE sp_p2p")
+                    db.conn.commit()
                     db.confirm_verification(nonce)
                     db.add_audit_log(user_id, "p2p_transfer", target=str(to_user_id), details=f"{amount} {currency}", nonce=nonce)
                     await call.message.edit_text(
@@ -7699,6 +7768,87 @@ async def handle_internal_deal_messages(request):
     return JSONResponse(content={'success': True, 'messages': msgs})
 
 
+@limiter.limit("30/minute")
+async def handle_internal_swap_preview(request):
+    """Предпросмотр свопа (Django → bot): курс, комиссия, сумма к зачислению по текущим курсам."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'success': False, 'error': 'Invalid JSON'}, status_code=400)
+    if not await _check_internal_auth(request):
+        return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
+    from_cur = data.get('from_currency', '').upper()
+    to_cur = data.get('to_currency', '').upper()
+    amount = data.get('amount', 0)
+    try:
+        amount = float(amount)
+    except Exception:
+        return JSONResponse(content={'success': False, 'error': 'Invalid amount'}, status_code=400)
+    try:
+        rates = await currency_api.fetch_rates('RUB')
+    except Exception:
+        rates = currency_api.get_stale_cache('RUB')
+    calc = compute_swap(from_cur, to_cur, amount, rates)
+    if not calc:
+        return JSONResponse(content={'success': False, 'error': 'Недопустимые параметры свопа'}, status_code=400)
+    calc['rates_source'] = getattr(currency_api, 'last_source', 'unknown')
+    calc['balance_from'] = db.get_balance(data.get('user_id', 0), calc['from_currency'])
+    calc['balance_to'] = db.get_balance(data.get('user_id', 0), calc['to_currency'])
+    return JSONResponse(content={'success': True, **calc})
+
+
+@limiter.limit("5/minute")
+async def handle_internal_swap(request):
+    """Исполнение свопа: одна транзакция swap_out + swap_in с одним reference_id.
+    Курс и комиссия рассчитываются на момент исполнения (Decimal)."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(content={'success': False, 'error': 'Invalid JSON'}, status_code=400)
+    if not await _check_internal_auth(request):
+        return JSONResponse(content={'success': False, 'error': 'Unauthorized'}, status_code=401)
+    user_id = int(data.get('user_id', 0) or 0)
+    from_cur = data.get('from_currency', '').upper()
+    to_cur = data.get('to_currency', '').upper()
+    try:
+        amount = float(data.get('amount', 0))
+    except Exception:
+        return JSONResponse(content={'success': False, 'error': 'Invalid amount'}, status_code=400)
+    if not user_id:
+        return JSONResponse(content={'success': False, 'error': 'Missing user_id'}, status_code=400)
+    if not db.get_user(user_id):
+        return JSONResponse(content={'success': False, 'error': 'User not found'}, status_code=404)
+    try:
+        rates = await currency_api.fetch_rates('RUB')
+    except Exception:
+        rates = currency_api.get_stale_cache('RUB')
+    calc = compute_swap(from_cur, to_cur, amount, rates)
+    if not calc:
+        return JSONResponse(content={'success': False, 'error': 'Недопустимые параметры свопа'}, status_code=400)
+    result = db.swap_currencies(user_id, calc['from_currency'], calc['to_currency'], calc['amount'], rates)
+    if not result:
+        balance = db.get_balance(user_id, calc['from_currency'])
+        return JSONResponse(content={
+            'success': False,
+            'error': f'Недостаточно средств. Доступно: {balance} {calc["from_currency"]}'
+        }, status_code=400)
+    calc['rates_source'] = getattr(currency_api, 'last_source', 'unknown')
+    calc['balance_from'] = db.get_balance(user_id, calc['from_currency'])
+    calc['balance_to'] = db.get_balance(user_id, calc['to_currency'])
+    asyncio.create_task(notify_user(
+        user_id,
+        f"💱 *Конвертация выполнена*\n\n"
+        f"📤 Списано: {fmt_num(calc['amount'])} {calc['from_currency']}\n"
+        f"📥 Зачислено: {fmt_num(calc['net'])} {calc['to_currency']}\n"
+        f"💱 Курс: 1 {calc['from_currency']} = {calc['rate']:.4f} {calc['to_currency']}\n"
+        f"🧾 Комиссия платформы: {calc['commission_pct']:.1f}% ({calc['commission']:.2f} {calc['to_currency']})"
+    ))
+    asyncio.create_task(notify_usersite(user_id, 'swap', 'Конвертация выполнена',
+        f"{fmt_num(calc['amount'])} {calc['from_currency']} → {fmt_num(calc['net'])} {calc['to_currency']}",
+        '/usersite/swap/'))
+    return JSONResponse(content={'success': True, 'swap': calc})
+
+
 async def handle_internal_propose_amount(request):
     """Получает запрос на контр-предложение от Django, отправляет уведомление продавцу."""
     try:
@@ -7818,6 +7968,8 @@ fastapi_app.add_api_route("/api/internal/user-fee-rate", handle_internal_user_fe
 fastapi_app.add_api_route("/api/internal/deal-messages", handle_internal_deal_messages, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/propose-amount", handle_internal_propose_amount, methods=["POST"])
 fastapi_app.add_api_route("/api/internal/deal-flagged", handle_internal_deal_flagged, methods=["POST"])
+fastapi_app.add_api_route("/api/internal/swap-preview", handle_internal_swap_preview, methods=["POST"])
+fastapi_app.add_api_route("/api/internal/swap", handle_internal_swap, methods=["POST"])
 
 # WebSocket endpoint for real-time notifications
 async def ws_notify_user(user_id: int, message: dict):

@@ -122,6 +122,9 @@ urlpatterns = [
 
     # P2P обмен валют
     path('exchange/', views.exchange_view, name='exchange'),
+    path('swap/', views.swap_view, name='swap'),
+    path('api/swap/preview/', views.api_swap_preview, name='api_swap_preview'),
+    path('api/swap/execute/', views.api_swap_execute, name='api_swap_execute'),
     path('api/exchange/create/', views.api_exchange_create_offer, name='api_exchange_create'),
     path('api/exchange/accept/', views.api_exchange_accept, name='api_exchange_accept'),
     path('api/exchange/cancel/', views.api_exchange_cancel, name='api_exchange_cancel'),
